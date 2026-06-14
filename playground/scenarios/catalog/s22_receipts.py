@@ -125,6 +125,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                     ctx_id=ctx_id,
                     title=title,
                     preview="did:key → receipts registry",
+                    key_fingerprint=producer_fp,
                 )
             )
 
@@ -171,8 +172,11 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                     run_id=spec.run_id,
                     ts=datetime.now(timezone.utc).isoformat(),
                     agent_id=producer.agent_did,
+                    ctx_id=ctx_id,
                     title="Registry receipt verified",
                     preview=f"verified={receipt_verified} authority_binding={authority_binding_ok}",
+                    key_fingerprint=producer_fp,
+                    receipt_present=receipt_present,
                 )
             )
         except ReceiptRequired as e:

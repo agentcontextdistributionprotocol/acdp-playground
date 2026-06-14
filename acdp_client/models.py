@@ -241,6 +241,12 @@ class WebhookEvent(_Open):
     event_id: str | None = None
     schema_version: str | None = None
     tenant_id: str | None = None
+    # ACDP 0.2 trust metadata (RFC-ACDP-0010) — additive, absent on 0.1.0
+    # traffic. ``key_fingerprint`` is the producer key the registry resolved at
+    # publish time; ``registry_receipt`` is the registry's signed attestation
+    # (kept verbatim) whose mere presence drives ``receipt_present``.
+    key_fingerprint: str | None = None
+    registry_receipt: dict | None = None
 
 
 StepEventType = Literal[
@@ -280,6 +286,14 @@ class StepEvent(_Open):
     registry_authority: str | None = None
     tenant_id: str | None = None
     event_id: str | None = None
+    # ACDP 0.2 trust signals (RFC-ACDP-0010), additive and optional so 0.1.0
+    # traffic and non-receipt steps simply leave them null. ``key_fingerprint``
+    # is the producer's publish-time key; ``receipt_present`` is whether the
+    # serving registry attached a signed receipt. Mirrors the columns the
+    # control plane lifts (keyFingerprint / receiptPresent) so a live-streaming
+    # playground run renders the receipt chip the same as a hydrated one.
+    key_fingerprint: str | None = None
+    receipt_present: bool | None = None
 
     @classmethod
     def from_webhook(cls, run_id: str, ts: str, event: WebhookEvent) -> "StepEvent":
@@ -288,6 +302,11 @@ class StepEvent(_Open):
             "context_retrieved": "acdp.retrieve",
             "search_executed": "acdp.search",
         }[event.type]
+        # Lift the trust signals the registry carries. Like the control plane,
+        # receipt_present is only meaningful on publish (the registry attaches
+        # the receipt when it accepts the context); key_fingerprint rides along
+        # whenever the registry includes it.
+        receipt_present = event.registry_receipt is not None if kind == "acdp.publish" else None
         return cls(
             type=kind,
             run_id=run_id,
@@ -298,4 +317,6 @@ class StepEvent(_Open):
             registry_authority=event.registry_authority,
             tenant_id=event.tenant_id,
             event_id=event.event_id,
+            key_fingerprint=event.key_fingerprint,
+            receipt_present=receipt_present,
         )

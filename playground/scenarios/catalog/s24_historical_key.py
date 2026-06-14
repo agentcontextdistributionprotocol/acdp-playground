@@ -212,6 +212,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                     ctx_id=ctx_id,
                     title=title,
                     preview="pre-rotation key",
+                    key_fingerprint=fp_v1,
                 )
             )
             full = await client.retrieve_raw(ctx_id)
@@ -226,6 +227,19 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 registry_outcome = "verified" if receipt_records_publish_key else "fp_mismatch"
             else:
                 registry_outcome = "no_receipt"
+            await events.put(
+                StepEvent(
+                    type="acdp.verify",
+                    run_id=spec.run_id,
+                    ts=datetime.now(timezone.utc).isoformat(),
+                    agent_id=did,
+                    ctx_id=ctx_id,
+                    title="Receipt records the publish-time key",
+                    preview=f"records_publish_key={receipt_records_publish_key}",
+                    key_fingerprint=fp_v1,
+                    receipt_present=receipt is not None,
+                )
+            )
         except AcdpHTTPError as e:
             registry_outcome = f"http_{e.status}:{e.code}"
             log.warning("S24 registry round-trip failed: %s", e)
