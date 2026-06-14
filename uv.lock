@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "acdp"
-version = "0.4.0"
+version = "0.5.0"
 source = { editable = "../acdp-rs/bindings/acdp-py" }
 
 [package.metadata]
