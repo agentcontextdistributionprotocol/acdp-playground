@@ -116,19 +116,49 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         )
 
         # 2) Producer publishes a restricted context targeting only the
-        # audience_member.
-        out = await producer.run(
-            AgentTask(
-                prompt=f"Summarize a confidential 4-point analysis of {topic}.",
-                title=f"Confidential — {topic}",
-                context_type="analysis",
-                visibility="restricted",
-                domain="finance",
-                tags=["confidential", "restricted"],
-                audience=[audience_member.agent_did],
-                metadata={"sensitivity": "internal-only"},
+        # audience_member. This needs live token issuance, which fails
+        # against a stock registry (the playground's `*.playground.local`
+        # producer DID isn't web-hosted, so the registry's auth challenge
+        # can't resolve its key). Degrade gracefully in that case — the
+        # access-control intent is still recorded — rather than aborting
+        # the whole run (mirrors S10–S14/S17/S18).
+        try:
+            out = await producer.run(
+                AgentTask(
+                    prompt=f"Summarize a confidential 4-point analysis of {topic}.",
+                    title=f"Confidential — {topic}",
+                    context_type="analysis",
+                    visibility="restricted",
+                    domain="finance",
+                    tags=["confidential", "restricted"],
+                    audience=[audience_member.agent_did],
+                    metadata={"sensitivity": "internal-only"},
+                )
             )
-        )
+        except TokenError as e:
+            await events.put(
+                StepEvent(
+                    type="acdp.search",
+                    run_id=spec.run_id,
+                    ts=datetime.now(timezone.utc).isoformat(),
+                    title="restricted publish degraded (auth unavailable)",
+                    preview=str(e)[:100],
+                )
+            )
+            log.warning("S6 restricted publish degraded: %s", e)
+            return RunResult(
+                run_id=spec.run_id,
+                scenario_id=SCENARIO.id,
+                status="complete",
+                contexts=[],
+                lineage_graph=LineageGraph(nodes=[], edges=[]),
+                summary={
+                    "degraded": True,
+                    "audience": [audience_member.agent_did],
+                    "outsider_did": outsider.agent_did,
+                    "publish": f"auth_unavailable: {str(e)[:120]}",
+                },
+            )
 
         # 3) Three retrieval attempts, in parallel.
         anonymous_client = bundle.anonymous_client("a")
