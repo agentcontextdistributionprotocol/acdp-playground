@@ -45,6 +45,12 @@ log = logging.getLogger(__name__)
 _RETRYABLE = {429, 502, 503, 504}
 _MAX_RETRY_DELAY = 30.0  # cap a cooperative Retry-After wait
 
+# The control plane's RunCompleteDto accepts only completed|failed|cancelled.
+# The playground's RunResult uses "complete" for the success terminal state, so
+# normalize it to the CP vocabulary — otherwise /runs/{id}/complete 400s and the
+# run is stuck "running" in the dashboard.
+_CP_TERMINAL_STATUS = {"complete": "completed"}
+
 
 def _sign(secret: str, body: bytes) -> str:
     mac = hmac.new(secret.encode("utf-8"), body, hashlib.sha256)
@@ -170,7 +176,7 @@ class ControlPlaneClient:
     ) -> None:
         payload = {
             "run_id": run_id,
-            "status": status,
+            "status": _CP_TERMINAL_STATUS.get(status, status),
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "result": result,
         }
