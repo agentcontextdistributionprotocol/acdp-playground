@@ -55,6 +55,32 @@ async def test_execute_success_emits_started_then_complete_and_persists():
     assert get_result(run_id) is result
 
 
+async def test_execute_notifies_cp_start_before_complete(monkeypatch):
+    """Regression: a fast, publish-nothing run must notify the CP of its start
+    BEFORE its completion. The two were previously fired as independent tasks,
+    so completion could overtake the start and 404 at the CP (run stuck
+    "running"). execute() now awaits run-started ahead of the scenario."""
+    calls: list[str] = []
+
+    class _RecordingCP:
+        async def notify_run_started(self, run_id, scenario_id, inputs):
+            calls.append("started")
+
+        async def notify_run_complete(self, run_id, status, result):
+            calls.append("complete")
+
+    monkeypatch.setattr(
+        "playground.scenarios.runner.get_control_plane", lambda _settings: _RecordingCP()
+    )
+
+    async def run(spec: RunSpec, events: asyncio.Queue) -> RunResult:
+        # Publishes nothing and returns immediately — the worst case for the race.
+        return RunResult(run_id=spec.run_id, scenario_id=spec.scenario_id, status="complete")
+
+    await execute(_scenario(run), _spec("runner-order"), asyncio.Queue())
+    assert calls == ["started", "complete"]
+
+
 async def test_execute_failure_emits_error_and_persists_failed_result():
     run_id = "runner-boom"
 

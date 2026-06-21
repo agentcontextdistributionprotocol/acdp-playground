@@ -45,6 +45,15 @@ async def execute(
         )
     )
 
+    # Notify the control plane that the run started BEFORE running the scenario,
+    # and crucially before the matching notify_run_complete below. Awaiting it
+    # here (rather than firing it off independently from the API handler) makes
+    # the start/complete pair strictly ordered within this one coroutine — so a
+    # fast, publish-nothing scenario can't have its completion overtake its
+    # start and 404 at the CP. _post is best-effort (no-op when CP is unset,
+    # swallows transport errors), so this never breaks the run.
+    await cp.notify_run_started(spec.run_id, scenario.id, spec.inputs)
+
     try:
         assert scenario.run is not None
         result = await scenario.run(spec, events)
