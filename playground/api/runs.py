@@ -10,8 +10,6 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
-from playground.config import get_settings
-from playground.control_plane import get_control_plane
 from playground.events import create_queue, get_queue, drop_queue
 from playground.scenarios import (
     RunRequest,
@@ -31,7 +29,6 @@ async def start_run(req: RunRequest) -> dict:
     if scenario is None:
         raise HTTPException(404, f"unknown scenario: {req.scenario_id}")
 
-    settings = get_settings()
     run_id = str(uuid4())
     spec = RunSpec(
         run_id=run_id,
@@ -41,10 +38,12 @@ async def start_run(req: RunRequest) -> dict:
     )
 
     queue = create_queue(run_id)
+    # `execute` notifies the control plane of the run start (awaited) before it
+    # runs the scenario and before the matching run-complete notification, so
+    # the start/complete pair stays strictly ordered. Firing run-started here as
+    # an independent task instead would race the completion for fast,
+    # publish-nothing runs (the completion could land first and 404 at the CP).
     asyncio.create_task(execute(scenario, spec, queue))
-
-    cp = get_control_plane(settings)
-    asyncio.create_task(cp.notify_run_started(run_id, scenario.id, spec.inputs))
 
     return {
         "run_id": run_id,
