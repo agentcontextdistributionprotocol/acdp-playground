@@ -30,6 +30,12 @@ an async `run(spec, events)` coroutine, and is auto-discovered at import time by
 | `s19_cp_did_web_p256` | CP did:web P-256 | P-256 verification method the CP resolves | **fully offline** |
 | `s20_reserved_tenant` | Reserved-tenant guard | Asserting `default` tenant is rejected | **fully offline** |
 | `s21_capabilities_p256` | P-256 capability | `ecdsa-p256` capability declaration accepted | **fully offline** |
+| `s22_receipts` | Registry Receipts | did:key publish + registry-signed receipt verified under a Require policy | degrades |
+| `s23_receipt_tamper` | Receipt Tamper | Every missing/mutated/mismatched receipt fails closed | **fully offline** |
+| `s24_historical_key` | Historical Key | Pre-rotation context is HistoricallyAuthorized via the receipt + retained key (§9) | degrades |
+| `s25_did_key` | did:key Agents | Ephemeral did:key agents self-verify offline; rotation is a new identity | degrades |
+| `s26_divergence` | Divergence Diagnostics | `explain_hash_mismatch` names the JCS divergence cause | degrades |
+| `s27_receipt_key_rotation` | Receipt-Key Rotation | Registry rotates its receipt key; a historical receipt verifies under the retired key (§9) | degrades |
 
 ## Scenario waves
 
@@ -57,6 +63,16 @@ sibling repos:
   playground mirrors the rule client-side. **S21** (fully offline) proves the
   P-256 agent emits the `ecdsa-p256` capability declaration the CP's capability
   DTO now accepts.
+- **ACDP 0.2 trust & hardening (S22–S27)** — registry receipts and the
+  RFC-ACDP-0010 §9 key lifecycle. **S22** verifies a registry-signed receipt
+  end-to-end; **S23** proves every dishonest receipt fails closed; **S24** and
+  **S27** cover the §9 retired-key lifecycle — the *producer* side and the
+  *registry receipt-key* side respectively — delegating resolution to the SDK's
+  `receipt_key_for_algorithm` (a retired-but-retained key resolves
+  `historical=true`; a removed key fails closed). **S25** exercises ephemeral
+  did:key agents; **S26** uses the `explain_hash_mismatch` diagnostic API. The
+  deterministic crypto cores run fully offline; the live receipt round-trips
+  degrade gracefully against a stock registry.
 
 ## Graceful degradation
 

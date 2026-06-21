@@ -83,6 +83,27 @@ async def test_run_notifications_carry_tenant_header():
     await cp.aclose()
 
 
+async def test_run_complete_normalizes_status_to_cp_vocabulary():
+    """RunResult's "complete" must reach the CP as "completed" — the CP's
+    RunCompleteDto only accepts completed|failed|cancelled, so the raw
+    "complete" would 400 and leave the run stuck "running"."""
+    bodies: list = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        bodies.append(_json.loads(request.content))
+        return httpx.Response(204)
+
+    cp = _cp(handler)
+    await cp.notify_run_complete("r1", "complete", {"ok": True})
+    # "failed" is already valid CP vocabulary and must pass through untouched.
+    await cp.notify_run_complete("r2", "failed", None)
+    assert bodies[0]["status"] == "completed"
+    assert bodies[1]["status"] == "failed"
+    await cp.aclose()
+
+
 async def test_introspect_requires_admin_token():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"active": True, "sub": "did:x"})

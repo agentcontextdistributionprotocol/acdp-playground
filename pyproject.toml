@@ -19,7 +19,10 @@ dependencies = [
     # fingerprint_ed25519_b64, the did:key producer constructors
     # (generate_did_key / from_seed_did_key), and build_*_request(acdp_version=,
     # omit_acdp_version=) — driven by the S22–S26 scenarios.
-    "acdp>=0.4.0",
+    # 0.5.0 adds AcdpDidDocument.receipt_key_for_algorithm — the RFC-ACDP-0010
+    # §9 retired-receipt-key lifecycle (historical flag / key_not_found) the
+    # S24 and S27 scenarios resolve registry + producer keys through.
+    "acdp>=0.5.0",
 ]
 
 [project.optional-dependencies]

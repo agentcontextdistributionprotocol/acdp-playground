@@ -9,17 +9,28 @@ what closes that: it records the producer key the registry resolved **at
 publish time**, so the consumer can establish *HistoricallyAuthorized* even
 after rotation.
 
+The *HistoricallyAuthorized* decision delegates the RFC-ACDP-0010 §9 key
+lifecycle to the SDK: the consumer parses the producer's DID document and
+resolves the key the receipt names through
+:meth:`AcdpDidDocument.receipt_key_for_algorithm` (the 0.5.0 primitive), which
+resolves a retired-but-retained key with ``historical=true`` and raises
+``key_not_found`` once the key is removed — the playground no longer hand-rolls
+that lifecycle. The fingerprint→key_id lookup and the body-signature check stay
+in the host language (no SDK primitive maps a producer fingerprint to a key).
+
 Deterministic core (offline):
 
-* Rotation produces two distinct keys (``key_v1`` → ``key_v2``) for one DID.
+* Rotation produces two distinct keys (``key_v1`` at ``#key-1`` → ``key_v2`` at
+  ``#key-2``) for one DID.
 * The pre-rotation body signature verifies under the retained ``key_v1`` and
   NOT under ``key_v2`` — rotation didn't invalidate past signatures.
 * *HistoricallyAuthorized* decision: a receipt whose ``key_fingerprint`` matches
-  a retained key ⇒ authorized; a **stripped** receipt ⇒ fail closed (you can no
-  longer prove the signing key was the authorized one).
-* Variant — old key fully **removed** from the DID document: historical
-  verification fails *even with* a receipt whose fingerprint matches nothing
-  resolvable. This documents the producer's obligation to retain rotated keys.
+  a key still resolvable in the DID document (now retired → ``historical=true``)
+  ⇒ authorized; a **stripped** receipt ⇒ fail closed (you can no longer prove
+  the signing key was the authorized one).
+* Variant — old key fully **removed** from the DID document: resolution raises
+  ``key_not_found`` so historical verification fails *even with* a matching-intent
+  receipt. This documents the producer's obligation to retain rotated keys.
 
 The live half publishes with ``key_v1`` and, if the registry issues a receipt,
 asserts ``receipt.key_fingerprint == fingerprint(key_v1)`` — the publish-time
@@ -36,14 +47,15 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from acdp import AcdpProducer, AcdpVerifier
+from acdp import AcdpDidDocument, AcdpProducer, AcdpVerifier, DidResolutionError
 
 from acdp_client import AcdpHTTPError
 from acdp_client.models import StepEvent
 from acdp_client.signing import verify_signature
 
 from playground.config import get_settings
-from playground.scenarios._factory import AgentBundle, did_for, key_id_for
+from playground.scenarios._factory import AgentBundle, did_for
+from playground.scenarios._receipts import did_document, ed25519_jwk_vm
 from playground.scenarios.models import (
     LineageGraph,
     LineageNode,
@@ -81,29 +93,42 @@ def _historically_authorized(
     *,
     sig_value: str,
     content_hash: str,
-    retained_keys: dict[str, str],
-) -> bool:
-    """Host-language *HistoricallyAuthorized* decision.
+    doc: AcdpDidDocument,
+    candidate_key_ids: list[str],
+) -> tuple[bool, bool]:
+    """Host-language *HistoricallyAuthorized* decision, §9 resolution delegated.
 
-    ``retained_keys`` maps fingerprint → public-key-b64 currently resolvable in
-    the producer's DID document. The receipt's ``key_fingerprint`` names the
-    key the registry resolved at publish time; we require that key to still be
-    resolvable AND the body signature to verify under it. A missing receipt or
-    an unresolvable historical key fails closed.
+    The receipt's ``key_fingerprint`` names the producer key the registry
+    resolved at publish time. We locate it among ``candidate_key_ids`` by
+    resolving each through :meth:`AcdpDidDocument.receipt_key_for_algorithm` —
+    the SDK applies the RFC-ACDP-0010 §9 lifecycle (a retired-but-retained key
+    resolves with ``historical=true``; a removed key raises ``key_not_found``,
+    which we skip) and the algorithm-downgrade defense. The matched key must
+    then verify the body signature. A missing receipt, or a fingerprint that
+    resolves to no retained key, fails closed. Returns ``(authorized,
+    historical)``.
     """
     if receipt is None:
         raise HistoricalAuthFailed(
             "no receipt — cannot prove the signing key was authorized at publish time"
         )
     fp = receipt.get("key_fingerprint")
-    pub = retained_keys.get(fp)
-    if pub is None:
-        raise HistoricalAuthFailed(
-            f"receipt key_fingerprint {fp} resolves to no retained key "
-            "(rotated key was removed from the DID document)"
+    for key_id in candidate_key_ids:
+        try:
+            resolved = doc.receipt_key_for_algorithm(key_id, "ed25519")
+        except DidResolutionError:
+            continue  # key removed / not resolvable — not a candidate
+        if _fp(resolved["public_key_b64"]) != fp:
+            continue
+        # The body signature must verify under that historical key.
+        authorized = verify_signature(
+            "ed25519", resolved["public_key_b64"], sig_value, content_hash
         )
-    # The body signature must verify under that historical key.
-    return verify_signature("ed25519", pub, sig_value, content_hash)
+        return authorized, resolved["historical"] == "true"
+    raise HistoricalAuthFailed(
+        f"receipt key_fingerprint {fp} resolves to no retained key "
+        "(rotated key was removed from the DID document)"
+    )
 
 
 async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
@@ -114,13 +139,18 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
     try:
         did = did_for(authority, "rotating-historical")
-        key_id = key_id_for(authority, "rotating-historical")
+        # Distinct verification-method fragments for one DID: a rotation mints a
+        # NEW key id, so the retired key can be retained alongside the current.
+        kid_v1, kid_v2 = f"{did}#key-1", f"{did}#key-2"
         seed = spec.agent_seed("rotating-historical")
         # Two keys for ONE DID: v1 (pre-rotation), v2 (post-rotation).
-        key_v1 = AcdpProducer.from_seed(hashlib.sha256(seed + b":v1").digest(), did, key_id)
-        key_v2 = AcdpProducer.from_seed(hashlib.sha256(seed + b":v2").digest(), did, key_id)
+        key_v1 = AcdpProducer.from_seed(hashlib.sha256(seed + b":v1").digest(), did, kid_v1)
+        key_v2 = AcdpProducer.from_seed(hashlib.sha256(seed + b":v2").digest(), did, kid_v2)
         fp_v1, fp_v2 = _fp(key_v1.public_key_b64), _fp(key_v2.public_key_b64)
         rotation_distinct = key_v1.public_key_b64 != key_v2.public_key_b64 and fp_v1 != fp_v2
+        vm_v1 = ed25519_jwk_vm(kid_v1, did, key_v1.public_key_b64)
+        vm_v2 = ed25519_jwk_vm(kid_v2, did, key_v2.public_key_b64)
+        candidate_key_ids = [kid_v1, kid_v2]
 
         # Pre-rotation context, signed by key_v1.
         title = f"{topic} — pre-rotation"
@@ -146,28 +176,45 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         # A receipt that binds the publish-time key (fp_v1).
         receipt_v1 = {"key_fingerprint": fp_v1}
 
-        # Case A — old key RETAINED in verificationMethod: HistoricallyAuthorized.
-        retained_both = {fp_v1: key_v1.public_key_b64, fp_v2: key_v2.public_key_b64}
-        historically_authorized = _historically_authorized(
-            receipt_v1, sig_value=sig_v1, content_hash=ch_v1, retained_keys=retained_both
+        # Case A — old key RETAINED (verificationMethod, retired from
+        # assertionMethod) alongside the current key: HistoricallyAuthorized,
+        # and the SDK reports it as historical.
+        doc_retained = AcdpDidDocument.parse(
+            did_document(did, current=[vm_v2], retired=[vm_v1]), did
+        )
+        historically_authorized, historical_flag = _historically_authorized(
+            receipt_v1,
+            sig_value=sig_v1,
+            content_hash=ch_v1,
+            doc=doc_retained,
+            candidate_key_ids=candidate_key_ids,
         )
 
         # Case B — receipt STRIPPED: must fail closed.
         stripped_fail_closed = False
         try:
             _historically_authorized(
-                None, sig_value=sig_v1, content_hash=ch_v1, retained_keys=retained_both
+                None,
+                sig_value=sig_v1,
+                content_hash=ch_v1,
+                doc=doc_retained,
+                candidate_key_ids=candidate_key_ids,
             )
         except HistoricalAuthFailed:
             stripped_fail_closed = True
 
-        # Case C — old key REMOVED from the DID document: fails even WITH a
-        # matching-intent receipt (documents the producer's retain obligation).
-        only_new = {fp_v2: key_v2.public_key_b64}
+        # Case C — old key REMOVED from the DID document: resolution raises
+        # key_not_found, so it fails even WITH a matching-intent receipt
+        # (documents the producer's retain obligation).
+        doc_removed = AcdpDidDocument.parse(did_document(did, current=[vm_v2]), did)
         removed_key_fail_closed = False
         try:
             _historically_authorized(
-                receipt_v1, sig_value=sig_v1, content_hash=ch_v1, retained_keys=only_new
+                receipt_v1,
+                sig_value=sig_v1,
+                content_hash=ch_v1,
+                doc=doc_removed,
+                candidate_key_ids=candidate_key_ids,
             )
         except HistoricalAuthFailed:
             removed_key_fail_closed = True
@@ -177,6 +224,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             and pre_verifies_old
             and new_key_rejects
             and historically_authorized
+            and historical_flag
             and stripped_fail_closed
             and removed_key_fail_closed
         )
@@ -188,7 +236,8 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 ts=datetime.now(timezone.utc).isoformat(),
                 agent_id=did,
                 title="Historical key verification",
-                preview=f"historically_authorized={historically_authorized}; "
+                preview=f"historically_authorized={historically_authorized} "
+                f"(historical={historical_flag}); "
                 f"stripped_fail_closed={stripped_fail_closed}; "
                 f"removed_key_fail_closed={removed_key_fail_closed}",
             )
@@ -267,6 +316,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             "pre_rotation_verifies_under_old_key": pre_verifies_old,
             "new_key_rejects_old_signature": new_key_rejects,
             "historically_authorized": historically_authorized,
+            "resolved_as_historical": historical_flag,
             "stripped_receipt_fail_closed": stripped_fail_closed,
             "removed_key_fail_closed": removed_key_fail_closed,
             "offline_core_ok": offline_core_ok,

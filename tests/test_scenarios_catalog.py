@@ -38,6 +38,7 @@ EXPECTED = {
     "s24_historical_key",
     "s25_did_key",
     "s26_divergence",
+    "s27_receipt_key_rotation",
 }
 
 

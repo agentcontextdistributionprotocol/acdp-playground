@@ -117,6 +117,9 @@ async def test_s24_historical_key_core(offline_stack):
     assert s["pre_rotation_verifies_under_old_key"] is True
     assert s["new_key_rejects_old_signature"] is True
     assert s["historically_authorized"] is True
+    # The §9 lifecycle is delegated to the SDK: the retained-but-retired key
+    # resolves as historical, and the removed key fails closed via key_not_found.
+    assert s["resolved_as_historical"] is True
     assert s["stripped_receipt_fail_closed"] is True
     assert s["removed_key_fail_closed"] is True
 
@@ -141,6 +144,25 @@ async def test_s26_divergence_diagnostics_core(offline_stack):
     assert s["version_cause_identified"] is True
     assert s["preimage_diff_localized"] is True
     assert s.get("degraded") is True  # hash_mismatch rejection needs a live registry
+
+
+async def test_s27_receipt_key_rotation_core(offline_stack):
+    res = await _run("s27_receipt_key_rotation")
+    assert res.status == "complete"
+    s = res.summary
+    assert s["offline_core_ok"] is True
+    # Historical receipt resolves under the retired registry key (§9) and is
+    # reported with the distinguishable verified_historical status.
+    assert s["historical_receipt_verified"] is True
+    assert s["historical_status"] == "verified_historical"
+    assert s["current_receipt_verified"] is True
+    assert s["current_status"] == "verified"
+    # Removing the retired key, downgrading the algorithm, and tampering the
+    # body binding all fail closed.
+    assert s["removed_key_fail_closed"] is True
+    assert s["downgrade_rejected"] is True
+    assert s["tampered_historical_rejected"] is True
+    assert s.get("degraded") is True  # live receipt round-trip needs a registry
 
 
 # ── graceful degradation contract (complete + degraded: true) ────────────
