@@ -77,7 +77,7 @@ jobs:
 
       # ── playground (Python; context = shared parent, needs acdp-rs) ──────
       - name: Build & push playground
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: repos
           file: repos/acdp-playground/Dockerfile
