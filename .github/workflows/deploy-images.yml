@@ -45,12 +45,12 @@ jobs:
       # both repos are checked out side by side under a shared `repos/` parent
       # and the image is built from there.
       - name: Checkout playground
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           path: repos/acdp-playground
 
       - name: Checkout acdp-rs
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.OWNER }}/acdp-rs
           token: ${{ secrets.SIBLING_REPO_TOKEN || github.token }}

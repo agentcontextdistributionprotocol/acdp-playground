@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout playground
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           path: acdp-playground
 
@@ -30,7 +30,7 @@ jobs:
         # `pyproject.toml` pins `acdp` to `../acdp-rs/bindings/acdp-py`
         # as an editable install (Rust → Python bindings). uv needs
         # this path resolvable at sync time.
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: agentcontextdistributionprotocol/acdp-rs
           path: acdp-rs
@@ -74,24 +74,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout playground
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           path: acdp-playground
 
       - name: Checkout sibling SDK (acdp-rs)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: agentcontextdistributionprotocol/acdp-rs
           path: acdp-rs
 
       - name: Checkout sibling registry (acdp-registry-rs)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: agentcontextdistributionprotocol/acdp-registry-rs
           path: acdp-registry-rs
 
       - name: Checkout sibling control plane (acdp-control-plane)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: agentcontextdistributionprotocol/acdp-control-plane
           path: acdp-control-plane
