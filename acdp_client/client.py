@@ -108,6 +108,35 @@ class PayloadTooLargeError(AcdpHTTPError):
     """
 
 
+class ImmutableFieldError(AcdpHTTPError):
+    """A lifecycle request tried to supply or alter immutable body content
+    (RFC-ACDP-0013 §6/§10, wire code ``immutable_field``, HTTP 400).
+
+    Bodies are immutable; the retract/republish endpoints mutate **registry
+    state only** — an envelope member that names body content is rejected
+    before any transition runs.
+    """
+
+
+class InvalidLifecycleTransitionError(AcdpHTTPError):
+    """The requested lifecycle transition conflicts with the context's current
+    retraction state (RFC-ACDP-0013 §6 step 4, wire code
+    ``invalid_lifecycle_transition``, HTTP 409): retract of an
+    already-retracted context, or republish of a never-retracted one.
+    Retryable only after the state changes.
+    """
+
+
+class InvalidLogProofError(AcdpHTTPError):
+    """A transparency-log artifact failed verification (RFC-ACDP-0012 §9/§11,
+    wire code ``invalid_log_proof``, HTTP 502).
+
+    Only federation/consumer verification paths emit this — a registry never
+    returns it from its own ``/log/*`` endpoints. Permanent: a bad proof will
+    not verify on retry.
+    """
+
+
 def _build_http_error(r: httpx.Response) -> AcdpHTTPError:
     code: str | None = None
     message: str | None = None
@@ -127,6 +156,12 @@ def _build_http_error(r: httpx.Response) -> AcdpHTTPError:
         return SupersededError(r.status_code, r.text, str(r.request.url), **kwargs)
     if code == "not_authorized":
         return NotAuthorizedError(r.status_code, r.text, str(r.request.url), **kwargs)
+    if code == "immutable_field":
+        return ImmutableFieldError(r.status_code, r.text, str(r.request.url), **kwargs)
+    if code == "invalid_lifecycle_transition":
+        return InvalidLifecycleTransitionError(r.status_code, r.text, str(r.request.url), **kwargs)
+    if code == "invalid_log_proof":
+        return InvalidLogProofError(r.status_code, r.text, str(r.request.url), **kwargs)
     return AcdpHTTPError(r.status_code, r.text, str(r.request.url), **kwargs)
 
 
@@ -343,6 +378,137 @@ class AcdpClient:
         _raise_for_status(r)
         return Body.model_validate(r.json())
 
+    # ── Lifecycle (ACDP 0.3, RFC-ACDP-0013) ──────────────────────────────
+
+    async def _lifecycle(self, ctx_id: str, action: str, event_json: str) -> FullContext:
+        """POST a signed lifecycle event to ``/contexts/{id}/{action}``.
+
+        The registry expects a closed envelope with exactly one member:
+        ``{"event": <signed lifecycle event>}``. The event is spliced in as
+        the caller-provided string, byte-verbatim — the registry hashes the
+        event *as received* (RFC-ACDP-0013 §5), so the client never
+        re-serializes what the producer signed.
+
+        The producer's authentication is the event signature itself (like a
+        publish); a bearer token is only consulted for read visibility.
+        Returns the post-transition :class:`FullContext` (``registry_state``
+        re-derived, the event appended to ``lifecycle_events``).
+        """
+        encoded = self._encode_ctx(ctx_id)
+        request_body = '{"event":' + event_json + "}"
+
+        async def send(h: dict[str, str]) -> httpx.Response:
+            return await self._http.post(
+                f"{self._base}/contexts/{encoded}/{action}",
+                content=request_body,
+                headers=h,
+            )
+
+        r = await self._retrying(send)
+        _raise_for_status(r)
+        return FullContext.model_validate(r.json())
+
+    async def retract(self, ctx_id: str, event_json: str) -> FullContext:
+        """Retract a context (mark-not-delete, RFC-ACDP-0013 §6).
+
+        ``event_json`` is a signed lifecycle event object with
+        ``event_type: "retracted"``, ``ctx_id`` equal to the target, and the
+        producer (``actor == body.agent_id``) as signer. Raises
+        :class:`InvalidLifecycleTransitionError` (409) when the context is
+        already retracted and :class:`ImmutableFieldError` (400) when the
+        request touches body content.
+        """
+        return await self._lifecycle(ctx_id, "retract", event_json)
+
+    async def republish(self, ctx_id: str, event_json: str) -> FullContext:
+        """Reverse a prior retraction (RFC-ACDP-0013 §6).
+
+        ``event_json`` is a signed lifecycle event with
+        ``event_type: "republished"``. Raises
+        :class:`InvalidLifecycleTransitionError` (409) when the context was
+        never retracted. Both events remain in the append-only history.
+        """
+        return await self._lifecycle(ctx_id, "republish", event_json)
+
+    # ── Transparency log (ACDP 0.3, RFC-ACDP-0012) ───────────────────────
+
+    async def log_checkpoint(self) -> dict:
+        """``GET /log/checkpoint`` — the registry's signed tree head.
+
+        Returned verbatim (unparsed dict) so the signed wire bytes reach
+        ``AcdpVerifier.verify_log_checkpoint`` unaltered. 501
+        ``not_implemented`` when the registry does not run a log.
+        """
+
+        async def send(h: dict[str, str]) -> httpx.Response:
+            return await self._http.get(f"{self._base}/log/checkpoint", headers=h)
+
+        r = await self._retrying(send)
+        _raise_for_status(r)
+        return r.json()
+
+    async def log_proof(
+        self,
+        *,
+        ctx_id: str | None = None,
+        leaf_index: int | None = None,
+        tree_size: int | None = None,
+        first: int | None = None,
+        second: int | None = None,
+    ) -> dict:
+        """``GET /log/proof`` — an inclusion or consistency proof (verbatim).
+
+        Two mutually-exclusive modes (mixing them is a 400
+        ``schema_violation`` server-side):
+
+        * **Inclusion** — exactly one of ``ctx_id`` (consumer surface,
+          visibility-gated) or ``leaf_index`` (auditor surface), plus an
+          optional historical ``tree_size``. Verify with
+          ``AcdpVerifier.verify_log_inclusion`` against a leaf you rebuilt
+          yourself via ``build_log_leaf`` — never a leaf the registry echoed.
+        * **Consistency** — ``first`` and ``second`` tree sizes. Verify with
+          ``AcdpVerifier.verify_log_consistency`` against your own retained
+          root.
+        """
+        params: dict[str, str | int] = {}
+        if ctx_id is not None:
+            params["ctx_id"] = ctx_id
+        if leaf_index is not None:
+            params["leaf_index"] = leaf_index
+        if tree_size is not None:
+            params["tree_size"] = tree_size
+        if first is not None:
+            params["first"] = first
+        if second is not None:
+            params["second"] = second
+
+        async def send(h: dict[str, str]) -> httpx.Response:
+            return await self._http.get(f"{self._base}/log/proof", params=params, headers=h)
+
+        r = await self._retrying(send)
+        _raise_for_status(r)
+        return r.json()
+
+    async def log_entries(self, start: int, end: int) -> dict:
+        """``GET /log/entries?start=..&end=..`` — a leaf page (verbatim).
+
+        0-based, start-inclusive, end-exclusive; the registry caps a page at
+        256 entries — continue from ``start + len(entries)``. Each entry
+        always carries ``leaf_index`` + ``leaf_hash``; the full ``leaf`` is
+        present only where the requester could retrieve that context.
+        """
+
+        async def send(h: dict[str, str]) -> httpx.Response:
+            return await self._http.get(
+                f"{self._base}/log/entries",
+                params={"start": start, "end": end},
+                headers=h,
+            )
+
+        r = await self._retrying(send)
+        _raise_for_status(r)
+        return r.json()
+
     # ── Search ───────────────────────────────────────────────────────────
 
     async def search(
@@ -461,6 +627,16 @@ class AcdpClient:
         return [FullContext.model_validate(x) for x in r.json()]
 
     async def current(self, lineage_id: str) -> FullContext:
+        """``GET /lineages/{id}/current`` — the newest non-superseded,
+        non-retracted version (RFC-ACDP-0013 §8.3: a retracted head falls
+        back to the prior eligible version, or 404s when none remains).
+
+        On a head-receipts-profile registry (RFC-ACDP-0011) the response
+        carries ``lineage_head_receipt`` — surfaced on
+        :class:`FullContext` as a verbatim dict for
+        ``AcdpVerifier.verify_lineage_head_receipt``.
+        """
+
         async def send(h: dict[str, str]) -> httpx.Response:
             return await self._http.get(
                 f"{self._base}/lineages/{lineage_id}/current", headers=h

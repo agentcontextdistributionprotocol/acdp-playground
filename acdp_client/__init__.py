@@ -15,6 +15,9 @@ from acdp import AcdpDid, AcdpDidDocument, DidResolutionError
 from acdp_client.client import (
     AcdpClient,
     AcdpHTTPError,
+    ImmutableFieldError,
+    InvalidLifecycleTransitionError,
+    InvalidLogProofError,
     NotAuthorizedError,
     PayloadTooLargeError,
     SupersededError,
@@ -28,6 +31,7 @@ from acdp_client.identifiers import (
 )
 from acdp_client.models import (
     ERROR_CODES,
+    LIFECYCLE_ERROR_CODES,
     SIGNATURE_ERROR_CODES,
     Body,
     CursorError,
@@ -69,6 +73,7 @@ __all__ = [
     "ALG_ED25519",
     "ALG_P256",
     "ERROR_CODES",
+    "LIFECYCLE_ERROR_CODES",
     "SIGNATURE_ERROR_CODES",
     "AcdpClient",
     "AcdpDid",
@@ -81,6 +86,9 @@ __all__ = [
     "DataRefHashMismatch",
     "DidResolutionError",
     "FullContext",
+    "ImmutableFieldError",
+    "InvalidLifecycleTransitionError",
+    "InvalidLogProofError",
     "NotAuthorizedError",
     "PayloadTooLargeError",
     "PublishResponse",

@@ -22,7 +22,14 @@ dependencies = [
     # 0.5.0 adds AcdpDidDocument.receipt_key_for_algorithm — the RFC-ACDP-0010
     # §9 retired-receipt-key lifecycle (historical flag / key_not_found) the
     # S24 and S27 scenarios resolve registry + producer keys through.
-    "acdp>=0.5.0",
+    # 0.6.0 is the ACDP 0.3.0 surface (RFC-ACDP-0011/0012/0013/0014):
+    # AcdpVerifier.verify_lineage_head_receipt / verify_log_checkpoint /
+    # verify_log_inclusion / verify_log_consistency / build_log_leaf /
+    # verify_lifecycle_event / parse_key_revocation / classify_under_revocation,
+    # the AcdpMerkle helpers, and the typed ImmutableField /
+    # InvalidLifecycleTransition / InvalidLogProof exceptions — driven by the
+    # S28–S30 scenarios.
+    "acdp>=0.6.0",
 ]
 
 [project.optional-dependencies]
