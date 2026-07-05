@@ -53,12 +53,31 @@ class Body(_Open):
 
 class RegistryState(_Open):
     status: str
+    # ACDP 0.3 (RFC-ACDP-0013): the append-only signed lifecycle history.
+    # Lifecycle-advertising registries omit the member entirely when empty
+    # (never ``[]``/``null``). Kept as raw dicts so the signed wire bytes
+    # reach ``AcdpVerifier.verify_lifecycle_event`` unaltered.
+    lifecycle_events: list[dict[str, Any]] | None = None
+
+    @property
+    def is_retracted(self) -> bool:
+        """RFC-ACDP-0013 §7.2: ``retracted`` dominates every other status."""
+        return self.status == "retracted"
 
 
 class FullContext(_Open):
     body: Body
     registry_state: RegistryState
     registry_receipt: dict[str, Any] | None = None
+    # ACDP 0.3 (RFC-ACDP-0011): the registry-signed lineage-head receipt a
+    # head-receipts-profile registry attaches to ``GET /lineages/{id}/current``
+    # responses (and only there). Raw dict — feed ``json.dumps`` of it to
+    # ``AcdpVerifier.verify_lineage_head_receipt``.
+    lineage_head_receipt: dict[str, Any] | None = None
+
+    @property
+    def is_retracted(self) -> bool:
+        return self.registry_state.is_retracted
 
 
 class PublishResponse(_Open):
@@ -156,6 +175,27 @@ ERROR_CODES = frozenset(
         "superseded_target",
         "invalid_cursor",
         "cursor_expired",
+        # ACDP 0.3 (RFC-ACDP-0012/0013):
+        #   * ``immutable_field``              — 400; a lifecycle request tried to
+        #                                        supply/alter immutable body content.
+        #   * ``invalid_lifecycle_transition`` — 409; retract of an already-retracted
+        #                                        context or republish of a
+        #                                        never-retracted one.
+        #   * ``invalid_log_proof``            — 502; a transparency-log artifact
+        #                                        failed verification (federation /
+        #                                        consumer paths — a registry never
+        #                                        emits it from its own /log/*).
+        "immutable_field",
+        "invalid_lifecycle_transition",
+        "invalid_log_proof",
+    }
+)
+
+# The lifecycle/log subset (ACDP 0.3), for callers that branch on the family.
+LIFECYCLE_ERROR_CODES = frozenset(
+    {
+        "immutable_field",
+        "invalid_lifecycle_transition",
     }
 )
 

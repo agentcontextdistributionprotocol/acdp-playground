@@ -1,17 +1,31 @@
-# registry-c — the dedicated *receipts-profile* registry (RFC-ACDP-0010,
-# ACDP 0.2 workstream A). Unlike registry-a/b, this registry verifies every
-# publish (no `[playground]` lax mode) so it can mint a receipt that attests
-# the producer key it resolved. The playground reaches it through did:key
-# producers (S22/S24): did:key bodies are verified by the registry entirely
-# offline (the key is embedded in the DID), so no DID hosting is required —
-# which is exactly why this is the playground's live verified-publish path.
+# registry-c — the dedicated *trust-profile* registry (RFC-ACDP-0010 receipts,
+# ACDP 0.2 workstream A; plus the ACDP 0.3.0 head-receipts / lifecycle /
+# transparency-log profiles, RFC-ACDP-0011/0012/0013). Unlike registry-a/b,
+# this registry verifies every publish (no `[playground]` lax mode) so it can
+# mint a receipt that attests the producer key it resolved. The playground
+# reaches it through did:key producers (S22/S24, S28–S30): did:key bodies are
+# verified by the registry entirely offline (the key is embedded in the DID),
+# so no DID hosting is required — which is exactly why this is the
+# playground's live verified-publish path.
 
 [registry]
 authority = "registry-c.playground.local"
 port      = 8300
 # 0.0.0.0 opt-in is safe because [auth] is enabled below (see registry-a).
 bind      = "0.0.0.0"
-profiles  = ["acdp-registry-core", "acdp-registry-discovery"]
+# The three ACDP 0.3.0 profiles are listed explicitly for documentation; the
+# server appends them anyway (dedup-safe) because the backing features
+# ([receipt].head_receipts, [lifecycle], [log]) are enabled below — listing a
+# profile WITHOUT its feature is a startup error. Enabling any of the three
+# bumps the advertised acdp_version to 0.3.0 (derived; there is no
+# acdp_version config key).
+profiles  = [
+    "acdp-registry-core",
+    "acdp-registry-discovery",
+    "acdp-registry-head-receipts",
+    "acdp-registry-lifecycle",
+    "acdp-registry-transparency-log",
+]
 cross_registry_resolution = true
 
 [registry.tls]
@@ -59,7 +73,8 @@ challenge_rate_per_minute   = 60
 # every publish response and retrieval carries a registry-signed receipt
 # binding ctx_id + lineage_id + content_hash + producer key_fingerprint,
 # and the well-known capabilities advertise `acdp-registry-receipts`
-# (acdp_version bumps to 0.2.0).
+# (acdp_version bumps to 0.2.0 — and to 0.3.0 here, because head_receipts /
+# [lifecycle] / [log] below are enabled).
 #
 # The seed is deterministic demo material (sha256("acdp-playground
 # -registry-a-receipt-key-v1"), kept for continuity). It MUST stay in
@@ -71,6 +86,32 @@ challenge_rate_per_minute   = 60
 [receipt]
 signing_key_seed_b64 = "9NKlBoCp1saUEzMgFonzReHSPbkEN9ba8NrAyR2TYYY="
 key_id_fragment      = "receipt-key-1"
+# ACDP 0.3.0 (RFC-ACDP-0011): mint a signed lineage-head receipt on every
+# `GET /lineages/{id}/current` response, binding lineage → newest head
+# (ctx_id + version + status) at a signed `as_of` instant. Requires the
+# receipt signing key above; advertises `acdp-registry-head-receipts`.
+# Exercised by scenario S30.
+head_receipts = true
+
+# ── Lifecycle events & retraction (ACDP 0.3.0, RFC-ACDP-0013) ────────
+# Enables POST /contexts/{id}/retract|republish (producer-signed lifecycle
+# events; mark-not-delete), the §7 status derivation (`retracted` dominating
+# `superseded`/`expired`), the §8.2 default-search exclusion, and the §8.3
+# /current head exclusion. Advertises `acdp-registry-lifecycle`. Exercised
+# by scenario S28.
+[lifecycle]
+enabled = true
+
+# ── Transparency log (ACDP 0.3.0, RFC-ACDP-0012) ─────────────────────
+# Appends a Merkle leaf per accepted publish and serves GET /log/checkpoint
+# (signed tree head, receipt key), /log/proof (inclusion + consistency) and
+# /log/entries. `instance` is the <instance> segment of
+# log_id = did:web:<authority>/log/<instance>; bump it only on a deliberate
+# history reset (§7.4). Advertises `acdp-registry-transparency-log`.
+# Exercised by scenario S29.
+[log]
+enabled  = true
+instance = "1"
 
 # NOTE: no [playground] section — incompatible with [receipt] (see
 # registry-a.toml). This registry has no unverified publish path.

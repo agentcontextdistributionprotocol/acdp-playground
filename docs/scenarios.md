@@ -36,6 +36,9 @@ an async `run(spec, events)` coroutine, and is auto-discovered at import time by
 | `s25_did_key` | did:key Agents | Ephemeral did:key agents self-verify offline; rotation is a new identity | degrades |
 | `s26_divergence` | Divergence Diagnostics | `explain_hash_mismatch` names the JCS divergence cause | degrades |
 | `s27_receipt_key_rotation` | Receipt-Key Rotation | Registry rotates its receipt key; a historical receipt verifies under the retired key (§9) | degrades |
+| `s28_lifecycle_retraction` | Lifecycle Events & Retraction | Signed retract/republish events (mark-not-delete); status, search + `/current` exclusion, 409 on conflicting transitions (RFC-ACDP-0013) | degrades |
+| `s29_transparency_log` | Transparency Log Proofs | Signed checkpoint + rebuilt-leaf inclusion + consistency against a retained root; tampered proofs fail `invalid_log_proof` (RFC-ACDP-0012) | degrades |
+| `s30_head_receipt_freshness` | Lineage-Head Receipt Freshness | `/current` answers are registry-signed; bindings, `as_of` freshness/stale policy, replayed pre-supersession receipts rejected (RFC-ACDP-0011) | degrades |
 
 ## Scenario waves
 
@@ -73,6 +76,21 @@ sibling repos:
   did:key agents; **S26** uses the `explain_hash_mismatch` diagnostic API. The
   deterministic crypto cores run fully offline; the live receipt round-trips
   degrade gracefully against a stock registry.
+- **ACDP 0.3.0 (S28–S30)** — lifecycle, head receipts, transparency log
+  (RFC-ACDP-0011/0012/0013), served live by registry-c's three new profiles.
+  **S28** retracts and republishes a context with producer-signed lifecycle
+  events (`verify_lifecycle_event`, replay/tamper fail-closed, the §7.1
+  order-based derivation, 409 `invalid_lifecycle_transition` on a double
+  retract). **S29** verifies the registry's Merkle log: signed checkpoint,
+  inclusion of a leaf **rebuilt from the verified receipt** (`build_log_leaf`
+  + `verify_log_inclusion`), and a consistency proof against the consumer's
+  retained root (`verify_log_consistency`); every tampered artifact fails
+  `invalid_log_proof`. **S30** verifies the signed `lineage_head_receipt` on
+  `/current` (`verify_lineage_head_receipt`): head bindings across a
+  supersession, `as_of` clock-skew, and the stale-is-policy freshness flag.
+  Each mints its artifacts offline with the SDK primitives
+  (`playground/scenarios/_receipts.py`) so the deterministic cores run with
+  no registry; the live halves degrade gracefully.
 
 ## Graceful degradation
 

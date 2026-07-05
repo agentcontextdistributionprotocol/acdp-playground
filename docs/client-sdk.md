@@ -63,10 +63,22 @@ for the endpoint contracts they call.
 | `search(...)` | `GET /contexts/search` | Filters: `q`, `context_type`, `domain`, `agent_id`, `tags`, `derived_from`, `visibility`, `limit`, `cursor` → `SearchResponse`; raises `CursorError` |
 | `search_all(...)` | paginated search | Async-yields every `SearchHit`; continues through empty-but-cursored pages |
 | `lineage(lineage_id)` | `GET /lineages/{id}` | → `list[FullContext]` |
-| `current(lineage_id)` | `GET /lineages/{id}/current` | → newest `FullContext` |
+| `current(lineage_id)` | `GET /lineages/{id}/current` | → newest non-superseded, non-retracted `FullContext`; surfaces `lineage_head_receipt` (RFC-ACDP-0011) verbatim |
+| `retract(ctx_id, event_json)` | `POST /contexts/{id}/retract` | Wraps the signed lifecycle event in the closed `{"event": …}` envelope, byte-verbatim → post-transition `FullContext` (RFC-ACDP-0013) |
+| `republish(ctx_id, event_json)` | `POST /contexts/{id}/republish` | Reverses a retraction; same envelope → `FullContext` |
+| `log_checkpoint()` | `GET /log/checkpoint` | Signed tree head, verbatim dict for `AcdpVerifier.verify_log_checkpoint` (RFC-ACDP-0012) |
+| `log_proof(ctx_id=…/leaf_index=…[, tree_size=…] \| first=…, second=…)` | `GET /log/proof` | Inclusion or consistency proof (mutually-exclusive modes), verbatim dict |
+| `log_entries(start, end)` | `GET /log/entries` | Leaf page (0-based, end-exclusive; server caps 256/page), verbatim dict |
 | `resolve(ctx_id, authority_map)` | cross-registry | Routes retrieval to the right registry by authority |
 | `healthz()` | `GET /healthz` | → bool |
 | `fetch_data_ref(data_ref, policy)` | SSRF-guarded fetch | Delegates to `safe_http`; verifies `content_hash` |
+
+The lifecycle and `/log` responses that carry registry signatures are kept as
+**verbatim dicts** (like `retrieve_raw`) rather than re-modelled: the SDK's
+verifiers hash the wire JSON *as received*, so the client never re-serializes
+what the registry signed. Signing a lifecycle event stays with the producer —
+see `playground/scenarios/_receipts.py::mint_lifecycle_event` for the
+RFC-ACDP-0013 §5 construction over SDK primitives.
 
 ### What the client adds on top of the registry
 
@@ -98,9 +110,13 @@ All subclass `AcdpHTTPError`, which exposes the parsed `.code`, `.message`,
 | `NotAuthorizedError` | **403** — authenticated but not permitted (terminal) |
 | `PayloadTooLargeError` | **413** — oversized body, even from outer middleware |
 | `CursorError` | **400** with a cursor error code |
+| `ImmutableFieldError` | **400** `immutable_field` — a lifecycle request touched immutable body content (RFC-ACDP-0013) |
+| `InvalidLifecycleTransitionError` | **409** `invalid_lifecycle_transition` — retract of an already-retracted / republish of a never-retracted context |
+| `InvalidLogProofError` | **502** `invalid_log_proof` — a transparency-log artifact failed verification on a federation/consumer path (RFC-ACDP-0012) |
 
 `models.py` also re-exports the code tables (`ERROR_CODES`,
-`SIGNATURE_ERROR_CODES`) and `parse_error_envelope(payload)` so scenarios can
+`SIGNATURE_ERROR_CODES`, `LIFECYCLE_ERROR_CODES`) and
+`parse_error_envelope(payload)` so scenarios can
 branch on a machine code. These mirror the registry's emitted codes; they are
 **not** an independent source of truth.
 
@@ -196,6 +212,11 @@ offline.
 Pydantic types over the registry's JSON, all `extra="allow"` for forward
 compatibility: `Body`, `FullContext`, `PublishResponse`, `SearchHit`,
 `SearchResponse`, `Signature`, `RegistryState`, `WebhookEvent`, `StepEvent`.
+ACDP 0.3 additions ride on the typed surface as verbatim members:
+`RegistryState.lifecycle_events` (list of raw event dicts, absent → `None`)
+plus the `is_retracted` convenience predicate on both `RegistryState` and
+`FullContext` (RFC-ACDP-0013 §7.2: `retracted` dominates), and
+`FullContext.lineage_head_receipt` (raw dict, `/current` only).
 These track the [context-body](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0002-context-body.md)
 and [publish](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0003-publish.md)
 shapes — they are a convenience mirror, not the normative schema (the JSON

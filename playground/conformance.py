@@ -37,6 +37,11 @@ from playground.config import Settings
 _PROBE_CTX_ID = "acdp://registry-a.playground.local/00000000-0000-4000-8000-0000000000ff"
 _ACDP_CONTENT_TYPE = "application/acdp+json"
 
+# Spec lines a conforming registry in this stack may advertise. Both are Final:
+# 0.2.0 (receipts / trust hardening) and 0.3.0 (lifecycle, lineage-head
+# receipts, transparency log — RFC-ACDP-0011/0012/0013).
+_ACCEPTED_ACDP_VERSIONS = frozenset({"0.2.0", "0.3.0"})
+
 
 @dataclass(frozen=True)
 class LiveConfig:
@@ -121,7 +126,8 @@ async def probe_receipts_profile_advertised(client: httpx.AsyncClient, cfg: Live
     """registry-c advertises the receipts profile (RFC-ACDP-0010, ACDP 0.2).
 
     Provisioning ``[receipt]`` bumps the capabilities document to
-    ``acdp_version: 0.2.0`` and appends the ``acdp-registry-receipts`` profile
+    ``acdp_version`` 0.2.0 (or 0.3.0 once the lifecycle/log profiles are on)
+    and appends the ``acdp-registry-receipts`` profile
     at ``GET /.well-known/acdp.json``. This is the externally-observable signal
     the S22/S24 scenarios rely on; a registry without the seed silently stays
     0.1.0 and the receipts half would degrade unnoticed without this probe.
@@ -136,8 +142,12 @@ async def probe_receipts_profile_advertised(client: httpx.AsyncClient, cfg: Live
     assert "acdp-registry-receipts" in profiles, (
         f"receipts-profile: acdp-registry-receipts not advertised (profiles={profiles})"
     )
-    assert body.get("acdp_version") == "0.2.0", (
-        f"receipts-profile: expected acdp_version 0.2.0, got {body.get('acdp_version')!r}"
+    # Registries in this stack may run either spec line — both are Final:
+    # 0.2.0 (receipts/trust-hardening) or 0.3.0 (lifecycle + head receipts +
+    # transparency log, RFC-ACDP-0011/0012/0013).
+    assert body.get("acdp_version") in _ACCEPTED_ACDP_VERSIONS, (
+        f"receipts-profile: expected acdp_version in {sorted(_ACCEPTED_ACDP_VERSIONS)}, "
+        f"got {body.get('acdp_version')!r}"
     )
     return f"receipts profile advertised (acdp_version={body.get('acdp_version')})"
 
