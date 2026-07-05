@@ -29,7 +29,8 @@ async def test_ingest_body_limit_413(live_client: httpx.AsyncClient, live_config
 
 async def test_receipts_profile_advertised(live_client: httpx.AsyncClient, live_config: LiveConfig):
     summary = await conformance.probe_receipts_profile_advertised(live_client, live_config)
-    assert "0.2.0" in summary
+    # The stack's registries may run either Final spec line (0.2.0 or 0.3.0).
+    assert "0.2.0" in summary or "0.3.0" in summary
 
 
 async def test_did_key_method_advertised(live_client: httpx.AsyncClient, live_config: LiveConfig):
