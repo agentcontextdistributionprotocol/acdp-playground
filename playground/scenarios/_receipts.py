@@ -1,4 +1,4 @@
-"""Receipt + registry-DID helpers for the ACDP 0.2 trust scenarios.
+"""Receipt + registry-DID helpers for the ACDP 0.2/0.3 trust scenarios.
 
 These compose **only** ``acdp`` SDK primitives — JCS canonicalization
 (:class:`AcdpCanonicalizer`) and Ed25519 signing
@@ -9,6 +9,13 @@ scenario can *mint* a registry receipt offline (the live registry only ever
 serves its current key, so the historical-key path is impossible to observe
 without minting) and resolve a registry's receipt key through the
 RFC-ACDP-0010 §9 lifecycle the SDK now models.
+
+The ACDP 0.3.0 artifacts — lifecycle events (RFC-ACDP-0013 §5), lineage-head
+receipts (RFC-ACDP-0011 §5) and transparency-log checkpoints (RFC-ACDP-0012
+§7) — all reuse the RFC-ACDP-0010 §5 signing construction verbatim: SHA-256
+over the JCS form of the object minus ``signature``, signed as the ASCII
+``"sha256:<hex>"`` string. The mint helpers below share :func:`_signed` so
+that construction exists exactly once here too.
 """
 
 from __future__ import annotations
@@ -61,6 +68,26 @@ def did_document(
     return json.dumps(doc)
 
 
+def _signed(obj: dict, signer: AcdpProducer, key_id: str) -> dict:
+    """Attach the RFC-ACDP-0010 §5 signature to ``obj`` (shared by receipts,
+    lifecycle events, lineage-head receipts and log checkpoints).
+
+    The preimage is SHA-256 over the JCS canonical form of the object
+    **minus** the ``signature`` member; the signature is Ed25519 over the
+    ASCII bytes of the full ``"sha256:<hex>"`` string (never the raw digest).
+    """
+    canonical = AcdpCanonicalizer.canonicalize(json.dumps(obj))
+    preimage = "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
+    return {
+        **obj,
+        "signature": {
+            "algorithm": "ed25519",
+            "key_id": key_id,
+            "value": signer.sign_challenge(preimage),
+        },
+    }
+
+
 def mint_receipt(
     signer: AcdpProducer,
     key_id: str,
@@ -90,14 +117,92 @@ def mint_receipt(
         "content_hash": content_hash,
         "key_fingerprint": key_fingerprint,
     }
-    canonical = AcdpCanonicalizer.canonicalize(json.dumps(receipt))
-    preimage = "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
-    receipt["signature"] = {
-        "algorithm": "ed25519",
-        "key_id": key_id,
-        "value": signer.sign_challenge(preimage),
+    return _signed(receipt, signer, key_id)
+
+
+def mint_lifecycle_event(
+    signer: AcdpProducer,
+    *,
+    event_id: str,
+    ctx_id: str,
+    event_type: str,
+    occurred_at: str,
+    reason: str | None = None,
+    key_id: str | None = None,
+) -> dict:
+    """Mint a signed lifecycle event (RFC-ACDP-0013 §4/§5).
+
+    The actor is the signer's own DID (`signer.agent_did`) and the signature
+    ``key_id`` defaults to the signer's key — §5 requires the key_id's DID
+    portion to equal ``actor``. ``occurred_at`` must be canonical
+    millisecond-precision RFC 3339 UTC (``YYYY-MM-DDTHH:MM:SS.mmmZ``). The
+    result verifies under :meth:`AcdpVerifier.verify_lifecycle_event` and is
+    the exact request body the registry's retract/republish endpoints expect.
+    """
+    event = {
+        "event_id": event_id,
+        "ctx_id": ctx_id,
+        "event_type": event_type,
+        "occurred_at": occurred_at,
+        "actor": signer.agent_did,
     }
-    return receipt
+    if reason is not None:
+        event["reason"] = reason
+    return _signed(event, signer, key_id or signer.key_id)
 
 
-__all__ = ["did_document", "ed25519_jwk_vm", "mint_receipt"]
+def mint_lineage_head_receipt(
+    signer: AcdpProducer,
+    key_id: str,
+    *,
+    registry_did: str,
+    lineage_id: str,
+    head_ctx_id: str,
+    head_version: int,
+    head_status: str,
+    as_of: str,
+) -> dict:
+    """Mint a lineage-head receipt (RFC-ACDP-0011 §5) the way a
+    head-receipts-profile registry does. Verifies under
+    :meth:`AcdpVerifier.verify_lineage_head_receipt`."""
+    receipt = {
+        "receipt_version": "acdp-lhr/1",
+        "registry_did": registry_did,
+        "lineage_id": lineage_id,
+        "head_ctx_id": head_ctx_id,
+        "head_version": head_version,
+        "head_status": head_status,
+        "as_of": as_of,
+    }
+    return _signed(receipt, signer, key_id)
+
+
+def mint_log_checkpoint(
+    signer: AcdpProducer,
+    key_id: str,
+    *,
+    log_id: str,
+    tree_size: int,
+    root_hash: str,
+    timestamp: str,
+) -> dict:
+    """Mint a transparency-log checkpoint (RFC-ACDP-0012 §7) — a signed tree
+    head. Verifies under :meth:`AcdpVerifier.verify_log_checkpoint`."""
+    checkpoint = {
+        "checkpoint_version": "acdp-log/1",
+        "log_id": log_id,
+        "tree_size": tree_size,
+        "root_hash": root_hash,
+        "timestamp": timestamp,
+    }
+    return _signed(checkpoint, signer, key_id)
+
+
+__all__ = [
+    "did_document",
+    "ed25519_jwk_vm",
+    "mint_lifecycle_event",
+    "mint_lineage_head_receipt",
+    "mint_log_checkpoint",
+    "mint_receipt",
+]

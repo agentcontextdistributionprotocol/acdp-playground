@@ -39,6 +39,11 @@ EXPECTED = {
     "s25_did_key",
     "s26_divergence",
     "s27_receipt_key_rotation",
+    # ACDP 0.3.0 (RFC-ACDP-0011/0012/0013): lifecycle events & retraction,
+    # transparency-log proofs, lineage-head receipt freshness.
+    "s28_lifecycle_retraction",
+    "s29_transparency_log",
+    "s30_head_receipt_freshness",
 }
 
 

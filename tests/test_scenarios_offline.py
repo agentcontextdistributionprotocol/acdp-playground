@@ -165,6 +165,60 @@ async def test_s27_receipt_key_rotation_core(offline_stack):
     assert s.get("degraded") is True  # live receipt round-trip needs a registry
 
 
+# ── ACDP 0.3.0 (RFC-ACDP-0011/0012/0013) deterministic cores ─────────────
+
+
+async def test_s28_lifecycle_retraction_core(offline_stack):
+    res = await _run("s28_lifecycle_retraction")
+    assert res.status == "complete"
+    s = res.summary
+    assert s["offline_core_ok"] is True
+    # RFC-ACDP-0013 §5: a signed retraction verifies; the ctx_id replay
+    # binding, tamper detection and the MUST-be-signed rule all fail closed.
+    assert s["event_verified"] is True
+    assert s["replay_rejected"] is True
+    assert s["tamper_rejected"] is True
+    assert s["unsigned_rejected"] is True
+    # §7.1: order-based derivation, last registered event wins, unknown
+    # event types inert; plus the host-owned §4/§12 actor-authorization check.
+    assert s["derivation_ok"] is True
+    assert s["authz_check_ok"] is True
+    assert s.get("degraded") is True  # live retract/republish needs a registry
+
+
+async def test_s29_transparency_log_core(offline_stack):
+    res = await _run("s29_transparency_log")
+    assert res.status == "complete"
+    s = res.summary
+    assert s["offline_core_ok"] is True
+    # RFC-ACDP-0012 §9: signed checkpoints, rebuilt-leaf inclusion at two
+    # tree sizes, and consistency against the retained first root all verify.
+    assert s["checkpoints_verified"] is True
+    assert s["inclusion_verified"] is True
+    assert s["consistency_verified"] is True
+    # §11: every tampered artifact (flipped path, flipped root, retained-root
+    # rewrite, substituted embedded checkpoint) fails as invalid_log_proof.
+    assert s["tamper_fail_closed"] is True
+    assert s.get("degraded") is True  # live /log endpoints need a registry
+
+
+async def test_s30_head_receipt_freshness_core(offline_stack):
+    res = await _run("s30_head_receipt_freshness")
+    assert res.status == "complete"
+    s = res.summary
+    assert s["offline_core_ok"] is True
+    # RFC-ACDP-0011 §6/§7: a fresh receipt verifies not-stale; staleness is
+    # policy (valid + stale on an aged receipt); a future as_of fails; a
+    # replayed pre-supersession receipt fails the head binding; tampering
+    # breaks the signature.
+    assert s["fresh_ok"] is True
+    assert s["stale_flag_ok"] is True
+    assert s["future_rejected"] is True
+    assert s["supersession_binding_ok"] is True
+    assert s["tamper_rejected"] is True
+    assert s.get("degraded") is True  # live /current receipts need a registry
+
+
 # ── graceful degradation contract (complete + degraded: true) ────────────
 
 
