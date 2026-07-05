@@ -272,10 +272,11 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             )
         )
 
-        # Mark-not-delete: the body stays retrievable, byte-identical.
+        # Mark-not-delete: the body stays retrievable, byte-identical to what
+        # the producer signed (the publish request is the flat signed body).
         full = await client.retrieve_raw(ctx_v2)
         body_still_retrievable = (
-            full["body"]["content_hash"] == json.loads(raw_v2)["body"]["content_hash"]
+            full["body"]["content_hash"] == json.loads(raw_v2)["content_hash"]
             and full["registry_state"]["status"] == "retracted"
         )
         served = full["registry_state"].get("lifecycle_events") or []

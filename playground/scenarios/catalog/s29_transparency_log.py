@@ -334,18 +334,33 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             AcdpVerifier.verify_log_checkpoint(json.dumps(ckpt_b), live_doc, live_log_id)
         )
         consistency = await client.log_proof(first=size_a, second=size_b)
+        # The registry mints a FRESH checkpoint object (new timestamp +
+        # signature) per response, so the proof's embedded checkpoint is not
+        # byte-equal to the separately fetched ckpt_b — verify the embedded
+        # one's signature and use it (same §9.1 step 3 discipline as the
+        # inclusion flow); ckpt_b independently pins the tree size.
+        con_ckpt = consistency.get("log_checkpoint", ckpt_b)
+        con_ckpt_v = _verdict(
+            AcdpVerifier.verify_log_checkpoint(json.dumps(con_ckpt), live_doc, live_log_id)
+        )
         con_live_v = _verdict(
-            AcdpVerifier.verify_log_consistency(json.dumps(consistency), json.dumps(ckpt_b), root_a)
+            AcdpVerifier.verify_log_consistency(
+                json.dumps(consistency), json.dumps(con_ckpt), root_a
+            )
         )
         live_consistency_verified = (
-            ck_b_v.get("valid") is True and size_b > size_a and con_live_v.get("valid") is True
+            ck_b_v.get("valid") is True
+            and con_ckpt_v.get("valid") is True
+            and con_ckpt["tree_size"] == size_b
+            and size_b > size_a
+            and con_live_v.get("valid") is True
         )
 
         # Fail-closed against the LIVE artifacts too: a rewritten retained
         # root must be detected as invalid_log_proof.
         live_rewrite = _verdict(
             AcdpVerifier.verify_log_consistency(
-                json.dumps(consistency), json.dumps(ckpt_b), "sha256:" + "e" * 64
+                json.dumps(consistency), json.dumps(con_ckpt), "sha256:" + "e" * 64
             )
         )
         live_tamper_fail_closed = (
