@@ -39,6 +39,7 @@ an async `run(spec, events)` coroutine, and is auto-discovered at import time by
 | `s28_lifecycle_retraction` | Lifecycle Events & Retraction | Signed retract/republish events (mark-not-delete); status, search + `/current` exclusion, 409 on conflicting transitions (RFC-ACDP-0013) | degrades |
 | `s29_transparency_log` | Transparency Log Proofs | Signed checkpoint + rebuilt-leaf inclusion + consistency against a retained root; tampered proofs fail `invalid_log_proof` (RFC-ACDP-0012) | degrades |
 | `s30_head_receipt_freshness` | Lineage-Head Receipt Freshness | `/current` answers are registry-signed; bindings, `as_of` freshness/stale policy, replayed pre-supersession receipts rejected (RFC-ACDP-0011) | degrades |
+| `s31_witness_cosigning` | Transparency-Log Witness Cosigning | An independent did:key witness discharges the §7 obligation (checkpoint signature + consistency) then cosigns the checkpoint; the consumer verifies the cosignature and an N-witnessed quorum; a cosignature over a tampered root fails `invalid_witness_cosignature` (RFC-ACDP-0015) | degrades |
 
 ## Scenario waves
 
@@ -91,6 +92,22 @@ sibling repos:
   Each mints its artifacts offline with the SDK primitives
   (`playground/scenarios/_receipts.py`) so the deterministic cores run with
   no registry; the live halves degrade gracefully.
+- **ACDP 0.4 (S31)** — transparency-log **witness cosigning** (RFC-ACDP-0015),
+  proven with the playground itself as an independent witness (the
+  PLAYGROUND-AS-WITNESS pattern — no control-plane witness required). **S31**
+  observes a signed checkpoint, discharges the §7 witness obligation (verify
+  the checkpoint's own signature and its consistency 1→2 against a retained
+  root — a witness *checks before it cosigns*), then mints its own
+  cosignature with a fresh `did:key` witness key
+  (`AcdpVerifier.build_witness_cosignature`). A consumer verifies the
+  cosignature against the witness DID document and its independently-held
+  checkpoint (`verify_witness_cosignature`) and evaluates an N-witnessed
+  quorum (`evaluate_witness_quorum`, `min_witnesses=1` → `meets_quorum`); a
+  cosignature over a *tampered* root is refused as
+  `invalid_witness_cosignature` at the §8 checkpoint binding and earns no
+  quorum credit. The deterministic core runs with no registry; the live half
+  publishes twice to registry-c and cosigns the real `/log/checkpoint`,
+  degrading gracefully.
 
 ## Graceful degradation
 

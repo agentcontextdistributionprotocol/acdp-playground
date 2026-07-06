@@ -29,7 +29,12 @@ dependencies = [
     # the AcdpMerkle helpers, and the typed ImmutableField /
     # InvalidLifecycleTransition / InvalidLogProof exceptions — driven by the
     # S28–S30 scenarios.
-    "acdp>=0.6.0",
+    # 0.7.0 is the ACDP 0.4 witness-cosigning surface (RFC-ACDP-0015):
+    # AcdpVerifier.build_witness_cosignature / verify_witness_cosignature /
+    # evaluate_witness_quorum — a transparency-log checkpoint is cosigned by
+    # independent witnesses and the consumer evaluates an N-witnessed quorum —
+    # driven by the S31 scenario.
+    "acdp>=0.7.0",
 ]
 
 [project.optional-dependencies]
