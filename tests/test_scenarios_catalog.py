@@ -44,6 +44,8 @@ EXPECTED = {
     "s28_lifecycle_retraction",
     "s29_transparency_log",
     "s30_head_receipt_freshness",
+    # ACDP 0.4 (RFC-ACDP-0015): transparency-log witness cosigning.
+    "s31_witness_cosigning",
 }
 
 

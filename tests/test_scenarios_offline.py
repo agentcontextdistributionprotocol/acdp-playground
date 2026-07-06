@@ -219,6 +219,34 @@ async def test_s30_head_receipt_freshness_core(offline_stack):
     assert s.get("degraded") is True  # live /current receipts need a registry
 
 
+# ── ACDP 0.4 (RFC-ACDP-0015) deterministic core ──────────────────────────
+
+
+async def test_s31_witness_cosigning_core(offline_stack):
+    res = await _run("s31_witness_cosigning")
+    assert res.status == "complete"
+    s = res.summary
+    assert s["offline_core_ok"] is True
+    # The witness discharges the §7 obligation before cosigning: the
+    # checkpoint's own signature verifies and the log is consistent 1→2
+    # against a retained root.
+    assert s["checkpoint_verified"] is True
+    assert s["consistency_verified"] is True
+    assert s["obligation_ok"] is True
+    # A did:key witness cosigns; the consumer verifies (§8) and the quorum is
+    # 1-witnessed, meeting a min_witnesses=1 policy.
+    assert s["witness_did_method"] == "did:key"
+    assert s["witness_did"].startswith("did:key:")
+    assert s["cosig_verified"] is True
+    assert s["quorum_ok"] is True
+    assert s["witnessed_count"] == 1
+    assert s["meets_quorum"] is True
+    # binding-detects-lies: a cosignature over a tampered root is refused as
+    # invalid_witness_cosignature (§8 step 4) and earns no quorum credit.
+    assert s["tamper_fail_closed"] is True
+    assert s.get("degraded") is True  # live /log cosigning needs a registry
+
+
 # ── graceful degradation contract (complete + degraded: true) ────────────
 
 
