@@ -1,19 +1,27 @@
-.PHONY: dev build-sdk run test test-live smoke smoke-live docker up down up-full down-full fmt lint clean
+.PHONY: dev dev-local build-sdk run test test-live smoke smoke-live docker up down up-full down-full fmt lint clean
 
 PYTHON ?= python
 UV ?= uv
+ACDP_RS ?= ../acdp-rs
 COMPOSE_FULL = docker compose -f docker-compose.yml -f docker-compose.full.yml
 
+# Default install: `acdp` resolves as a prebuilt wheel from PyPI. No sibling
+# acdp-rs checkout and no Rust toolchain required.
 dev:
 	$(UV) sync --extra llm --extra dev
-	$(MAKE) build-sdk
 
-# The acdp SDK is a compiled (maturin/pyo3) extension. An editable pin
-# does NOT recompile Rust, so rebuild it explicitly after pulling
-# acdp-rs changes (e.g. to pick up AcdpP256Producer / verify_signature_p256).
+# Local SDK development: install deps, then overlay a `maturin develop` build
+# of a sibling acdp-rs checkout (override the location with ACDP_RS=...). Use
+# this only when hacking on the SDK itself. `build-sdk` re-overlays after
+# pulling acdp-rs changes; the next plain `uv sync` restores the PyPI wheel.
+dev-local: dev build-sdk
+
+# The acdp SDK is a compiled (maturin/pyo3) extension. `maturin develop`
+# builds the sibling checkout straight into this venv, overriding the PyPI
+# wheel until the next `uv sync`. Requires a Rust toolchain + the acdp-rs repo.
 build-sdk:
 	$(UV) run --with maturin maturin develop --release \
-		--manifest-path ../acdp-rs/bindings/acdp-py/Cargo.toml
+		--manifest-path $(ACDP_RS)/bindings/acdp-py/Cargo.toml
 
 run:
 	$(UV) run uvicorn playground.main:app --reload --port 8000

@@ -57,7 +57,7 @@ docker-compose.full.yml       # overlay adding the control plane (make up-full)
 ## Quickstart
 
 ```bash
-# 1) Install (uses uv; resolves acdp from ../acdp-rs/bindings/acdp-py)
+# 1) Install (uses uv; resolves the acdp SDK wheel from PyPI)
 make dev
 
 # 2) Sanity check (no LLM, no registry needed)
@@ -309,32 +309,35 @@ on success and WARNING on failure with a `failure_kind` discriminator.
 
 ## Compose layout
 
-`docker-compose.yml` uses `context: ..` so the build can COPY both this
-repo and the sibling `acdp-rs/` + `acdp-registry-rs/` repos. The
-playground image installs the Python SDK from the sibling path; the
-registry images are built from the sibling repo's Dockerfile.
-`docker-compose.full.yml` overlays the control plane (built from
-`../acdp-control-plane`).
+The playground image builds with `context: .` — the `acdp` Python SDK
+installs as a prebuilt wheel from PyPI, so no sibling checkout is needed.
+The registry images build from the sibling `acdp-registry-rs/` repo's
+Dockerfile; `docker-compose.full.yml` overlays the control plane (built
+from `../acdp-control-plane`).
 
 ## Deploying to Railway
 
-`.github/workflows/deploy-images.yml` builds the full-stack images and pushes
-them to `ghcr.io/<owner>/acdp-{registry,control-plane,playground,ui-console}` on
-a `v*` tag or manual dispatch (needs a `SIBLING_REPO_TOKEN` secret to clone the
-sibling repos). The playground image binds Railway's dynamic `$PORT`/`$HOST`.
+`.github/workflows/deploy-images.yml` builds this repo's playground image and
+pushes it to `ghcr.io/<owner>/acdp-playground` on a `v*` tag or manual dispatch
+(the `acdp` SDK comes from PyPI — no sibling checkout required). The other stack
+images are published by their own repos. The playground image binds Railway's
+dynamic `$PORT`/`$HOST`.
 **See [`railway/DEPLOY.md`](railway/DEPLOY.md)** for the full deploy — service
 topology, IPv6 private networking, per-service env vars, and the shared-secret
 wiring.
 
-## Rebuilding the SDK
+## Local SDK development
 
-The `acdp` Python package is a compiled (maturin/pyo3) extension. An
-editable pin does **not** recompile Rust, so after pulling `acdp-rs`
-changes (e.g. to pick up `AcdpP256Producer` /
-`verify_signature_p256`) rebuild it:
+The `acdp` Python package is a compiled (maturin/pyo3) extension published as a
+wheel on PyPI, which is what `make dev` installs. To hack on the SDK against a
+local `../acdp-rs` checkout (needs a Rust toolchain), overlay a source build
+into the venv:
 
 ```bash
-make build-sdk   # runs `maturin develop --release` against ../acdp-rs/bindings/acdp-py
+make dev-local   # uv sync + `maturin develop --release` against ../acdp-rs
+make build-sdk   # re-overlay after pulling acdp-rs changes (SDK dev only)
 ```
 
-`make dev` does this for you.
+`maturin develop` installs the local build over the PyPI wheel; the next plain
+`uv sync` restores the published wheel. Override the checkout path with
+`make build-sdk ACDP_RS=/path/to/acdp-rs`.

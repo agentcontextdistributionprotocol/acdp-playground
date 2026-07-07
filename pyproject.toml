@@ -53,8 +53,11 @@ dev = [
     "ruff>=0.6",
 ]
 
-[tool.uv.sources]
-acdp = { path = "../acdp-rs/bindings/acdp-py", editable = true }
+# NOTE: `acdp` resolves from PyPI by default (published maturin/pyo3 wheels —
+# no Rust toolchain or sibling checkout needed for a clean `uv sync`). To hack
+# on the SDK against a local `../acdp-rs` checkout, run `make build-sdk`, which
+# `maturin develop`s the sibling straight into this venv, overriding the wheel
+# until the next `uv sync`. See docs/getting-started.md ("Local SDK development").
 
 [build-system]
 requires = ["hatchling"]

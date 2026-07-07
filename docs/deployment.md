@@ -8,9 +8,10 @@ Two compose files describe the stack:
 - **`docker-compose.full.yml`** — an overlay adding the control plane and UI
   console (run together via `make up-full`)
 
-Both build with `context: ..` (the parent directory) so the image build can
-`COPY` this repo alongside the sibling `acdp-rs/`, `acdp-registry-rs/`,
-`acdp-control-plane/`, and `acdp-ui-console/` repos.
+The playground image builds with `context: .` (this repo) — the `acdp` SDK
+installs from PyPI, so no sibling checkout is needed. The registry / control
+plane / UI images each build from their own sibling repo context
+(`acdp-registry-rs/`, `acdp-control-plane/`, `acdp-ui-console/`).
 
 ### Services and ports
 
@@ -60,17 +61,17 @@ the control plane's `CONTROL_PLANE_PINNED_KEYS` wire format.
 
 ## The Dockerfile
 
-`python:3.12-slim` base. Installs `uv` and a Rust toolchain (to build the
-`acdp-py` C extension via maturin), copies the sibling `acdp-rs` + this repo,
-runs `uv sync --extra llm`, exposes `8000`, and launches:
+`python:3.12-slim` base. Installs `uv`, copies this repo, runs
+`uv sync --frozen --extra llm` (which pulls the `acdp` wheel from PyPI — no Rust
+toolchain), exposes `8000`, and launches:
 
 ```
 uv run --no-sync uvicorn playground.main:app --host "${HOST:-0.0.0.0}" --port "${PORT:-8000}"
 ```
 
-`--no-sync` skips a slow re-resolve/maturin rebuild at boot (the image is
-pre-built); `exec` hands signals to uvicorn for graceful shutdown; `HOST`/`PORT`
-are dynamic for Railway.
+`--no-sync` skips a redundant re-resolve at boot (the image is pre-built);
+`exec` hands signals to uvicorn for graceful shutdown; `HOST`/`PORT` are dynamic
+for Railway.
 
 ## Live auth caveat
 
@@ -86,10 +87,12 @@ what lets the demo's run-keyed agents publish without live DID resolution.
 
 ## Railway
 
-`.github/workflows/deploy-images.yml` builds the full-stack images and pushes
-them to `ghcr.io/<owner>/acdp-{registry,control-plane,playground,ui-console}` on
-a `v*` tag or manual dispatch (needs a `SIBLING_REPO_TOKEN` secret to clone the
-sibling repos). The playground image binds Railway's dynamic `$PORT`/`$HOST`.
+`.github/workflows/deploy-images.yml` builds this repo's playground image and
+pushes it to `ghcr.io/<owner>/acdp-playground` on a `v*` tag or manual dispatch
+(the `acdp` SDK comes from PyPI, so no sibling checkout is required). The other
+stack images are published by their own repos to
+`ghcr.io/<owner>/acdp-{registry,control-plane,ui-console}`. The playground image
+binds Railway's dynamic `$PORT`/`$HOST`.
 
 **Full deploy guide:** [`railway/DEPLOY.md`](../railway/DEPLOY.md) — service
 topology, IPv6 private networking, per-service env vars, and the shared-secret

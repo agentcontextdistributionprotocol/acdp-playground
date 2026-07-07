@@ -51,9 +51,10 @@ An async `httpx` + Pydantic layer over the `acdp` Rust SDK. It owns transport
 and type marshaling; **all cryptography, JCS canonicalization, and SSRF IP
 classification are delegated to the Rust SDK**. See [Client SDK](client-sdk.md).
 
-### The SDK (`acdp`, from `acdp-rs/bindings/acdp-py`)
+### The SDK (`acdp`, published to PyPI from `acdp-rs/bindings/acdp-py`)
 
-A compiled (maturin/pyo3) extension the playground imports for every protocol
+A compiled (maturin/pyo3) extension — installed as a prebuilt wheel from PyPI —
+that the playground imports for every protocol
 primitive — signers (`AcdpProducer` / `AcdpP256Producer`), the verifier, the JCS
 canonicalizer, the SSRF policy, and the `did:web` resolver. The playground does
 **not** reimplement any of these; it only orchestrates them. The SDK is its own

@@ -1,14 +1,14 @@
-# The playground image builds with the parent dir as context so it can
-# COPY both acdp-playground/ and the sibling acdp-rs/ repo (the Python
-# SDK wheel is built from source). The registry images build with the
-# sibling acdp-registry-rs/ repo as their own context — its Dockerfile
-# consumes `acdp` from crates.io and expects the repo root at /app.
+# The playground image builds with this repo as its own context — the `acdp`
+# Python SDK now installs as a prebuilt wheel from PyPI, so no sibling acdp-rs
+# checkout is needed. The registry images build with the sibling
+# acdp-registry-rs/ repo as their own context — its Dockerfile consumes `acdp`
+# from crates.io and expects the repo root at /app.
 
 services:
   playground:
     build:
-      context: ..
-      dockerfile: acdp-playground/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     ports: ["8000:8000"]
     environment:
       REGISTRY_A_URL: http://registry-a:8100
