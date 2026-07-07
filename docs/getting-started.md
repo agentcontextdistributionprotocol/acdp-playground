@@ -4,19 +4,19 @@
 
 - **Python 3.12+**
 - **[uv](https://github.com/astral-sh/uv)** for dependency management
-- **Rust toolchain** — the `acdp` Python package is a compiled (maturin/pyo3)
-  extension built from the sibling `../acdp-rs/bindings/acdp-py`
 - **Docker** (optional) — for running the registries and full stack
 - An **LLM API key** (OpenAI or Anthropic), or use `LLM_PROVIDER=mock` for
   fully offline runs
 
-The playground expects the sibling repos to be checked out next to it:
+The `acdp` Python SDK installs as a **prebuilt wheel from PyPI** — no Rust
+toolchain and no sibling checkout are needed for a plain install. Docker-based
+runs of the **full stack** still expect the sibling registry / control-plane
+repos next to this one (they build their own images):
 
 ```
 agentcontextdistributionprotocol/
 ├── acdp-playground/      ← you are here
-├── acdp-rs/              ← the Rust SDK (acdp-py bindings)
-├── acdp-registry-rs/     ← the registry binary
+├── acdp-registry-rs/     ← the registry binary (docker full stack)
 ├── acdp-control-plane/   ← the control plane (full stack only)
 └── acdp-ui-console/      ← the UI (full stack only)
 ```
@@ -27,12 +27,23 @@ agentcontextdistributionprotocol/
 make dev
 ```
 
-This runs `uv sync --extra llm --extra dev` and then `make build-sdk`, which
-compiles the `acdp` extension via `maturin develop --release`.
+This runs `uv sync --extra llm --extra dev`, resolving `acdp` from PyPI. A clean
+`uv sync` works standalone — no sibling checkout, no compiler.
 
-> **Rebuilding the SDK.** An editable pin does **not** recompile Rust. After
-> pulling `acdp-rs` changes (e.g. to pick up `AcdpP256Producer` or
-> `verify_signature_p256`), rerun `make build-sdk`.
+### Local SDK development
+
+To hack on the SDK against a local `../acdp-rs` checkout (requires a Rust
+toolchain), overlay a source build into the venv:
+
+```bash
+make dev-local        # uv sync + maturin develop of ../acdp-rs
+# or, after a normal `make dev`:
+make build-sdk        # re-overlay after pulling acdp-rs changes
+```
+
+`maturin develop` installs the local build over the PyPI wheel; the next plain
+`uv sync` restores the published wheel. Point at a different checkout with
+`make build-sdk ACDP_RS=/path/to/acdp-rs`.
 
 ## Sanity check (no LLM, no registry)
 
@@ -98,8 +109,9 @@ The SSE stream emits one `StepEvent` per protocol action — `agent.started`,
 
 | Target | What it does |
 |--------|--------------|
-| `make dev` | Install deps + build the SDK |
-| `make build-sdk` | Recompile the `acdp` Rust extension |
+| `make dev` | Install deps (`acdp` from PyPI) |
+| `make dev-local` | Install deps + overlay a local `../acdp-rs` source build |
+| `make build-sdk` | Overlay/recompile a local `acdp` build (SDK dev only) |
 | `make run` | Run the API locally with `--reload` |
 | `make smoke` | Offline wiring checks |
 | `make smoke-live` | Smoke checks against a running full stack |

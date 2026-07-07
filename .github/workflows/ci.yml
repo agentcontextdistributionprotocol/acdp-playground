@@ -11,9 +11,9 @@ on:
 
 defaults:
   run:
-    # Steps execute from inside the playground checkout. The sibling
-    # SDK is alongside at ../acdp-rs, matching the layout that uv's
-    # editable source declaration in `pyproject.toml` expects.
+    # Steps execute from inside the playground checkout. `acdp` resolves
+    # from PyPI as a prebuilt wheel, so no sibling acdp-rs checkout or Rust
+    # toolchain is needed for the unit suite.
     working-directory: acdp-playground
 
 jobs:
@@ -25,15 +25,6 @@ jobs:
         uses: actions/checkout@v5
         with:
           path: acdp-playground
-
-      - name: Checkout sibling SDK (acdp-rs)
-        # `pyproject.toml` pins `acdp` to `../acdp-rs/bindings/acdp-py`
-        # as an editable install (Rust → Python bindings). uv needs
-        # this path resolvable at sync time.
-        uses: actions/checkout@v5
-        with:
-          repository: agentcontextdistributionprotocol/acdp-rs
-          path: acdp-rs
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
@@ -77,12 +68,6 @@ jobs:
         uses: actions/checkout@v5
         with:
           path: acdp-playground
-
-      - name: Checkout sibling SDK (acdp-rs)
-        uses: actions/checkout@v5
-        with:
-          repository: agentcontextdistributionprotocol/acdp-rs
-          path: acdp-rs
 
       - name: Checkout sibling registry (acdp-registry-rs)
         uses: actions/checkout@v5

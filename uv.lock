@@ -10,14 +10,14 @@ resolution-markers = [
 [[package]]
 name = "acdp"
 version = "0.7.0"
-source = { editable = "../acdp-rs/bindings/acdp-py" }
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", marker = "extra == 'dev'" },
-    { name = "pytest", marker = "extra == 'dev'" },
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/de/0e5cfb915730a009fb1766188faf729bf761c2e4a59a89363b03bf1d1579/acdp-0.7.0.tar.gz", hash = "sha256:b60c9a15798e0f06941d582749a3d5b07bea51d25aa999d856b984737c45775c", size = 406823, upload-time = "2026-07-06T03:27:17.047Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/85/b2/98610b5feff0a8769f540219dc54d06e580053bc32b3c9b0d3468cc71bdd/acdp-0.7.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:91b572607009c2ceb154f07c77bcf13e11e285cc7202aacde2a2d88bae323964", size = 980393, upload-time = "2026-07-06T03:27:11.723Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/e0/807bd016316f74d71d0d3aca5fbe131c59ace7b9cb7f2c4673f817200dc6/acdp-0.7.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:ce1d7760eede6f34809d5061f6a22aa58421eb2434bc17be2bba9e76bc464c0f", size = 902212, upload-time = "2026-07-06T03:27:13.265Z" },
+    { url = "https://files.pythonhosted.org/packages/69/08/01ae75e195ecb081eddec6bc547dfc15975c9eea0be3f12799b6aa2dbc11/acdp-0.7.0-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:d0f84a4ae44cb4682e1c32b64c831a48b6302816225e6bfc285c86058a4e4952", size = 928924, upload-time = "2026-07-06T03:27:14.581Z" },
+    { url = "https://files.pythonhosted.org/packages/95/63/a1bef4aa09a52cb0f5b9c0e0d56eda1831d1473ad944b01ad50535c42af4/acdp-0.7.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:723a93fddf800eb13d1f4bc5291d5d35b315c54cea19328c786abc984f88c8ca", size = 1021419, upload-time = "2026-07-06T03:27:15.823Z" },
 ]
-provides-extras = ["dev"]
 
 [[package]]
 name = "acdp-playground"
@@ -52,7 +52,7 @@ multiagent = [
 
 [package.metadata]
 requires-dist = [
-    { name = "acdp", editable = "../acdp-rs/bindings/acdp-py" },
+    { name = "acdp", specifier = ">=0.7.0" },
     { name = "crewai", marker = "extra == 'multiagent'", specifier = ">=0.86" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },

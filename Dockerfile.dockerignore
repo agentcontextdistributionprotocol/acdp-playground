@@ -1,7 +1,7 @@
-# BuildKit reads this (named <dockerfile>.dockerignore) because the build
-# context is the PARENT dir. Patterns are relative to that context root, which
-# holds acdp-playground/ and acdp-rs/ side by side. Keep the context small and
-# never ship local venvs, caches, the Rust target dir, or gitignored plans.
+# BuildKit reads this (named <dockerfile>.dockerignore) for the playground
+# build, whose context is now this repo itself. Patterns are relative to that
+# context root. Keep the context small and never ship local venvs, caches, or
+# gitignored plans.
 **/.git
 **/.venv
 **/__pycache__
@@ -11,7 +11,6 @@
 **/.mypy_cache
 **/node_modules
 **/.DS_Store
-acdp-playground/plans
-acdp-playground/.claude
-acdp-playground/.env
-acdp-rs/target
+plans
+.claude
+.env
