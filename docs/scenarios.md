@@ -40,6 +40,7 @@ an async `run(spec, events)` coroutine, and is auto-discovered at import time by
 | `s29_transparency_log` | Transparency Log Proofs | Signed checkpoint + rebuilt-leaf inclusion + consistency against a retained root; tampered proofs fail `invalid_log_proof` (RFC-ACDP-0012) | degrades |
 | `s30_head_receipt_freshness` | Lineage-Head Receipt Freshness | `/current` answers are registry-signed; bindings, `as_of` freshness/stale policy, replayed pre-supersession receipts rejected (RFC-ACDP-0011) | degrades |
 | `s31_witness_cosigning` | Transparency-Log Witness Cosigning | An independent did:key witness discharges the §7 obligation (checkpoint signature + consistency) then cosigns the checkpoint; the consumer verifies the cosignature and an N-witnessed quorum; a cosignature over a tampered root fails `invalid_witness_cosignature` (RFC-ACDP-0015) | degrades |
+| `s32_key_revocation` | Producer Key-Revocation Signal | A producer rotates K1→K2 and publishes a signed `key-revocation` context (`revoked_key_fingerprint`=K1, `compromised_since`=T). A consumer (`parse_key_revocation` + `classify_under_revocation`) verifies a K1-signed context with a receipt-attested `created_at` before T as historically authorized (pre-compromise); at/after T or with no verified receipt it fails closed; a K1-signed revocation of K1 is rejected (not self-signed) (RFC-ACDP-0014) | degrades |
 
 ## Scenario waves
 
@@ -107,6 +108,20 @@ sibling repos:
   `invalid_witness_cosignature` at the §8 checkpoint binding and earns no
   quorum credit. The deterministic core runs with no registry; the live half
   publishes twice to registry-c and cosigns the real `/log/checkpoint`,
+  degrading gracefully.
+- **ACDP 0.3.0 key revocation (S32)** — the producer **key-revocation signal**
+  (RFC-ACDP-0014), the time-scoping scalpel that rotation is not. A did:web
+  producer holding two keys under one DID rotates K1→K2 and publishes a signed
+  `key-revocation` context that names K1's fingerprint with a compromise
+  boundary T. The consumer drives `AcdpVerifier.parse_key_revocation`
+  (§5 producer-signed / not-self-signed classification) and
+  `classify_under_revocation` (§7 boundary rule): a K1-signed context whose
+  **receipt-attested** `created_at` is before T is *historically authorized
+  (pre-compromise)*; at/after T, or with no verified receipt, it fails closed;
+  and a revocation of K1 signed by K1 itself is rejected. The deterministic
+  core runs with no registry; the live half publishes a genuine
+  `key-revocation`-typed context to registry-c (proving a real 0.3.0 registry
+  admits the §4 type) and runs the §7 boundary against a genuine receipt time,
   degrading gracefully.
 
 ## Graceful degradation

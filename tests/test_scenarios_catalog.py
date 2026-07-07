@@ -46,6 +46,8 @@ EXPECTED = {
     "s30_head_receipt_freshness",
     # ACDP 0.4 (RFC-ACDP-0015): transparency-log witness cosigning.
     "s31_witness_cosigning",
+    # ACDP 0.3.0 (RFC-ACDP-0014): producer key-revocation signal.
+    "s32_key_revocation",
 }
 
 
