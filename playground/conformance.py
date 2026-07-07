@@ -22,11 +22,16 @@ most a static admin bearer, which keeps them robust against demo-stack config.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from urllib.parse import quote
 
 import httpx
+from acdp import AcdpCanonicalizer, AcdpProducer
 
 from acdp_client.models import parse_error_envelope
 from playground.config import Settings
@@ -35,12 +40,32 @@ from playground.config import Settings
 # not-found checks only need the *shape* to be valid — the registry rejects the
 # reserved tenant / reports not-found before any real lookup matters.
 _PROBE_CTX_ID = "acdp://registry-a.playground.local/00000000-0000-4000-8000-0000000000ff"
+# A well-formed, never-published ctx_id on the receipts registry's own
+# authority, for the lifecycle-endpoint probe (a retract of a context that does
+# not exist / is not the caller's must fail closed with the ACDP envelope).
+_RECEIPTS_PROBE_CTX_ID = "acdp://registry-c.playground.local/00000000-0000-4000-8000-0000000000fe"
 _ACDP_CONTENT_TYPE = "application/acdp+json"
 
-# Spec lines a conforming registry in this stack may advertise. Both are Final:
-# 0.2.0 (receipts / trust hardening) and 0.3.0 (lifecycle, lineage-head
-# receipts, transparency log — RFC-ACDP-0011/0012/0013).
-_ACCEPTED_ACDP_VERSIONS = frozenset({"0.2.0", "0.3.0"})
+# Spec lines a conforming registry in this stack may advertise. All Final:
+# 0.2.0 (receipts / trust hardening), 0.3.0 (lifecycle, lineage-head receipts,
+# transparency log — RFC-ACDP-0011/0012/0013), and 0.4.0 (witness cosigning —
+# RFC-ACDP-0015). Accepting 0.4.0 keeps the profile probe green once a future
+# 0.4.0-advertising registry ships.
+_ACCEPTED_ACDP_VERSIONS = frozenset({"0.2.0", "0.3.0", "0.4.0"})
+
+# RFC-ACDP-0011/0012/0013 server-profile names, advertised at
+# ``GET /.well-known/acdp.json`` when the registry runs the corresponding 0.3.0
+# surface. The 0.3.0-endpoint probes below are scoped to when the profile is
+# actually advertised: advertised-but-broken is a hard failure (mock drift),
+# not-advertised is a documented skip (a legitimately-0.2.0 registry).
+_LIFECYCLE_PROFILE = "acdp-registry-lifecycle"
+_HEAD_RECEIPTS_PROFILE = "acdp-registry-head-receipts"
+_LOG_PROFILE = "acdp-registry-transparency-log"
+
+# Deterministic did:key producer for the stateful 0.3.0 probes. A fixed seed →
+# a fixed content_hash → an idempotent republish, so re-running the probe suite
+# never unboundedly grows the registry's Merkle log or lineage set.
+_PROBE_SEED = hashlib.sha256(b"acdp-playground:conformance:0.3.0-probe").digest()
 
 
 @dataclass(frozen=True)
@@ -179,6 +204,254 @@ async def probe_ingest_body_limit_413(client: httpx.AsyncClient, cfg: LiveConfig
     return f"oversized publish ({len(oversized)} bytes) → 413"
 
 
+# ── 0.3.0 endpoint probes (RFC-ACDP-0011/0012/0013) ─────────────────────────
+#
+# These drive the REAL 0.3.0 contracts on registry-c (the receipts/lifecycle/
+# log registry). Unlike the read-only probes above they publish a deterministic
+# context first where the contract needs live state (a Merkle leaf, a lineage
+# head). They HARD-FAIL when the real binary drifts from the shape the offline
+# mocks encode — the whole point of the live suite — but scope themselves to the
+# advertised profile so a 0.2.0-only registry is a documented skip, not a
+# spurious failure.
+
+
+def _now_ms() -> str:
+    """Canonical millisecond-precision RFC 3339 UTC (RFC-ACDP-0001 §5.3)."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+async def _advertises(client: httpx.AsyncClient, base_url: str, profile: str) -> bool:
+    """Whether the registry at ``base_url`` advertises ``profile`` in its
+    ``GET /.well-known/acdp.json`` capabilities document."""
+    r = await client.get(f"{base_url}/.well-known/acdp.json")
+    assert r.status_code == 200, f"capabilities: expected 200, got {r.status_code} ({r.text[:200]})"
+    return profile in (r.json().get("profiles") or [])
+
+
+async def _publish_probe_context(client: httpx.AsyncClient, cfg: LiveConfig) -> tuple[str, str]:
+    """Publish the deterministic did:key probe context to the receipts registry
+    and return ``(ctx_id, lineage_id)``.
+
+    The seed is fixed so the content_hash is stable: a re-run idempotently
+    replays the same context (RFC-ACDP-0003) rather than growing the log
+    unboundedly. Anonymous publish (registry-c admits did:key producers — see
+    ``probe_did_key_method_advertised``).
+    """
+    producer = AcdpProducer.from_seed_did_key(_PROBE_SEED)
+    raw = producer.build_publish_request(
+        title="conformance 0.3.0 probe context",
+        context_type="data_snapshot",
+        visibility="public",
+        summary="Published by playground.conformance to exercise the 0.3.0 endpoints.",
+        domain="markets",
+        tags=["conformance", "probe"],
+    )
+    r = await client.post(
+        f"{cfg.receipts_registry_url}/contexts",
+        content=raw,
+        headers={"Content-Type": "application/json"},
+    )
+    assert r.status_code in (200, 201), (
+        f"probe publish: expected 200/201, got {r.status_code} ({r.text[:200]})"
+    )
+    body = r.json()
+    return body["ctx_id"], body["lineage_id"]
+
+
+async def probe_log_checkpoint_signed(client: httpx.AsyncClient, cfg: LiveConfig) -> str:
+    """``GET /log/checkpoint`` returns a signed RFC-ACDP-0012 §7 tree head.
+
+    The checkpoint is the log's identity-bearing object; a mock that drifts its
+    shape (version tag, the ``root_hash`` encoding, or the signature block) would
+    silently break every ``verify_log_checkpoint`` consumer. Stateless — a signed
+    head exists even for an empty tree.
+    """
+    if not await _advertises(client, cfg.receipts_registry_url, _LOG_PROFILE):
+        return f"{_LOG_PROFILE} not advertised — /log/checkpoint probe skipped"
+    r = await client.get(f"{cfg.receipts_registry_url}/log/checkpoint")
+    assert r.status_code == 200, (
+        f"log-checkpoint: expected 200, got {r.status_code} ({r.text[:200]})"
+    )
+    c = r.json()
+    assert c.get("checkpoint_version") == "acdp-log/1", (
+        f"log-checkpoint: checkpoint_version {c.get('checkpoint_version')!r} != acdp-log/1"
+    )
+    assert isinstance(c.get("tree_size"), int), f"log-checkpoint: tree_size not an int ({c!r})"
+    assert str(c.get("root_hash", "")).startswith("sha256:"), (
+        f"log-checkpoint: root_hash not a sha256: fingerprint ({c.get('root_hash')!r})"
+    )
+    assert c.get("log_id"), "log-checkpoint: missing log_id"
+    sig = c.get("signature") or {}
+    assert sig.get("algorithm") == "ed25519", (
+        f"log-checkpoint: signature.algorithm {sig.get('algorithm')!r} != ed25519"
+    )
+    assert sig.get("key_id") and sig.get("value"), "log-checkpoint: signature missing key_id/value"
+    return f"/log/checkpoint signed (acdp-log/1, tree_size={c['tree_size']})"
+
+
+async def probe_log_proof_inclusion_and_consistency(
+    client: httpx.AsyncClient, cfg: LiveConfig
+) -> str:
+    """``GET /log/proof`` serves both a §9 inclusion proof and a consistency
+    proof in their closed RFC-ACDP-0012 shapes.
+
+    Publishes the probe context so the tree has ≥1 leaf, reads the live tree
+    size from the checkpoint, then pins the exact member names the SDK's
+    ``verify_log_inclusion`` / ``verify_log_consistency`` consume — including the
+    §9.1 step-4 ``tree_size`` binding between the proof and its embedded
+    checkpoint. A drifted proof shape fails here instead of surfacing as a
+    mysterious ``invalid_log_proof`` in a consumer.
+    """
+    if not await _advertises(client, cfg.receipts_registry_url, _LOG_PROFILE):
+        return f"{_LOG_PROFILE} not advertised — /log/proof probe skipped"
+    ctx_id, _ = await _publish_probe_context(client, cfg)
+    ck = (await client.get(f"{cfg.receipts_registry_url}/log/checkpoint")).json()
+    size = ck["tree_size"]
+    assert isinstance(size, int) and size >= 1, (
+        f"log-proof: tree still empty after publish (tree_size={size!r})"
+    )
+
+    # Inclusion by ctx_id (the consumer, visibility-gated surface).
+    inc = await client.get(f"{cfg.receipts_registry_url}/log/proof", params={"ctx_id": ctx_id})
+    assert inc.status_code == 200, (
+        f"log-proof(inclusion): expected 200, got {inc.status_code} ({inc.text[:200]})"
+    )
+    ip = inc.json()
+    for k in ("log_id", "leaf_index", "tree_size", "inclusion_path", "log_checkpoint"):
+        assert k in ip, f"log-proof(inclusion): missing {k!r} ({ip})"
+    assert isinstance(ip["inclusion_path"], list), "log-proof(inclusion): inclusion_path not a list"
+    assert ip["log_checkpoint"].get("checkpoint_version") == "acdp-log/1", (
+        "log-proof(inclusion): embedded checkpoint not acdp-log/1"
+    )
+    assert ip["tree_size"] == ip["log_checkpoint"]["tree_size"], (
+        "log-proof(inclusion): §9.1 step-4 tree_size binding violated"
+    )
+
+    # Consistency 1 → current size against the retained root.
+    con = await client.get(
+        f"{cfg.receipts_registry_url}/log/proof", params={"first": 1, "second": size}
+    )
+    assert con.status_code == 200, (
+        f"log-proof(consistency): expected 200, got {con.status_code} ({con.text[:200]})"
+    )
+    cp = con.json()
+    for k in (
+        "log_id",
+        "first_tree_size",
+        "second_tree_size",
+        "consistency_path",
+        "log_checkpoint",
+    ):
+        assert k in cp, f"log-proof(consistency): missing {k!r} ({cp})"
+    assert isinstance(cp["consistency_path"], list), (
+        "log-proof(consistency): consistency_path not a list"
+    )
+    assert cp["first_tree_size"] == 1 and cp["second_tree_size"] == size, (
+        f"log-proof(consistency): sizes {cp['first_tree_size']}→{cp['second_tree_size']} != 1→{size}"
+    )
+    assert cp["second_tree_size"] == cp["log_checkpoint"]["tree_size"], (
+        "log-proof(consistency): second_tree_size not bound to the embedded checkpoint"
+    )
+    return f"/log/proof inclusion(leaf={ip['leaf_index']}) + consistency(1→{size})"
+
+
+async def probe_head_receipt_on_current(client: httpx.AsyncClient, cfg: LiveConfig) -> str:
+    """``GET /lineages/{id}/current`` carries a signed ``lineage_head_receipt``.
+
+    The head receipt (RFC-ACDP-0011 §5) is a *sibling* member of the retrieval
+    envelope; a mock that omits it or reshapes it would break the S30 freshness
+    flow silently. Publishes the probe context to guarantee a live lineage head,
+    then pins the ``acdp-lhr/1`` member shape and its lineage binding.
+    """
+    if not await _advertises(client, cfg.receipts_registry_url, _HEAD_RECEIPTS_PROFILE):
+        return f"{_HEAD_RECEIPTS_PROFILE} not advertised — /current head-receipt probe skipped"
+    _, lineage_id = await _publish_probe_context(client, cfg)
+    # The client interpolates the lineage_id into the path verbatim (a
+    # ``lin:sha256:<hex>`` id has no path-breaking ``/``); mirror that here.
+    r = await client.get(f"{cfg.receipts_registry_url}/lineages/{lineage_id}/current")
+    assert r.status_code == 200, f"current: expected 200, got {r.status_code} ({r.text[:200]})"
+    full = r.json()
+    hr = full.get("lineage_head_receipt")
+    assert hr is not None, (
+        "current: head-receipts profile advertised but no lineage_head_receipt member served"
+    )
+    assert hr.get("receipt_version") == "acdp-lhr/1", (
+        f"current(head-receipt): receipt_version {hr.get('receipt_version')!r} != acdp-lhr/1"
+    )
+    for k in ("registry_did", "lineage_id", "head_ctx_id", "head_version", "head_status", "as_of"):
+        assert k in hr, f"current(head-receipt): missing {k!r} ({hr})"
+    sig = hr.get("signature") or {}
+    assert sig.get("algorithm") == "ed25519" and sig.get("key_id") and sig.get("value"), (
+        f"current(head-receipt): malformed signature block ({sig})"
+    )
+    assert hr["lineage_id"] == lineage_id, (
+        f"current(head-receipt): lineage_id binding {hr['lineage_id']!r} != {lineage_id!r}"
+    )
+    return f"/lineages/{{id}}/current carries acdp-lhr/1 head receipt (head_version={hr['head_version']})"
+
+
+def _signed_lifecycle_event(signer: AcdpProducer, ctx_id: str, event_type: str) -> str:
+    """A validly-signed RFC-ACDP-0013 §5 lifecycle event (self-contained; does
+    not pull in the scenario registry). Preimage is the RFC-ACDP-0010 §5
+    construction: SHA-256 over JCS(event minus signature), signed as the ASCII
+    ``"sha256:<hex>"`` string."""
+    event = {
+        "event_id": str(uuid.uuid4()),
+        "ctx_id": ctx_id,
+        "event_type": event_type,
+        "occurred_at": _now_ms(),
+        "actor": signer.agent_did,
+        "reason": "conformance probe — unauthorized retract",
+    }
+    canonical = AcdpCanonicalizer.canonicalize(json.dumps(event))
+    preimage = "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
+    event["signature"] = {
+        "algorithm": "ed25519",
+        "key_id": signer.key_id,
+        "value": signer.sign_challenge(preimage),
+    }
+    return json.dumps(event)
+
+
+async def probe_retract_endpoint_fails_closed(client: httpx.AsyncClient, cfg: LiveConfig) -> str:
+    """``POST /contexts/{id}/retract`` exists and fails an unauthorized retract
+    closed with the RFC-ACDP-0007 error envelope.
+
+    Sends a well-formed, validly-signed lifecycle event from a *stranger*
+    did:key naming a context that is not theirs (and does not exist). The §6
+    pipeline MUST refuse it — never a 2xx, and never a bare 404/405 route miss:
+    the response MUST be the ``application/acdp+json`` envelope with a parseable
+    code. This proves the endpoint is wired to real authorization/existence
+    checks, catching a mock that stubbed retract as an unconditional success.
+    """
+    if not await _advertises(client, cfg.receipts_registry_url, _LIFECYCLE_PROFILE):
+        return f"{_LIFECYCLE_PROFILE} not advertised — /retract probe skipped"
+    stranger = AcdpProducer.from_seed_did_key(
+        hashlib.sha256(b"acdp-playground:conformance:retract-stranger").digest()
+    )
+    ctx_id = _RECEIPTS_PROBE_CTX_ID
+    event_json = _signed_lifecycle_event(stranger, ctx_id, "retracted")
+    r = await client.post(
+        f"{cfg.receipts_registry_url}/contexts/{quote(ctx_id, safe='')}/retract",
+        content='{"event":' + event_json + "}",
+        headers={"Content-Type": "application/json"},
+    )
+    assert not r.is_success, (
+        f"retract: an unauthorized retract of a non-existent context unexpectedly "
+        f"succeeded ({r.status_code} {r.text[:200]})"
+    )
+    assert r.status_code in (400, 401, 403, 404, 409, 422), (
+        f"retract: unexpected status {r.status_code} ({r.text[:200]})"
+    )
+    ctype = r.headers.get("content-type", "")
+    assert _ACDP_CONTENT_TYPE in ctype, (
+        f"retract: expected the {_ACDP_CONTENT_TYPE} envelope, got {ctype!r} ({r.text[:200]})"
+    )
+    code = _envelope_code(r)
+    assert code, f"retract: response carried no parseable error code ({r.text[:200]})"
+    return f"/contexts/{{id}}/retract fails closed → {r.status_code} {code}"
+
+
 # ── control-plane probes ───────────────────────────────────────────────────
 
 
@@ -261,7 +534,8 @@ async def probe_capability_algorithm_accepted(client: httpx.AsyncClient, cfg: Li
     return f"capability ecdsa-p256 not rejected by DTO (status {r.status_code})"
 
 
-# Ordered registry → control-plane; consumed by the live suite and smoke --live.
+# Ordered registry → 0.3.0 endpoints → control-plane; consumed by the live
+# suite and smoke --live.
 REGISTRY_PROBES = (
     probe_reserved_tenant_400,
     probe_error_envelope_content_type,
@@ -269,10 +543,18 @@ REGISTRY_PROBES = (
     probe_receipts_profile_advertised,
     probe_did_key_method_advertised,
 )
+# RFC-ACDP-0011/0012/0013 endpoint contracts on registry-c. Real probes: they
+# hard-fail on drift wherever the profile is advertised (mock-drift detection).
+ENDPOINT_0_3_0_PROBES = (
+    probe_log_checkpoint_signed,
+    probe_log_proof_inclusion_and_consistency,
+    probe_head_receipt_on_current,
+    probe_retract_endpoint_fails_closed,
+)
 CONTROL_PLANE_PROBES = (
     probe_cp_events_cap,
     probe_cp_revocations_shape,
     probe_cp_pinned_keys_reload,
     probe_capability_algorithm_accepted,
 )
-ALL_PROBES = REGISTRY_PROBES + CONTROL_PLANE_PROBES
+ALL_PROBES = REGISTRY_PROBES + ENDPOINT_0_3_0_PROBES + CONTROL_PLANE_PROBES

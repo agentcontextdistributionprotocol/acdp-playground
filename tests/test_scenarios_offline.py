@@ -247,6 +247,31 @@ async def test_s31_witness_cosigning_core(offline_stack):
     assert s.get("degraded") is True  # live /log cosigning needs a registry
 
 
+# ── ACDP 0.3.0 (RFC-ACDP-0014) key-revocation deterministic core ─────────
+
+
+async def test_s32_key_revocation_core(offline_stack):
+    res = await _run("s32_key_revocation")
+    assert res.status == "complete"
+    s = res.summary
+    assert s["offline_core_ok"] is True
+    # A producer rotates K1→K2 and publishes a producer-signed key-revocation
+    # context: it verifies under K2 and classifies producer_signed (§5).
+    assert s["rotation_distinct"] is True
+    assert s["revocation_verified"] is True
+    assert s["trust_class"] == "producer_signed"
+    assert s["trust_class_producer_signed"] is True
+    # §7 compromise-boundary semantics against a receipt-attested publish time:
+    # before T → historically authorized (pre-compromise); at/after T and no
+    # receipt → fail closed.
+    assert s["pre_compromise_authorized"] is True
+    assert s["post_compromise_fail_closed"] is True
+    assert s["no_receipt_fail_closed"] is True
+    # §5 step 2: a revocation of K1 signed by K1 itself is rejected.
+    assert s["self_signed_rejected"] is True
+    assert s.get("degraded") is True  # live key-revocation publish needs a registry
+
+
 # ── graceful degradation contract (complete + degraded: true) ────────────
 
 
