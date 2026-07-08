@@ -6,8 +6,18 @@ on:
   pull_request:
     branches: [main]
   # The live-conformance job builds + boots the real registry/CP and is
-  # heavy, so it runs only on manual dispatch — not on every PR.
+  # heavy, so it runs on manual dispatch and a weekly schedule — not on
+  # every PR. The schedule is the mock-drift tripwire: it catches the
+  # real binaries moving under the unit suite's MockTransport assertions.
   workflow_dispatch:
+  schedule:
+    - cron: '17 5 * * 1' # Mondays 05:17 UTC — live conformance only
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Superseded pushes to the same PR cancel the older run; main/schedule
+  # runs are never cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
@@ -18,8 +28,16 @@ defaults:
 
 jobs:
   test:
-    name: pytest + smoke
+    name: pytest + smoke (py${{ matrix.python }})
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # requires-python = ">=3.12"; cover the floor and the version the
+        # docker image / deploys actually run.
+        python: ['3.12', '3.13']
     steps:
       - name: Checkout playground
         uses: actions/checkout@v5
@@ -27,26 +45,33 @@ jobs:
           path: acdp-playground
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v5
         with:
-          version: 'latest'
+          enable-cache: true
+          cache-dependency-glob: acdp-playground/uv.lock
 
       - name: Set up Python
-        run: uv python install 3.13
+        run: uv python install ${{ matrix.python }}
 
       - name: Install dependencies
-        # `--extra dev` pulls in pytest + pytest-asyncio + ruff, which
-        # live under [project.optional-dependencies.dev] in
+        # `--extra dev` pulls in pytest + pytest-asyncio + pytest-cov +
+        # ruff, which live under [project.optional-dependencies.dev] in
         # pyproject.toml. `--frozen` requires the committed uv.lock.
-        run: uv sync --frozen --extra dev
+        run: uv sync --frozen --extra dev --python ${{ matrix.python }}
         env:
           UV_LINK_MODE: copy
 
       - name: Lint (ruff)
         run: uv run ruff check acdp_client playground scripts tests
 
-      - name: Run pytest
-        run: uv run pytest --tb=short
+      - name: Format check (ruff)
+        run: uv run ruff format --check acdp_client playground scripts tests
+
+      - name: Run pytest (with coverage gate)
+        # The floor tracks the offline suite only; live-only paths
+        # (playground/conformance.py probe bodies, degraded-path branches)
+        # are exercised by the `live` job instead.
+        run: uv run pytest --tb=short --cov --cov-report=term --cov-fail-under=80
         env:
           # Offline-safe defaults; no external services needed for
           # the unit suite (smoke check uses an in-process stub).
@@ -57,12 +82,40 @@ jobs:
         env:
           LLM_PROVIDER: mock
 
+  docker:
+    name: docker image builds
+    # The image only ships on version tags (deploy-images.yml), so a broken
+    # Dockerfile would otherwise surface at release time — build (no push)
+    # on every PR instead, sharing the release workflow's layer cache.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout playground
+        uses: actions/checkout@v5
+        with:
+          path: acdp-playground
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build playground image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: acdp-playground
+          file: acdp-playground/Dockerfile
+          push: false
+          cache-from: type=gha,scope=playground
+          cache-to: type=gha,scope=playground,mode=max
+
   live:
     name: live conformance (real registry + control plane)
-    # Manual only (workflow_dispatch): builds the Rust registry + Node CP
-    # images and asserts the playground's contracts against the real binaries.
-    if: github.event_name == 'workflow_dispatch'
+    # Manual dispatch or the weekly schedule: builds the Rust registry +
+    # Node CP images and asserts the playground's contracts against the
+    # real binaries.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout playground
         uses: actions/checkout@v5
@@ -82,9 +135,10 @@ jobs:
           path: acdp-control-plane
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v5
         with:
-          version: 'latest'
+          enable-cache: true
+          cache-dependency-glob: acdp-playground/uv.lock
 
       - name: Set up Python
         run: uv python install 3.13
@@ -106,6 +160,20 @@ jobs:
         run: |
           ACDP_LIVE_STACK=1 uv run pytest -m live --tb=short
           uv run python scripts/smoke_test.py --live
+
+      - name: Collect service logs (on failure)
+        if: failure()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.full.yml \
+            logs --no-color > compose-logs.txt || true
+
+      - name: Upload service logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-compose-logs
+          path: acdp-playground/compose-logs.txt
+          retention-days: 7
 
       - name: Tear down
         if: always()
