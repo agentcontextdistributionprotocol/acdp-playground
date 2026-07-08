@@ -109,6 +109,6 @@ wiring. Key points:
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `ci.yml` | push / PR | `ruff check`, the offline unit suite; live conformance on manual `workflow_dispatch` (boots registry-a + control-plane) |
+| `ci.yml` | push / PR | `ruff check` + `ruff format --check`, the offline unit suite with an 80% coverage gate on Python 3.12 + 3.13, smoke test; PRs also build the playground image (no push); live conformance on manual `workflow_dispatch` **or the weekly schedule** (boots registry-a + control-plane, uploads compose logs on failure) |
 | `deploy-images.yml` | `v*` tag / dispatch | Build + push full-stack ghcr images |
 | `notify-website.yml` | push to `main` touching `docs/**` or `README.md` | Dispatch a `docs-updated` event to `acdp-website` |

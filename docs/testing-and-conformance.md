@@ -25,6 +25,7 @@ reserved-tenant guard. `--live` additionally runs the conformance probes.
 
 ```bash
 make test         # uv run pytest -q
+make cov          # same suite + the coverage gate CI enforces (≥ 80%)
 ```
 
 Fully offline — every registry/CP interaction is faked with
@@ -36,6 +37,23 @@ The suite covers the client (auth, v2 features, signing, idempotency, token
 revoke, safe-http, error envelopes, retry-after, identifiers, pinned-key windows)
 and the scenario catalog (v2, round-2, round-3, the s6/s20 special cases, and a
 mocked end-to-end run).
+
+Two mocked layers execute full scenario bodies offline:
+
+- `tests/test_scenarios_mocked_registry.py` — runs the happy-path scenarios
+  (S2–S5, S7, S8) against a **stateful in-process fake registry** that accepts
+  SDK-signed publish requests, assigns `ctx_id`/`lineage_id`/`version`, and
+  serves retrieval + lineage reads, so the real publish → resolve →
+  derivative-publish flow executes. The fake models wire *shapes* only;
+  protocol semantics stay with the live suite.
+- `tests/test_scenarios_offline.py` — points every backend at an unreachable
+  port and pins the degrade-gracefully contract plus the deterministic
+  crypto/window cores of the auth-dependent and trust scenarios (S9+).
+
+Coverage is measured with `pytest-cov` (`[tool.coverage]` in `pyproject.toml`;
+the optional crewai/langgraph adapters are omitted) and CI fails under **80%**.
+Live-only paths — the `playground/conformance.py` probe bodies — are expected
+to stay uncovered offline; they're exercised by the live job.
 
 ## Live conformance
 
@@ -64,7 +82,8 @@ The probes live in `playground/conformance.py` (shared by both entry points):
 These are **skipped unless `ACDP_LIVE_STACK` is set**. The SSE de-duplication
 check additionally needs `ACDP_LIVE_SSE=1` (the bug only reproduces on a Redis
 `StreamHub`; the demo stack is memory-backed). CI runs the live suite on manual
-`workflow_dispatch` only.
+`workflow_dispatch` **and on a weekly schedule** (Mondays 05:17 UTC) — the
+schedule is the mock-drift tripwire.
 
 ## Linting & formatting
 
@@ -74,6 +93,22 @@ make fmt      # ruff format
 ```
 
 `ruff` is configured in `pyproject.toml` (line length 100, target `py312`).
+CI enforces both `ruff check` **and** `ruff format --check` — run `make fmt`
+before pushing.
+
+## What CI runs
+
+`.github/workflows/ci.yml`, per event:
+
+| Job | When | What |
+|-----|------|------|
+| `test` | push / PR | `ruff check` + `ruff format --check`, pytest with the 80% coverage gate, smoke test — on Python **3.12 and 3.13** |
+| `docker` | PR | Builds the playground image (no push) so a broken `Dockerfile` can't hide until the next release tag; shares the release workflow's layer cache |
+| `live` | `workflow_dispatch` / weekly schedule | Boots registry-a + control-plane from the sibling repos and runs `pytest -m live` + `smoke_test.py --live`; uploads compose logs as an artifact on failure |
+
+Superseded pushes to the same PR cancel the in-flight run. Dependency bumps
+arrive weekly via Dependabot (`uv` lockfile + GitHub Actions, grouped; the
+`acdp` SDK pin is excluded — bumping it is a by-hand semantic change).
 
 ## Helper scripts
 

@@ -297,7 +297,8 @@ shape, the admin pinned-key reload, and that the capability DTO accepts
 `ecdsa-p256` (CP #51). They are **skipped unless `ACDP_LIVE_STACK` is set**, so a
 plain `pytest` stays offline. The SSE de-duplication check additionally needs
 `ACDP_LIVE_SSE=1` (the bug only reproduces on a Redis StreamHub; the demo stack
-is memory-backed). CI runs this suite on manual `workflow_dispatch` only.
+is memory-backed). CI runs this suite on manual `workflow_dispatch` and on a
+weekly schedule, as the tripwire for exactly that kind of drift.
 
 ### TokenManager refresh-reason telemetry
 

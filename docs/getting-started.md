@@ -116,6 +116,7 @@ The SSE stream emits one `StepEvent` per protocol action — `agent.started`,
 | `make smoke` | Offline wiring checks |
 | `make smoke-live` | Smoke checks against a running full stack |
 | `make test` | Unit suite (`pytest -q`, offline) |
+| `make cov` | Unit suite with the coverage gate CI enforces (≥ 80%) |
 | `make test-live` | Live conformance suite (needs `make up-full`) |
 | `make up` / `make down` | Playground + two registries |
 | `make up-full` / `make down-full` | Full stack incl. control plane |
