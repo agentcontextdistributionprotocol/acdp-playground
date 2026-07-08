@@ -5,7 +5,8 @@ drives the `acdp` SDK over HTTP. It owns **transport and host-language
 orchestration**; it does **not** reimplement any protocol primitive.
 
 > **Boundary.** All cryptography (signing/verification), JCS canonicalization,
-> and SSRF IP/scheme classification are **delegated to the `acdp` SDK**
+> SSRF IP/scheme classification, and `did:web` resolution are **delegated to
+> the `acdp` SDK**
 > (`acdp-rs`, imported via its `acdp-py` bindings). The playground's client never
 > goes through the SDK's Rust `RegistryClient`, so it keeps only the parts a host
 > application must own: the `httpx` calls, DNS resolution, the mixed-answer loop,
@@ -41,12 +42,17 @@ client = AcdpClient(
     bearer_token=None,
     run_id=None,
     timeout=30.0,
+    http=None,               # inject an httpx.AsyncClient (tests use MockTransport)
     producer=None,
     token_manager=None,
     tenant_id=None,
     tenant_header_mode="fallback",
 )
 ```
+
+The client is an async context manager; call `aclose()` (or use
+`async with`) when constructing it directly — scenarios normally get clients
+from `AgentBundle`, which closes them at run end.
 
 ### Methods
 
@@ -100,8 +106,9 @@ The playground parses the registry's error envelope into Python exceptions for
 ergonomic handling. **The envelope format and the error codes are defined by the
 protocol/SDK, not here** — see
 [`acdp-rs` errors.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/errors.md).
-All subclass `AcdpHTTPError`, which exposes the parsed `.code`, `.message`,
-`.details`, `.reason`:
+All except `CursorError` subclass `AcdpHTTPError`, which exposes `.status`,
+`.body`, `.url`, plus the parsed `.code`, `.details`, and `.reason`
+(`CursorError` is a plain `RuntimeError` carrying `.code` and `.message`):
 
 | Exception | Trigger |
 |-----------|---------|
@@ -114,7 +121,7 @@ All subclass `AcdpHTTPError`, which exposes the parsed `.code`, `.message`,
 | `InvalidLifecycleTransitionError` | **409** `invalid_lifecycle_transition` — retract of an already-retracted / republish of a never-retracted context |
 | `InvalidLogProofError` | **502** `invalid_log_proof` — a transparency-log artifact failed verification on a federation/consumer path (RFC-ACDP-0012) |
 
-`models.py` also re-exports the code tables (`ERROR_CODES`,
+`models.py` also defines the code tables (`ERROR_CODES`,
 `SIGNATURE_ERROR_CODES`, `LIFECYCLE_ERROR_CODES`) and
 `parse_error_envelope(payload)` so scenarios can
 branch on a machine code. These mirror the registry's emitted codes; they are
@@ -130,11 +137,14 @@ plane's — see
 and [control-plane AUTH.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/AUTH.md).
 
 ```python
-tm = TokenManager(leeway_seconds=30, timeout=15.0)
+tm = TokenManager(http=None, leeway_seconds=30, timeout=15.0)  # all kwargs-only
 cached = await tm.token_for(producer, registry_base_url)   # CachedToken
 tm.invalidate(producer, registry_base_url)                  # force refresh
 await tm.revoke(producer, registry_base_url)                # RFC 7009
 ```
+
+`default_token_manager()` returns a process-wide shared instance for callers
+that don't manage their own lifecycle.
 
 What the playground adds:
 
@@ -142,13 +152,16 @@ What the playground adds:
   401** retry.
 - **Cooperative throttling** — honors a `429/503` + `Retry-After` with one
   capped retry.
-- **Refresh-reason telemetry** — every mint logs `refresh_reason`
-  (`first_use` / `proactive_refresh` / `reactive_401`), `algorithm`,
-  `ttl_seconds`, `elapsed_ms`. `CachedToken.aud` peeks the JWT `aud` claim for
+- **Refresh-reason telemetry** — every mint logs `refresh_reason` (the
+  exported `RefreshReason` values: `first_use` / `proactive_refresh` /
+  `reactive_401`), `algorithm`, `ttl_seconds`, `elapsed_ms`.
+  `CachedToken.aud` peeks the JWT `aud` claim for
   diagnostics only — verification belongs to the issuer.
 
-**Exceptions:** `TokenError` (base), `ChallengeError`, `TokenIssueError`,
-`TokenAuthError` (401 even after refresh — a real authz problem).
+**Exceptions:** `TokenError` (base), `ChallengeError`, `TokenIssueError`.
+(`TokenAuthError` is exported for callers but is not currently raised by the
+manager itself — a 401 that survives the refresh-and-retry surfaces as the
+request's own `AcdpHTTPError`/`NotAuthorizedError`.)
 
 ## `signing.py` — `Producer` abstraction
 
@@ -159,7 +172,7 @@ algorithm. `Producer` is `acdp.AcdpProducer` (Ed25519) **or**
 
 | Helper | Returns |
 |--------|---------|
-| `producer_algorithm(producer)` | `"ed25519"` or `"ecdsa-p256"` |
+| `producer_algorithm(producer)` | `"ed25519"` or `"ecdsa-p256"` (the exported `ALG_ED25519` / `ALG_P256` constants) |
 | `is_p256(producer)` | bool |
 | `public_key_material(producer)` | The public key in the algorithm's encoding |
 | `verify_signature(...)` | Delegates to the SDK verifier |
@@ -176,7 +189,8 @@ Mirrors server-side validation client-side so a caller fails fast:
 - `is_valid_authority(host)` / `validate_origin_registry(value)` — enforce a bare
   DNS hostname (the context-body rules in
   [RFC-ACDP-0002](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0002-context-body.md)).
-- `RESERVED_TENANT = "default"` + `reject_reserved_tenant(t)` — the reserved
+- `RESERVED_TENANT = "default"` + `is_reserved_tenant(t)` /
+  `reject_reserved_tenant(t)` — the reserved
   tenant can never be *asserted* (the registry returns 400, the CP 403); this
   mirrors that rule. See scenario **S20** and the registry's
   [MULTI-TENANCY.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/MULTI-TENANCY.md).
@@ -206,6 +220,14 @@ stable rejection token (`loopback`, `private`, `imds`, `non_https`,
 
 A `Resolver` callable can be injected for tests — this is how **S16** runs fully
 offline.
+
+## did:web re-exports
+
+For consumer-side DID resolution the package re-exports the SDK's `AcdpDid`,
+`AcdpDidDocument`, and `DidResolutionError` — the resolution logic (including
+the assertionMethod-authorization and algorithm-downgrade defenses of
+RFC-ACDP-0008 §3.9) is entirely the SDK's; `acdp_client` only surfaces the
+names so scenarios import one package.
 
 ## Wire types (`models.py`)
 

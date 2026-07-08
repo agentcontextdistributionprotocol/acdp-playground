@@ -18,8 +18,8 @@ the playground fans every protocol step out to the client over **SSE**.
                             │                                     │  │
                             ▼  agent.publish / retrieve / search  │  │
                      ┌──────────────┐   webhook   ┌───────────────┴┐ │
-                     │ acdp_client  │────────────▶│  registry-a/-b │ │
-                     │ (async httpx)│◀────────────│  (Rust binary) │ │
+                     │ acdp_client  │────────────▶│ registry-a/-b/ │ │
+                     │ (async httpx)│◀────────────│ -c (Rust bins) │ │
                      └──────┬───────┘   POST /ctx └───────┬────────┘ │
                             │ sign via acdp (Rust SDK)    │          │
                             ▼                              ▼          │
@@ -36,7 +36,7 @@ the playground fans every protocol step out to the client over **SSE**.
 | `main.py` | FastAPI app, CORS, router wiring, lifespan |
 | `config.py` | `pydantic-settings` over `.env`; `get_settings()` is `lru_cache`d |
 | `api/` | HTTP routers: `health`, `scenarios`, `runs`, `contexts`, `webhooks` |
-| `scenarios/` | Scenario registry, run lifecycle, and the S1–S21 catalog |
+| `scenarios/` | Scenario registry, run lifecycle, and the S1–S32 catalog |
 | `agents/` | `BasePlaygroundAgent` + LangChain / CrewAI / LangGraph adapters |
 | `events.py` | In-process SSE bus — one `asyncio.Queue` per run |
 | `control_plane.py` | Optional fire-and-forget bridge to the control plane |
@@ -69,14 +69,16 @@ project — see
 
 1. **`POST /runs`** (`api/runs.py`) validates the scenario, generates a UUID
    `run_id`, merges scenario defaults with request inputs into a `RunSpec`,
-   creates an event queue (`events.create_queue`), spawns
-   `runner.execute(...)` as a background task, and notifies the control plane of
-   the start. Returns **202** with a `stream_url`.
+   creates an event queue (`events.create_queue`), and spawns
+   `runner.execute(...)` as a background task. Returns **202** with a
+   `stream_url`.
 
-2. **`runner.execute`** (`scenarios/runner.py`) emits `run.started`, calls the
-   scenario's `run(spec, events)` coroutine, then emits `run.complete` (with
-   `contexts_produced` and the `lineage_graph`) or `run.error` (with a captured
-   traceback). The `RunResult` is persisted in an in-process dict and a
+2. **`runner.execute`** (`scenarios/runner.py`) emits `run.started` and
+   notifies the control plane of the start, calls the scenario's
+   `run(spec, events)` coroutine, then emits `run.complete` (with
+   `contexts_produced` and the `lineage_graph`) or `run.error` (with the
+   exception message; the full traceback is kept on the persisted
+   `RunResult.error`). The `RunResult` is persisted in an in-process dict and a
    `notify_run_complete` is fired to the control plane.
 
 3. **The scenario** uses `_factory.py` helpers to mint deterministic agent

@@ -14,13 +14,13 @@ an async `run(spec, events)` coroutine, and is auto-discovered at import time by
 | `s3_fanout` | Fan-out 1→N | One source, parallel facet analyses | needs registry |
 | `s4_chain` | Linear Chain A→B→C | C derives from both A and B | needs registry |
 | `s5_cross_registry` | Cross-Registry Chain | Edge crosses registry-a → registry-b | needs both registries |
-| `s6_restricted` | Restricted Visibility | Audience-gated reads (auth) | needs auth |
+| `s6_restricted` | Restricted Visibility | Audience-gated reads (auth) | needs auth (degrades) |
 | `s7_supersession` | Supersession v1→v2 | Same lineage, two versions | needs registry |
 | `s8_cross_org` | Cross-Org Isolation | Two orgs, no cross-references | needs registry |
-| `s9_p256_publish` | ECDSA-P256 Publish | P-256 signer + verifier parity | needs registry |
+| `s9_p256_publish` | ECDSA-P256 Publish | P-256 signer + verifier parity | core offline; registry round-trip skipped when absent |
 | `s10_tenant_isolation` | Tenant Isolation | JWT-bound tenancy; cross-tenant denied | degrades |
 | `s11_revocation` | Token Revocation | Mint → use → revoke (RFC 7009) | degrades |
-| `s12_key_rotation` | Key Rotation + Reload | Overlapping pinned-key validity windows | degrades |
+| `s12_key_rotation` | Key Rotation + Reload | Overlapping pinned-key validity windows | **fully offline** (CP reload optional) |
 | `s13_policy_deny` | Policy / Authz | Guarded CP endpoint denies/admits | degrades |
 | `s14_domain_pack` | Domain-Pack Gating | Context-type gating on ingest | degrades |
 | `s15_supersession_lineage` | Supersession + guard | `expected_lineage_id` concurrency guard | needs registry |
@@ -31,7 +31,7 @@ an async `run(spec, events)` coroutine, and is auto-discovered at import time by
 | `s20_reserved_tenant` | Reserved-tenant guard | Asserting `default` tenant is rejected | **fully offline** |
 | `s21_capabilities_p256` | P-256 capability | `ecdsa-p256` capability declaration accepted | **fully offline** |
 | `s22_receipts` | Registry Receipts | did:key publish + registry-signed receipt verified under a Require policy | degrades |
-| `s23_receipt_tamper` | Receipt Tamper | Every missing/mutated/mismatched receipt fails closed | **fully offline** |
+| `s23_receipt_tamper` | Receipt Tamper | Every missing/mutated/mismatched receipt fails closed | **fully offline** (degrades only if no receipt seed is configured) |
 | `s24_historical_key` | Historical Key | Pre-rotation context is HistoricallyAuthorized via the receipt + retained key (§9) | degrades |
 | `s25_did_key` | did:key Agents | Ephemeral did:key agents self-verify offline; rotation is a new identity | degrades |
 | `s26_divergence` | Divergence Diagnostics | `explain_hash_mismatch` names the JCS divergence cause | degrades |
@@ -127,9 +127,11 @@ sibling repos:
 ## Graceful degradation
 
 Scenarios marked *degrades* complete even without their full infrastructure.
-They set `degraded: true` in the `RunResult.summary` and exercise the
-deterministic core offline (P-256 crypto, cursor logic, tenant-header policy,
-rotation windows, `Retry-After`). The auth-dependent paths are validated against
+They set `degraded: true` in the `RunResult.summary` and exercise their
+deterministic core offline (receipts, lifecycle, log proofs, tenant-header
+policy, `Retry-After`). S9 (P-256 crypto) and S12 (rotation windows) follow the
+same complete-offline pattern without setting the flag — their optional live
+halves are simply reported as skipped. The auth-dependent paths are validated against
 a mocked registry/CP in the unit suite. See the
 [live auth caveat](deployment.md#live-auth-caveat) for why a stock registry
 can't fully issue tokens to the playground's per-run `did:web` agents.
@@ -140,6 +142,7 @@ Each catalog module exports two symbols:
 
 ```python
 # playground/scenarios/catalog/s1_single_publish.py
+from playground.config import get_settings
 from playground.scenarios.models import ScenarioDef, RunResult, RunSpec, LineageGraph, LineageNode
 from playground.scenarios._factory import AgentBundle, make_langchain_agent
 from playground.agents.base import AgentTask
@@ -155,7 +158,8 @@ SCENARIO = ScenarioDef(
 )
 
 async def run(spec: RunSpec, events) -> RunResult:
-    bundle = AgentBundle(spec, events)
+    settings = get_settings()
+    bundle = AgentBundle(settings, spec.run_id)
     agent = make_langchain_agent(spec, events, bundle, slug="solo", registry="a")
     out = await agent.run(AgentTask(prompt=..., title=..., context_type="data_snapshot"))
     return RunResult(
@@ -173,7 +177,7 @@ async def run(spec: RunSpec, events) -> RunResult:
 | `did_for(authority, slug)` | `did:web:{authority}:agents:{slug}` |
 | `key_id_for(authority, slug)` | `{did}#key-1` |
 | `producer_for(spec, slug, authority, *, algorithm="ed25519")` | Deterministic Ed25519 / P-256 producer from `spec.agent_seed(slug)` |
-| `AgentBundle(spec, events)` | Per-run cache of `AcdpClient`s keyed by `(registry, did, tenant, mode)`; provides `client(...)` and cross-registry `authority_map(...)` |
+| `AgentBundle(settings, run_id)` | Per-run cache of `AcdpClient`s keyed by `(registry, did, tenant, mode)`; provides `client(...)` and cross-registry `authority_map(...)` |
 | `make_langchain_agent(spec, events, bundle, *, slug, registry="a", authenticated=False, algorithm="ed25519", tenant_id=None, ...)` | Build a LangChain agent bound to a producer; `authenticated=True` attaches a token manager |
 
 ### The data model (`scenarios/models.py`)
@@ -183,9 +187,9 @@ async def run(spec: RunSpec, events) -> RunResult:
   `default_inputs`, and the bound `run` coroutine.
 - **`RunSpec`** — per-invocation state: `run_id`, `scenario_id`, `inputs`,
   `registry_mode`, plus `agent_seed(slug)` for deterministic identity.
-- **`RunResult`** — summary returned to the API caller: `status`
-  (`complete`/`failed`), `contexts` (ctx ids), `lineage_graph`, `summary`
-  (free-form, carries `degraded`), `error`.
+- **`RunResult`** — summary returned to the API caller: `run_id`,
+  `scenario_id`, `status` (`complete`/`failed`), `contexts` (ctx ids),
+  `lineage_graph`, `summary` (free-form, carries `degraded`), `error`.
 - **`LineageGraph`** — `nodes` (`LineageNode`: ctx_id, agent_id, title,
   context_type, registry_authority, step) and `edges` (`LineageEdge`: src, dst).
   This is what renders the derivation graph in the UI.

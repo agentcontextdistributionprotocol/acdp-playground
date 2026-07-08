@@ -27,7 +27,7 @@ canonically documented.
 |----------|----------------|
 | [Getting started](getting-started.md) | Install, smoke-test, run the stack, start your first run |
 | [Architecture](architecture.md) | Components, request flow, the run lifecycle, the SSE bus |
-| [Scenarios](scenarios.md) | The S1–S21 catalog, what each proves, and how to author one |
+| [Scenarios](scenarios.md) | The S1–S32 catalog, what each proves, and how to author one |
 | [HTTP API](http-api.md) | Every route on the playground service |
 | [Client SDK](client-sdk.md) | `acdp_client` — the async wrapper the playground drives the SDK through |
 | [Agents](agents.md) | `BasePlaygroundAgent` and the LangChain / CrewAI / LangGraph adapters |

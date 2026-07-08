@@ -59,14 +59,15 @@ errors, and the reserved-tenant guard. No API keys or running registry required.
 ## Run the stack
 
 ```bash
-# Two registries + the playground
+# Three registries + the playground
 cp .env.example .env
 # edit .env: set OPENAI_API_KEY=... (or LLM_PROVIDER=mock for offline runs)
 make up
 ```
 
-This launches the playground on `:8000`, `registry-a` on `:8100`, and
-`registry-b` on `:8200` via `docker-compose.yml`.
+This launches the playground on `:8000`, `registry-a` on `:8100`, `registry-b`
+on `:8200`, and `registry-c` (the receipts-profile registry) on `:8300` via
+`docker-compose.yml`.
 
 For the full stack (adds the control plane on `:3001` and the UI console on
 `:3000`):
@@ -118,9 +119,11 @@ The SSE stream emits one `StepEvent` per protocol action — `agent.started`,
 | `make test` | Unit suite (`pytest -q`, offline) |
 | `make cov` | Unit suite with the coverage gate CI enforces (≥ 80%) |
 | `make test-live` | Live conformance suite (needs `make up-full`) |
-| `make up` / `make down` | Playground + two registries |
+| `make up` / `make down` | Playground + three registries |
 | `make up-full` / `make down-full` | Full stack incl. control plane |
+| `make docker` | Build the compose images without starting them |
 | `make fmt` / `make lint` | `ruff format` / `ruff check` |
+| `make clean` | Remove `.venv` and caches |
 
 ## Offline mode
 

@@ -28,7 +28,7 @@ observability.
 | Method | What it does |
 |--------|--------------|
 | `publish(task, llm_result)` | Builds the signed publish request via `producer.build_publish_request(...)`, POSTs it through `client.publish(...)` (forwarding `task.idempotency_key`), emits `acdp.publish`, returns `AgentOutput` |
-| `supersede(prev_body, task, llm_result, expected_lineage_id=None)` | Carries the lineage forward + auto-increments the version via `build_supersede_request(...)`; optional `expected_lineage_id` is the concurrency guard |
+| `supersede(previous_body_json, task, llm_result, *, expected_lineage_id=None)` | Carries the lineage forward + auto-increments the version via `build_supersede_request(...)`; optional `expected_lineage_id` is the concurrency guard |
 | `retrieve(ctx_id)` | Cross-registry-aware retrieval via `client.resolve(ctx_id, authority_map)`; emits `acdp.retrieve` |
 | `search(**filters)` | `client.search(...)`; emits `acdp.search` |
 | `call_llm(prompt)` | Abstract — subclasses implement the LLM call |
@@ -74,6 +74,12 @@ All three read the LLM provider from settings (`LLM_PROVIDER`, `LLM_MODEL`, and
 the matching API key) and lazy-import their heavyweight dependencies so the base
 install stays light.
 
+> **Catalog usage.** Every scenario in the current catalog (S1–S32) uses
+> `LangChainAgent` via `_factory.make_langchain_agent`; the CrewAI and
+> LangGraph adapters exist as reference implementations (importable from their
+> module paths — `playground.agents` only exports `LangChainAgent`) but no
+> scenario instantiates them yet. Install them with the `multiagent` extra.
+
 ### `LangChainAgent` (`framework = "langchain"`)
 
 The default. If no `llm` is passed, it builds one from settings via
@@ -94,7 +100,7 @@ compiled app is cached; `call_llm` invokes it and returns the `answer`.
 
 ## The LLM factory
 
-`build_llm(provider, model, api_key="")`:
+`build_llm(provider, model, *, api_key="")`:
 
 | `provider` | Result |
 |------------|--------|

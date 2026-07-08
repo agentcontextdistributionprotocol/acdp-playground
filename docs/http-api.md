@@ -10,14 +10,14 @@ The playground exposes a small FastAPI surface. The base URL is
 |--------|------|--------|---------|
 | `GET` | `/` | 200 | Service metadata + endpoint list |
 | `GET` | `/healthz` | 200 | Liveness |
-| `GET` | `/readyz` | 200 | Readiness — pings both registries |
+| `GET` | `/readyz` | 200 | Readiness — pings registry-a and registry-b |
 | `GET` | `/scenarios` | 200 | List the scenario catalog |
 | `GET` | `/scenarios/{id}` | 200 / 404 | One scenario's metadata |
-| `POST` | `/runs` | 202 | Start a scenario run |
+| `POST` | `/runs` | 202 / 404 | Start a scenario run (404: unknown scenario) |
 | `GET` | `/runs/{id}` | 200 / 404 | Poll run status + result |
 | `GET` | `/runs/{id}/events` | 200 | SSE stream of run events |
 | `GET` | `/contexts/{ctx_id}` | 200 / 404 | Retrieve a context from the right registry |
-| `POST` | `/webhooks/acdp` | 204 | Registry → playground webhook ingestion |
+| `POST` | `/webhooks/acdp` | 204 / 400 / 401 | Registry → playground webhook ingestion (400: bad JSON; 401: missing/invalid signature) |
 
 ## Health
 
@@ -127,6 +127,7 @@ Behavior:
 |-------|-------|
 | `type` | One of the event types below |
 | `run_id` | Correlates to the run |
+| `scenario_id` | Set on `run.started` / `run.complete` / `run.error` |
 | `ts` | UTC ISO-8601 timestamp |
 | `agent_id` | Emitting agent's DID (when applicable) |
 | `framework` | `langchain` / `crewai` / `langgraph` |
@@ -135,6 +136,7 @@ Behavior:
 | `contexts_produced`, `lineage_graph` | On `run.complete` |
 | `error` | On `run.error` |
 | `registry_authority`, `tenant_id`, `event_id` | Routing / dedup metadata |
+| `key_fingerprint`, `receipt_present` | ACDP 0.2 trust signals lifted from webhook payloads |
 
 **Event types:** `agent.started`, `llm.thinking`, `acdp.publish`,
 `acdp.retrieve`, `acdp.search`, `acdp.verify`, `auth.token`, `auth.revoke`,

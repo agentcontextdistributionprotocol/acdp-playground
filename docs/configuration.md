@@ -12,11 +12,20 @@ The playground reads settings from environment variables (and a `.env` file) via
 |----------|---------|-------|
 | `REGISTRY_A_URL` | `http://localhost:8100` | Registry-a base URL |
 | `REGISTRY_B_URL` | `http://localhost:8200` | Registry-b base URL |
+| `REGISTRY_C_URL` | `http://localhost:8300` | Registry-c base URL (the receipts-profile registry) |
 | `REGISTRY_A_AUTHORITY` | `registry-a.playground.local` | DID authority for registry-a |
 | `REGISTRY_B_AUTHORITY` | `registry-b.playground.local` | DID authority for registry-b |
+| `REGISTRY_C_AUTHORITY` | `registry-c.playground.local` | DID authority for registry-c |
 
-`Settings.registry_url_for(authority)` and `authority_url_map()` map an authority
-back to its base URL — this is how cross-registry resolution routes retrievals.
+`Settings.registry_url_for(authority)` and `authority_url_map()` map any of the
+three authorities back to its base URL — this is how cross-registry resolution
+routes retrievals.
+
+### Registry receipts (ACDP 0.2, RFC-ACDP-0010)
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `REGISTRY_C_RECEIPT_SEED_B64` | *(demo seed baked in)* | Ed25519 signing seed for registry-c's receipts profile; `Settings.receipts_enabled` is `bool(...)` of it and `registry_c_receipt_public_key_b64()` derives the verify key |
 
 ### LLM provider
 
