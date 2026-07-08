@@ -50,6 +50,7 @@ multiagent = [
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=5",
     "ruff>=0.6",
 ]
 
@@ -75,3 +76,18 @@ asyncio_mode = "auto"
 markers = [
     "live: conformance checks against a running full stack (make up-full). Skipped unless ACDP_LIVE_STACK is set.",
 ]
+
+[tool.coverage.run]
+source = ["acdp_client", "playground"]
+omit = [
+    # Optional-extra agent adapters (crewai / langgraph) aren't installed in
+    # the offline dev env, so their modules can never execute there.
+    "playground/agents/crewai_agent.py",
+    "playground/agents/langgraph_agent.py",
+]
+
+[tool.coverage.report]
+# Live-conformance probe bodies only execute against the real stack
+# (make test-live); the offline floor tracks everything else.
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]
+precision = 1
