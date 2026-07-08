@@ -24,9 +24,7 @@ async def get_context(ctx_id: str) -> JSONResponse:
     settings = get_settings()
     url = settings.registry_url_for(_authority(ctx_id))
     if url is None:
-        raise HTTPException(
-            404, f"no registry mapped for authority: {_authority(ctx_id)}"
-        )
+        raise HTTPException(404, f"no registry mapped for authority: {_authority(ctx_id)}")
     async with AcdpClient(url) as client:
         try:
             ctx = await client.retrieve(ctx_id)

@@ -41,8 +41,8 @@ SCENARIO = ScenarioDef(
     id="s19_cp_did_web_p256",
     name="CP did:web P-256 conformance",
     description="The playground's P-256 agent emits the JWK-only JsonWebKey2020 "
-                "verification method the control plane's did:web resolver now "
-                "accepts (CP #49). Fully offline + deterministic.",
+    "verification method the control plane's did:web resolver now "
+    "accepts (CP #49). Fully offline + deterministic.",
     registry_mode="single",
     agent_count=1,
     framework="langchain",

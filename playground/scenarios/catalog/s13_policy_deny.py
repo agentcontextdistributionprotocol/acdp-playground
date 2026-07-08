@@ -31,8 +31,8 @@ SCENARIO = ScenarioDef(
     id="s13_policy_deny",
     name="Policy / Authz Enforcement",
     description="An unauthenticated request to a guarded control-plane endpoint "
-                "is denied (401/403); the same request with an admin token is "
-                "allowed. Exercises AuthGuard + PolicyGuard.",
+    "is denied (401/403); the same request with an admin token is "
+    "allowed. Exercises AuthGuard + PolicyGuard.",
     registry_mode="single",
     agent_count=0,
     framework="langchain",
@@ -72,9 +72,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         if settings.control_plane_admin_token:
             headers = {"Authorization": f"Bearer {settings.control_plane_admin_token}"}
             try:
-                r_admin = await http.get(
-                    url, params={"since": 0, "limit": 1}, headers=headers
-                )
+                r_admin = await http.get(url, params={"since": 0, "limit": 1}, headers=headers)
                 admin_status = r_admin.status_code
             except httpx.HTTPError as e:
                 summary["error_admin"] = str(e)[:160]
@@ -85,27 +83,35 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
     await events.put(
         StepEvent(
-            type="policy.check", run_id=spec.run_id,
+            type="policy.check",
+            run_id=spec.run_id,
             ts=datetime.now(timezone.utc).isoformat(),
             title="authz enforcement",
             preview=f"anon={anon_status} admin={admin_status}",
         )
     )
 
-    summary.update({
-        "anonymous_status": anon_status,
-        "admin_status": admin_status,
-        "denied_unauthenticated": denied_ok,
-        "allowed_with_admin": allowed_ok,
-    })
+    summary.update(
+        {
+            "anonymous_status": anon_status,
+            "admin_status": admin_status,
+            "denied_unauthenticated": denied_ok,
+            "allowed_with_admin": allowed_ok,
+        }
+    )
     return _result(
-        spec, "complete" if ok else "failed", summary,
+        spec,
+        "complete" if ok else "failed",
+        summary,
         error=None if ok else f"S13 authz expectations failed: {summary}",
     )
 
 
 def _result(spec: RunSpec, status: str, summary: dict, error: str | None = None) -> RunResult:
     return RunResult(
-        run_id=spec.run_id, scenario_id=SCENARIO.id,
-        status=status, summary=summary, error=error,  # type: ignore[arg-type]
+        run_id=spec.run_id,
+        scenario_id=SCENARIO.id,
+        status=status,
+        summary=summary,
+        error=error,  # type: ignore[arg-type]
     )

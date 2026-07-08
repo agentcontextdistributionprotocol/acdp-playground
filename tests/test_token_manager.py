@@ -46,9 +46,7 @@ def _make_handler(
         if request.url.path == "/auth/challenge":
             counter["challenges"] += 1
             if challenge_status != 200:
-                return httpx.Response(
-                    challenge_status, text="challenge denied", request=request
-                )
+                return httpx.Response(challenge_status, text="challenge denied", request=request)
             expires_at = int(time.time()) + 120
             body = {
                 "nonce": f"n-{counter['challenges']}",
@@ -61,9 +59,7 @@ def _make_handler(
         if request.url.path == "/auth/token":
             counter["tokens"] += 1
             if token_status != 200:
-                return httpx.Response(
-                    token_status, text="token denied", request=request
-                )
+                return httpx.Response(token_status, text="token denied", request=request)
             body = {
                 "token": f"jwt-token-{counter['tokens']}",
                 "token_type": "Bearer",
@@ -101,9 +97,7 @@ async def test_concurrent_token_for_is_single_flight():
     tm = TokenManager(http=http)
     p = _producer()
 
-    results = await asyncio.gather(
-        *(tm.token_for(p, "http://registry.test") for _ in range(20))
-    )
+    results = await asyncio.gather(*(tm.token_for(p, "http://registry.test") for _ in range(20)))
     assert all(r is results[0] for r in results)
     assert counter == {"challenges": 1, "tokens": 1}
 
@@ -177,17 +171,11 @@ async def test_different_registries_get_separate_tokens():
 
 def _mint_success_records(caplog: pytest.LogCaptureFixture) -> list:
     """All `acdp.token.mint.success` records captured so far."""
-    return [
-        r for r in caplog.records
-        if getattr(r, "event", None) == "acdp.token.mint.success"
-    ]
+    return [r for r in caplog.records if getattr(r, "event", None) == "acdp.token.mint.success"]
 
 
 def _mint_start_records(caplog: pytest.LogCaptureFixture) -> list:
-    return [
-        r for r in caplog.records
-        if getattr(r, "event", None) == "acdp.token.mint.start"
-    ]
+    return [r for r in caplog.records if getattr(r, "event", None) == "acdp.token.mint.start"]
 
 
 @pytest.mark.asyncio
@@ -310,10 +298,7 @@ async def test_failed_mint_logs_failure_with_kind(caplog: pytest.LogCaptureFixtu
     with pytest.raises(TokenIssueError):
         await tm.token_for(p, "http://registry.test")
 
-    failures = [
-        r for r in caplog.records
-        if getattr(r, "event", None) == "acdp.token.mint.failure"
-    ]
+    failures = [r for r in caplog.records if getattr(r, "event", None) == "acdp.token.mint.failure"]
     assert len(failures) == 1
     assert failures[0].failure_kind == "token_status"
     assert failures[0].refresh_reason == RefreshReason.FIRST_USE.value

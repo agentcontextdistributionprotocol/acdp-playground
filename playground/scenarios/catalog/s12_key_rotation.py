@@ -31,8 +31,8 @@ SCENARIO = ScenarioDef(
     id="s12_key_rotation",
     name="Key Rotation + Admin Reload",
     description="Overlapping pinned-key validity windows: outgoing and incoming "
-                "keys both verify during the overlap; an admin reload rotates "
-                "without a restart.",
+    "keys both verify during the overlap; an admin reload rotates "
+    "without a restart.",
     registry_mode="single",
     agent_count=1,
     framework="langchain",
@@ -41,15 +41,17 @@ SCENARIO = ScenarioDef(
 
 # The demo windows from config/registry-a.toml.
 _DID = "did:web:registry-a.playground.local:agents:rotating-publisher"
-_OLD = PinnedKey(_DID, "9tsbbuOon0zOWgZYlL3m+nQ0PTVS9/MWOmQ/EQXgpRk=",
-                 "ed25519", valid_until=1780358400)        # → 2026-06-02
-_NEW = PinnedKey(_DID, "V/U68CudHahBq0B1x0+vUM8XQ4ZkmpGwe8G4EScYagI=",
-                 "ed25519", valid_from=1780272000)         # 2026-06-01 →
+_OLD = PinnedKey(
+    _DID, "9tsbbuOon0zOWgZYlL3m+nQ0PTVS9/MWOmQ/EQXgpRk=", "ed25519", valid_until=1780358400
+)  # → 2026-06-02
+_NEW = PinnedKey(
+    _DID, "V/U68CudHahBq0B1x0+vUM8XQ4ZkmpGwe8G4EScYagI=", "ed25519", valid_from=1780272000
+)  # 2026-06-01 →
 
 # Sample instants (unix seconds).
-_BEFORE = 1780185600   # 2026-05-31 — only the old key valid
+_BEFORE = 1780185600  # 2026-05-31 — only the old key valid
 _OVERLAP = 1780300000  # 2026-06-01 — BOTH valid (rotation window)
-_AFTER = 1780444800    # 2026-06-03 — only the new key valid
+_AFTER = 1780444800  # 2026-06-03 — only the new key valid
 
 
 async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
@@ -69,7 +71,8 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
     await events.put(
         StepEvent(
-            type="scenario.note", run_id=spec.run_id,
+            type="scenario.note",
+            run_id=spec.run_id,
             ts=datetime.now(timezone.utc).isoformat(),
             title="pinned-key window evaluation",
             preview=f"before={before} overlap={overlap} after={after}",

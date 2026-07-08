@@ -40,8 +40,8 @@ SCENARIO = ScenarioDef(
     id="s15_supersession_lineage",
     name="Supersession w/ expected_lineage_id",
     description="v1 then v2 via build_supersede_request with an "
-                "expected_lineage_id concurrency guard. Lineage returns both; "
-                "current returns v2. Exercises the SDK supersede path.",
+    "expected_lineage_id concurrency guard. Lineage returns both; "
+    "current returns v2. Exercises the SDK supersede path.",
     registry_mode="single",
     agent_count=1,
     framework="langchain",
@@ -63,7 +63,8 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         v1_guard_rejected = False
         try:
             agent.producer.build_publish_request(
-                title="probe", context_type="data_snapshot",
+                title="probe",
+                context_type="data_snapshot",
                 expected_lineage_id="lin:sha256:" + "0" * 64,
             )
         except Exception:  # noqa: BLE001 — expected rejection
@@ -123,7 +124,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 ts=datetime.now(timezone.utc).isoformat(),
                 title="supersession outcome",
                 preview=f"v1_guard_rejected={v1_guard_rejected} "
-                        f"same_lineage={same_lineage} v2_version={v2.version}",
+                f"same_lineage={same_lineage} v2_version={v2.version}",
             )
         )
 
@@ -134,12 +135,22 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             contexts=[v1.ctx_id, v2.ctx_id],
             lineage_graph=LineageGraph(
                 nodes=[
-                    LineageNode(ctx_id=v1.ctx_id, agent_id=agent.agent_did,
-                                title=f"{topic} — v1", context_type="data_snapshot",
-                                registry_authority=authority, step=1),
-                    LineageNode(ctx_id=v2.ctx_id, agent_id=agent.agent_did,
-                                title=f"{topic} — v2", context_type="data_snapshot",
-                                registry_authority=authority, step=2),
+                    LineageNode(
+                        ctx_id=v1.ctx_id,
+                        agent_id=agent.agent_did,
+                        title=f"{topic} — v1",
+                        context_type="data_snapshot",
+                        registry_authority=authority,
+                        step=1,
+                    ),
+                    LineageNode(
+                        ctx_id=v2.ctx_id,
+                        agent_id=agent.agent_did,
+                        title=f"{topic} — v2",
+                        context_type="data_snapshot",
+                        registry_authority=authority,
+                        step=2,
+                    ),
                 ],
                 edges=[LineageEdge(src=v1.ctx_id, dst=v2.ctx_id)],
             ),

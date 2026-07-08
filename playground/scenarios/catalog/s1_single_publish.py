@@ -21,7 +21,7 @@ SCENARIO = ScenarioDef(
     id="s1_single_publish",
     name="Single Publish",
     description="One agent publishes one context. Smallest possible round-trip "
-                "through the SDK + registry.",
+    "through the SDK + registry.",
     registry_mode="single",
     agent_count=1,
     framework="langchain",

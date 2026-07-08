@@ -34,8 +34,8 @@ SCENARIO = ScenarioDef(
     id="s18_idempotency",
     name="Idempotent publish",
     description="Re-sending a publish with the same Idempotency-Key replays the "
-                "first response — one context, never two (registry #24). "
-                "Degrades gracefully without the registry.",
+    "first response — one context, never two (registry #24). "
+    "Degrades gracefully without the registry.",
     registry_mode="single",
     agent_count=1,
     framework="langchain",
@@ -84,16 +84,24 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             summary["degraded"] = True
             await note("degraded", f"registry unavailable: {e.status}")
             return RunResult(
-                run_id=spec.run_id, scenario_id=SCENARIO.id, status="complete",
-                contexts=[], summary=summary, error=None,
+                run_id=spec.run_id,
+                scenario_id=SCENARIO.id,
+                status="complete",
+                contexts=[],
+                summary=summary,
+                error=None,
             )
         except Exception as e:  # noqa: BLE001 — transport down → degrade
             log.warning("S18 publish failed (registry down?): %s", e)
             summary["degraded"] = True
             await note("degraded", f"registry unavailable: {type(e).__name__}")
             return RunResult(
-                run_id=spec.run_id, scenario_id=SCENARIO.id, status="complete",
-                contexts=[], summary=summary, error=None,
+                run_id=spec.run_id,
+                scenario_id=SCENARIO.id,
+                status="complete",
+                contexts=[],
+                summary=summary,
+                error=None,
             )
 
         replayed = first.ctx_id == second.ctx_id

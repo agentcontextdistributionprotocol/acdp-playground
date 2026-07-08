@@ -58,9 +58,7 @@ def _auth_handler_with_retrieve(
             )
         if request.url.path.startswith("/contexts/"):
             state["retrieves"] += 1
-            state["tokens_seen"].append(
-                request.headers.get("authorization", "")
-            )
+            state["tokens_seen"].append(request.headers.get("authorization", ""))
             status = first_retrieve_status if state["retrieves"] == 1 else second_retrieve_status
             if status != 200:
                 return httpx.Response(status, text="denied", request=request)

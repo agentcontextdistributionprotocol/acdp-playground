@@ -123,18 +123,14 @@ class ControlPlaneClient:
         url = self._base + path
         headers = {"Content-Type": "application/json"}
         if self._settings.control_plane_hmac_secret:
-            headers["X-ACDP-Signature"] = _sign(
-                self._settings.control_plane_hmac_secret, body
-            )
+            headers["X-ACDP-Signature"] = _sign(self._settings.control_plane_hmac_secret, body)
         if extra_headers:
             headers.update(extra_headers)
         try:
             client = await self._client()
             r = await client.post(url, content=body, headers=headers)
             if r.status_code in _RETRYABLE:
-                delay = parse_retry_after(
-                    r.headers.get("retry-after"), now=time.time()
-                )
+                delay = parse_retry_after(r.headers.get("retry-after"), now=time.time())
                 if delay is not None:
                     await asyncio.sleep(min(delay, _MAX_RETRY_DELAY))
                     r = await client.post(url, content=body, headers=headers)
@@ -249,9 +245,7 @@ class ControlPlaneClient:
             return None
         return r.json()
 
-    async def revocations(
-        self, *, since_ms: int = 0, limit: int = 200
-    ) -> dict[str, Any] | None:
+    async def revocations(self, *, since_ms: int = 0, limit: int = 200) -> dict[str, Any] | None:
         """Read the cross-issuer revocation feed (admin-only).
 
         Returns ``{"entries": [...], "next_cursor": <int|null>}`` or None
@@ -263,9 +257,7 @@ class ControlPlaneClient:
         url = self._base + "/auth/revocations"
         try:
             client = await self._client()
-            r = await client.get(
-                url, params={"since": since_ms, "limit": limit}, headers=admin
-            )
+            r = await client.get(url, params={"since": since_ms, "limit": limit}, headers=admin)
         except httpx.HTTPError as e:
             log.warning("control-plane revocations failed: %s", e)
             return None

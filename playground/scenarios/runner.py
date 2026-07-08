@@ -83,9 +83,7 @@ async def execute(
                 ts=_ts(),
                 scenario_id=scenario.id,
                 contexts_produced=len(result.contexts),
-                lineage_graph=(
-                    result.lineage_graph.model_dump() if result.lineage_graph else None
-                ),
+                lineage_graph=(result.lineage_graph.model_dump() if result.lineage_graph else None),
             )
         )
 

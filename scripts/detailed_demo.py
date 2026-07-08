@@ -58,6 +58,7 @@ def b64_short(s: str) -> str:
 
 def dump_json(obj, *, compact_fields=("signature", "content_hash")) -> None:
     """Pretty-print a dict, abbreviating known-noisy fields."""
+
     def _shrink(node):
         if isinstance(node, dict):
             out = {}
@@ -101,11 +102,11 @@ async def step_0_identities(alpha: AcdpProducer, beta: AcdpProducer) -> None:
     hr("STEP 0 — agent identities (Ed25519, deterministic from seed)")
     for label, p in [("alpha (producer)", alpha), ("beta  (consumer)", beta)]:
         sub(label)
-        kv("agent_did",       p.agent_did)
-        kv("key_id",          p.key_id)
-        kv("public_key_b64",  f"{p.public_key_b64}   ({len(p.public_key_b64)} chars / 32 raw bytes)")
+        kv("agent_did", p.agent_did)
+        kv("key_id", p.key_id)
+        kv("public_key_b64", f"{p.public_key_b64}   ({len(p.public_key_b64)} chars / 32 raw bytes)")
         seed_hex = bytes(p.seed_bytes()).hex()
-        kv("seed (hex)",      f"{seed_hex[:16]}…{seed_hex[-8:]}   ← SECRET, never sent on the wire")
+        kv("seed (hex)", f"{seed_hex[:16]}…{seed_hex[-8:]}   ← SECRET, never sent on the wire")
 
 
 async def call_llm(prompt: str, label: str) -> str:
@@ -152,15 +153,15 @@ async def step_1_alpha_publish(
     req = json.loads(req_json_str)
 
     kv("wire size", f"{len(req_json_str)} bytes")
-    kv("top-level keys",  ", ".join(req.keys()))
-    kv("agent_id",     req.get("agent_id"))
-    kv("title",        req.get("title"))
-    kv("type",         req.get("type"))
-    kv("visibility",   req.get("visibility"))
+    kv("top-level keys", ", ".join(req.keys()))
+    kv("agent_id", req.get("agent_id"))
+    kv("title", req.get("title"))
+    kv("type", req.get("type"))
+    kv("visibility", req.get("visibility"))
     kv("content_hash", req.get("content_hash"))
     kv("signature.algorithm", req["signature"]["algorithm"])
-    kv("signature.key_id",    req["signature"]["key_id"])
-    kv("signature.value",     b64_short(req["signature"]["value"]))
+    kv("signature.key_id", req["signature"]["key_id"])
+    kv("signature.value", b64_short(req["signature"]["value"]))
 
     sub("full publish-request JSON (signature/hash abbreviated)")
     dump_json(req)
@@ -170,7 +171,7 @@ async def step_1_alpha_publish(
     resp = await client.publish(req_json_str)
     dt = time.monotonic() - t0
 
-    sub(f"registry response  ({dt*1000:0.0f} ms, HTTP 201)")
+    sub(f"registry response  ({dt * 1000:0.0f} ms, HTTP 201)")
     dump_json(resp.model_dump(mode="json"))
     return req, resp
 
@@ -179,13 +180,14 @@ async def step_2_beta_retrieve_and_verify(client: AcdpClient, ctx_id: str):
     hr("STEP 2 — agent BETA: retrieve ALPHA's context → verify signature locally")
 
     from urllib.parse import quote
+
     sub(f"HTTP GET {REG_URL}/contexts/{quote(ctx_id, safe='')}/body")
     t0 = time.monotonic()
     body = await client.retrieve_body(ctx_id)
     dt = time.monotonic() - t0
     body_dict = body.model_dump(mode="json")
 
-    sub(f"registry response  ({dt*1000:0.0f} ms, HTTP 200) — Body envelope")
+    sub(f"registry response  ({dt * 1000:0.0f} ms, HTTP 200) — Body envelope")
     dump_json(body_dict)
 
     sub("local crypto verification (the SDK's AcdpVerifier)")
@@ -204,9 +206,9 @@ async def step_2_beta_retrieve_and_verify(client: AcdpClient, ctx_id: str):
             body_dict["content_hash"],
         )
         kv("signature check", "✓ ok — Ed25519 signature verifies against alpha's pubkey")
-        kv("",                 "  → proves the content_hash was signed by alpha,")
-        kv("",                 "    and (transitively) that the body the registry")
-        kv("",                 "    accepted matched that content_hash.")
+        kv("", "  → proves the content_hash was signed by alpha,")
+        kv("", "    and (transitively) that the body the registry")
+        kv("", "    accepted matched that content_hash.")
     except Exception as e:
         kv("signature check", f"✗ FAILED: {e}")
     return body_dict
@@ -242,17 +244,17 @@ async def step_3_beta_publish_derivative(
     )
     req = json.loads(req_json_str)
 
-    kv("derived_from",          req["derived_from"])
-    kv("content_hash",          req["content_hash"])
-    kv("signature.key_id",      req["signature"]["key_id"])
-    kv("signature.value",       b64_short(req["signature"]["value"]))
+    kv("derived_from", req["derived_from"])
+    kv("content_hash", req["content_hash"])
+    kv("signature.key_id", req["signature"]["key_id"])
+    kv("signature.value", b64_short(req["signature"]["value"]))
 
     sub(f"HTTP POST {REG_URL}/contexts")
     t0 = time.monotonic()
     resp = await client.publish(req_json_str)
     dt = time.monotonic() - t0
 
-    sub(f"registry response  ({dt*1000:0.0f} ms, HTTP 201)")
+    sub(f"registry response  ({dt * 1000:0.0f} ms, HTTP 201)")
     dump_json(resp.model_dump(mode="json"))
     return req, resp
 
@@ -289,9 +291,9 @@ async def main() -> int:
     topic = sys.argv[1] if len(sys.argv) > 1 else "TSMC's 2-nanometer roadmap"
 
     hr("ACDP DETAILED DEMO  •  producer → consumer with real OpenAI calls")
-    kv("registry",  REG_URL)
-    kv("topic",     topic)
-    kv("started",   started)
+    kv("registry", REG_URL)
+    kv("topic", topic)
+    kv("started", started)
 
     alpha = make_producer("demo-alpha")
     beta = make_producer("demo-beta")
@@ -301,13 +303,20 @@ async def main() -> int:
         async with AcdpClient(REG_URL, run_id="detailed-demo") as client_b:
             _, alpha_resp = await step_1_alpha_publish(alpha, client_a, topic)
             alpha_body = await step_2_beta_retrieve_and_verify(
-                client_b, alpha_resp.ctx_id,
+                client_b,
+                alpha_resp.ctx_id,
             )
             _, beta_resp = await step_3_beta_publish_derivative(
-                beta, client_b, alpha_resp.ctx_id, alpha_body, topic,
+                beta,
+                client_b,
+                alpha_resp.ctx_id,
+                alpha_body,
+                topic,
             )
             await step_4_verify_lineage(
-                client_b, alpha_resp.lineage_id, beta_resp.ctx_id,
+                client_b,
+                alpha_resp.lineage_id,
+                beta_resp.ctx_id,
             )
 
     hr("DONE")

@@ -35,7 +35,9 @@ def _p256_seed(seed: bytes) -> bytes:
     candidate = seed
     for _ in range(8):
         try:
-            AcdpP256Producer.from_seed(candidate, "did:web:probe:agents:x", "did:web:probe:agents:x#k")
+            AcdpP256Producer.from_seed(
+                candidate, "did:web:probe:agents:x", "did:web:probe:agents:x#k"
+            )
             return candidate
         except ValueError:
             candidate = hashlib.sha256(candidate).digest()
@@ -69,28 +71,32 @@ def main(argv: list[str] | None = None) -> int:
         if args.algorithm == "ecdsa-p256":
             seed = _p256_seed(seed)
             producer = AcdpP256Producer.from_seed(seed, did, key_id)
-            out.append({
-                "slug": slug,
-                "agent_did": did,
-                "key_id": key_id,
-                "algorithm": "ecdsa-p256",
-                "public_key_sec1_b64": producer.public_key_sec1_b64,
-                "public_key_jwk": json.loads(producer.public_key_jwk),
-                "verification_method": json.loads(
-                    producer.did_verification_method(key_id, did)
-                ),
-                "seed_hex": seed.hex(),
-            })
+            out.append(
+                {
+                    "slug": slug,
+                    "agent_did": did,
+                    "key_id": key_id,
+                    "algorithm": "ecdsa-p256",
+                    "public_key_sec1_b64": producer.public_key_sec1_b64,
+                    "public_key_jwk": json.loads(producer.public_key_jwk),
+                    "verification_method": json.loads(
+                        producer.did_verification_method(key_id, did)
+                    ),
+                    "seed_hex": seed.hex(),
+                }
+            )
         else:
             producer = AcdpProducer.from_seed(seed, did, key_id)
-            out.append({
-                "slug": slug,
-                "agent_did": did,
-                "key_id": key_id,
-                "algorithm": "ed25519",
-                "public_key_b64": producer.public_key_b64,
-                "seed_hex": seed.hex(),
-            })
+            out.append(
+                {
+                    "slug": slug,
+                    "agent_did": did,
+                    "key_id": key_id,
+                    "algorithm": "ed25519",
+                    "public_key_b64": producer.public_key_b64,
+                    "seed_hex": seed.hex(),
+                }
+            )
     print(json.dumps(out, indent=2))
     return 0
 

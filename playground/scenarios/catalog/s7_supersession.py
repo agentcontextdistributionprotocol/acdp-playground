@@ -28,8 +28,8 @@ SCENARIO = ScenarioDef(
     id="s7_supersession",
     name="Supersession (v1 → v2)",
     description="One agent publishes v1, then publishes a revised v2 that "
-                "supersedes v1 (same lineage, new version). Lineage query "
-                "returns both; current returns v2.",
+    "supersedes v1 (same lineage, new version). Lineage query "
+    "returns both; current returns v2.",
     registry_mode="single",
     agent_count=1,
     framework="langchain",
@@ -85,12 +85,22 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             contexts=[v1.ctx_id, v2.ctx_id],
             lineage_graph=LineageGraph(
                 nodes=[
-                    LineageNode(ctx_id=v1.ctx_id, agent_id=agent.agent_did,
-                                title=v1.title, context_type="data_snapshot",
-                                registry_authority=auth, step=1),
-                    LineageNode(ctx_id=v2.ctx_id, agent_id=agent.agent_did,
-                                title=v2.title, context_type="data_snapshot",
-                                registry_authority=auth, step=2),
+                    LineageNode(
+                        ctx_id=v1.ctx_id,
+                        agent_id=agent.agent_did,
+                        title=v1.title,
+                        context_type="data_snapshot",
+                        registry_authority=auth,
+                        step=1,
+                    ),
+                    LineageNode(
+                        ctx_id=v2.ctx_id,
+                        agent_id=agent.agent_did,
+                        title=v2.title,
+                        context_type="data_snapshot",
+                        registry_authority=auth,
+                        step=2,
+                    ),
                 ],
                 edges=[LineageEdge(src=v1.ctx_id, dst=v2.ctx_id)],
             ),

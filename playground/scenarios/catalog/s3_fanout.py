@@ -22,7 +22,7 @@ SCENARIO = ScenarioDef(
     id="s3_fanout",
     name="Fan-out (1 → N)",
     description="One producer publishes a base context. Three consumers run in "
-                "parallel, each producing a domain-specific derivative.",
+    "parallel, each producing a domain-specific derivative.",
     registry_mode="single",
     agent_count=4,
     framework="langchain",
@@ -49,7 +49,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         prod_out = await producer.run(
             AgentTask(
                 prompt=f"Write a structured brief on {topic}. Include market size, "
-                       f"key players, and unknowns.",
+                f"key players, and unknowns.",
                 title=f"Brief — {topic}",
                 context_type="data_snapshot",
                 domain="pharma",
@@ -60,8 +60,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         async def make_derivative(consumer, facet: str):
             return await consumer.run(
                 AgentTask(
-                    prompt=f"From the brief, write a 4-sentence analysis focused on "
-                           f"'{facet}'.",
+                    prompt=f"From the brief, write a 4-sentence analysis focused on '{facet}'.",
                     title=f"Facet ({facet}) — {topic}",
                     context_type="analysis",
                     domain="pharma",

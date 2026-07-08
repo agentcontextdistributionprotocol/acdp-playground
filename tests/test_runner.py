@@ -19,9 +19,7 @@ def _spec(run_id: str) -> RunSpec:
 
 
 def _scenario(run_fn) -> ScenarioDef:
-    return ScenarioDef(
-        id="unit", name="Unit", description="runner unit test", run=run_fn
-    )
+    return ScenarioDef(id="unit", name="Unit", description="runner unit test", run=run_fn)
 
 
 def test_get_result_unknown_run_is_none():

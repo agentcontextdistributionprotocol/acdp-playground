@@ -62,9 +62,7 @@ async def test_search_all_respects_max_pages():
 
 async def test_invalid_cursor_raises_cursor_error():
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            400, json={"error": {"code": "invalid_cursor", "message": "bad"}}
-        )
+        return httpx.Response(400, json={"error": {"code": "invalid_cursor", "message": "bad"}})
 
     client = _client(handler)
     with pytest.raises(CursorError) as ei:
@@ -74,9 +72,7 @@ async def test_invalid_cursor_raises_cursor_error():
 
 async def test_cursor_expired_raises_cursor_error():
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            400, json={"error": {"code": "cursor_expired", "message": "stale"}}
-        )
+        return httpx.Response(400, json={"error": {"code": "cursor_expired", "message": "stale"}})
 
     client = _client(handler)
     with pytest.raises(CursorError) as ei:
@@ -103,6 +99,7 @@ def _captured_header(captured: dict):
         captured["x-tenant-id"] = request.headers.get("x-tenant-id")
         captured["authorization"] = request.headers.get("authorization")
         return httpx.Response(200, json={"matches": []})
+
     return handler
 
 
@@ -115,9 +112,7 @@ async def test_tenant_header_fallback_unauthenticated_sends():
 
 async def test_tenant_header_fallback_authenticated_suppressed():
     cap: dict = {}
-    client = _client(
-        _captured_header(cap), tenant_id="tenant-a", bearer_token="static-token"
-    )
+    client = _client(_captured_header(cap), tenant_id="tenant-a", bearer_token="static-token")
     await client.search("q")
     # Authenticated → fallback suppresses the header (claim is authoritative).
     assert cap["x-tenant-id"] is None
@@ -127,8 +122,10 @@ async def test_tenant_header_fallback_authenticated_suppressed():
 async def test_tenant_header_always_sends_even_authenticated():
     cap: dict = {}
     client = _client(
-        _captured_header(cap), tenant_id="tenant-b",
-        bearer_token="static-token", tenant_header_mode="always",
+        _captured_header(cap),
+        tenant_id="tenant-b",
+        bearer_token="static-token",
+        tenant_header_mode="always",
     )
     await client.search("q")
     assert cap["x-tenant-id"] == "tenant-b"  # conflict-test mode

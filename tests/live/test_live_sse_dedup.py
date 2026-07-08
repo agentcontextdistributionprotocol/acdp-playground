@@ -34,14 +34,16 @@ _N_EVENTS = 3
 _COLLECT_SECONDS = 4.0
 
 
-async def _collect_event_ids(client: httpx.AsyncClient, url: str, token: str, seen: list[str]) -> None:
+async def _collect_event_ids(
+    client: httpx.AsyncClient, url: str, token: str, seen: list[str]
+) -> None:
     headers = {"Authorization": f"Bearer {token}", "Accept": "text/event-stream"}
     async with client.stream("GET", url, headers=headers) as resp:
         resp.raise_for_status()
         async for line in resp.aiter_lines():
             # SSE frames: an `id:` line carries the per-event delivery id.
             if line.startswith("id:"):
-                seen.append(line[len("id:"):].strip())
+                seen.append(line[len("id:") :].strip())
 
 
 async def test_sse_no_duplicate_delivery(live_config: LiveConfig):
@@ -49,9 +51,7 @@ async def test_sse_no_duplicate_delivery(live_config: LiveConfig):
     seen: list[str] = []
     async with httpx.AsyncClient(timeout=_COLLECT_SECONDS + 2) as client:
         url = f"{cfg.control_plane_url}/events/stream"
-        collector = asyncio.create_task(
-            _collect_event_ids(client, url, cfg.admin_token, seen)
-        )
+        collector = asyncio.create_task(_collect_event_ids(client, url, cfg.admin_token, seen))
         # Let the subscription establish before producing events.
         await asyncio.sleep(0.5)
 

@@ -35,8 +35,8 @@ SCENARIO = ScenarioDef(
     id="s14_domain_pack",
     name="Domain-Pack Gating",
     description="Lists active domain packs and exercises the ingest context-type "
-                "gate: a base type is accepted, an unknown pack-gated type is "
-                "rejected (400).",
+    "gate: a base type is accepted, an unknown pack-gated type is "
+    "rejected (400).",
     registry_mode="single",
     agent_count=0,
     framework="langchain",
@@ -68,7 +68,9 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
     if not settings.control_plane_enabled:
         return RunResult(
-            run_id=spec.run_id, scenario_id=SCENARIO.id, status="complete",
+            run_id=spec.run_id,
+            scenario_id=SCENARIO.id,
+            status="complete",
             summary={"degraded": True, "reason": "no control plane configured"},
         )
 
@@ -86,7 +88,9 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             summary["degraded"] = True
             summary["error"] = str(e)[:160]
             return RunResult(
-                run_id=spec.run_id, scenario_id=SCENARIO.id, status="complete",
+                run_id=spec.run_id,
+                scenario_id=SCENARIO.id,
+                status="complete",
                 summary=summary,
             )
 
@@ -120,7 +124,8 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
     await events.put(
         StepEvent(
-            type="scenario.note", run_id=spec.run_id,
+            type="scenario.note",
+            run_id=spec.run_id,
             ts=datetime.now(timezone.utc).isoformat(),
             title="domain-pack gating",
             preview=f"packs={summary.get('packs')} base={base_status} unknown={unknown_status}",
@@ -128,7 +133,8 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     )
 
     return RunResult(
-        run_id=spec.run_id, scenario_id=SCENARIO.id,
+        run_id=spec.run_id,
+        scenario_id=SCENARIO.id,
         status="complete" if ok else "failed",
         summary=summary,
         error=None if ok else f"S14 domain-pack gating unexpected: {summary}",

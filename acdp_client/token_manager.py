@@ -276,11 +276,7 @@ class TokenManager:
         pending = self._pending_reasons.pop(key, None)
         if pending is not None:
             return pending
-        return (
-            RefreshReason.PROACTIVE_REFRESH
-            if cached is not None
-            else RefreshReason.FIRST_USE
-        )
+        return RefreshReason.PROACTIVE_REFRESH if cached is not None else RefreshReason.FIRST_USE
 
     # ── internals ────────────────────────────────────────────────────────
 
@@ -362,20 +358,25 @@ class TokenManager:
         ch_req = {"agent_id": producer.agent_did}
         try:
             ch_resp = await self._post_cooperative(
-                ch_url, ch_req, reason=reason, producer=producer,
-                registry_base_url=registry_base_url, kind="challenge",
+                ch_url,
+                ch_req,
+                reason=reason,
+                producer=producer,
+                registry_base_url=registry_base_url,
+                kind="challenge",
             )
         except httpx.HTTPError as e:
             self._log_failure(reason, producer, registry_base_url, "challenge_transport", str(e))
             raise ChallengeError(f"POST {ch_url} failed: {e}") from e
         if not ch_resp.is_success:
             self._log_failure(
-                reason, producer, registry_base_url, "challenge_status",
+                reason,
+                producer,
+                registry_base_url,
+                "challenge_status",
                 f"status={ch_resp.status_code}",
             )
-            raise ChallengeError(
-                f"POST {ch_url} -> {ch_resp.status_code}: {ch_resp.text[:300]}"
-            )
+            raise ChallengeError(f"POST {ch_url} -> {ch_resp.status_code}: {ch_resp.text[:300]}")
         ch = ch_resp.json()
         try:
             nonce = ch["nonce"]
@@ -383,7 +384,11 @@ class TokenManager:
             signing_input = ch["signing_input"]
         except (KeyError, ValueError) as e:
             self._log_failure(
-                reason, producer, registry_base_url, "challenge_malformed", str(e),
+                reason,
+                producer,
+                registry_base_url,
+                "challenge_malformed",
+                str(e),
             )
             raise ChallengeError(f"malformed challenge: {e}: {ch}") from None
 
@@ -404,22 +409,31 @@ class TokenManager:
         }
         try:
             tk_resp = await self._post_cooperative(
-                tk_url, tk_req, reason=reason, producer=producer,
-                registry_base_url=registry_base_url, kind="token",
+                tk_url,
+                tk_req,
+                reason=reason,
+                producer=producer,
+                registry_base_url=registry_base_url,
+                kind="token",
             )
         except httpx.HTTPError as e:
             self._log_failure(
-                reason, producer, registry_base_url, "token_transport", str(e),
+                reason,
+                producer,
+                registry_base_url,
+                "token_transport",
+                str(e),
             )
             raise TokenIssueError(f"POST {tk_url} failed: {e}") from e
         if not tk_resp.is_success:
             self._log_failure(
-                reason, producer, registry_base_url, "token_status",
+                reason,
+                producer,
+                registry_base_url,
+                "token_status",
                 f"status={tk_resp.status_code}",
             )
-            raise TokenIssueError(
-                f"POST {tk_url} -> {tk_resp.status_code}: {tk_resp.text[:300]}"
-            )
+            raise TokenIssueError(f"POST {tk_url} -> {tk_resp.status_code}: {tk_resp.text[:300]}")
         tk = tk_resp.json()
         try:
             token = tk["token"]
@@ -435,7 +449,11 @@ class TokenManager:
             )
         except (KeyError, ValueError) as e:
             self._log_failure(
-                reason, producer, registry_base_url, "token_malformed", str(e),
+                reason,
+                producer,
+                registry_base_url,
+                "token_malformed",
+                str(e),
             )
             raise TokenIssueError(f"malformed token response: {e}: {tk}") from None
 
@@ -478,9 +496,7 @@ class TokenManager:
         base = registry_base_url.rstrip("/")
         cached = await self.token_for(producer, base)
         if not cached.jti:
-            log.warning(
-                "cannot revoke: token for %s carries no jti", producer.agent_did
-            )
+            log.warning("cannot revoke: token for %s carries no jti", producer.agent_did)
             return False
         url = f"{base}/auth/token/revoke"
         headers = {
@@ -507,9 +523,7 @@ class TokenManager:
                 },
             )
             return True
-        log.warning(
-            "token revoke %s -> %s: %s", url, resp.status_code, resp.text[:200]
-        )
+        log.warning("token revoke %s -> %s: %s", url, resp.status_code, resp.text[:200])
         return False
 
     def _log_failure(

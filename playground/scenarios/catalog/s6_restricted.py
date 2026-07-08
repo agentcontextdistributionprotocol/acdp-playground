@@ -54,8 +54,8 @@ SCENARIO = ScenarioDef(
     id="s6_restricted",
     name="Restricted Visibility (V2 auth)",
     description="Producer publishes a restricted context with an explicit "
-                "audience. Three retrieval attempts demonstrate the model: "
-                "anonymous denied, outsider denied, audience member allowed.",
+    "audience. Three retrieval attempts demonstrate the model: "
+    "anonymous denied, outsider denied, audience member allowed.",
     registry_mode="single",
     agent_count=3,
     framework="langchain",
@@ -103,16 +103,28 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         # auth-enabled registry. The outsider is authenticated but
         # NOT on the audience list, so they should still be denied.
         producer = make_langchain_agent(
-            spec, events, bundle, slug="confidant-producer",
-            registry="a", authenticated=True,
+            spec,
+            events,
+            bundle,
+            slug="confidant-producer",
+            registry="a",
+            authenticated=True,
         )
         audience_member = make_langchain_agent(
-            spec, events, bundle, slug="confidant-reader",
-            registry="a", authenticated=True,
+            spec,
+            events,
+            bundle,
+            slug="confidant-reader",
+            registry="a",
+            authenticated=True,
         )
         outsider = make_langchain_agent(
-            spec, events, bundle, slug="confidant-outsider",
-            registry="a", authenticated=True,
+            spec,
+            events,
+            bundle,
+            slug="confidant-outsider",
+            registry="a",
+            authenticated=True,
         )
 
         # 2) Producer publishes a restricted context targeting only the
@@ -215,8 +227,9 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 "all_assertions_passed": all_correct,
             },
             error=(
-                None if all_correct else
-                "S6 expected anonymous=denied, outsider=denied, "
+                None
+                if all_correct
+                else "S6 expected anonymous=denied, outsider=denied, "
                 f"audience_member=allowed; got {outcomes}"
             ),
         )

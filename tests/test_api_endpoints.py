@@ -59,8 +59,13 @@ def test_list_scenarios(client: TestClient):
     # serializer exposes the documented fields
     one = next(s for s in scenarios if s["id"] == "s1_single_publish")
     assert set(one) >= {
-        "id", "name", "description", "registry_mode",
-        "agent_count", "framework", "default_inputs",
+        "id",
+        "name",
+        "description",
+        "registry_mode",
+        "agent_count",
+        "framework",
+        "default_inputs",
     }
 
 

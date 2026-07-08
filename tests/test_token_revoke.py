@@ -18,6 +18,7 @@ def _jwt(claims: dict) -> str:
     def seg(d: dict) -> str:
         raw = json.dumps(d).encode()
         return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
     return f"{seg({'alg': 'HS256'})}.{seg(claims)}.signature"
 
 
@@ -48,22 +49,28 @@ class _AuthStub:
     def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if path == "/auth/challenge":
-            return httpx.Response(200, json={
-                "nonce": "n-1",
-                "expires_at": 9999999999,
-                "signing_input": "acdp-registry-auth:v1:n-1:did:x:reg:9999999999",
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "nonce": "n-1",
+                    "expires_at": 9999999999,
+                    "signing_input": "acdp-registry-auth:v1:n-1:did:x:reg:9999999999",
+                },
+            )
         if path == "/auth/token":
             body = json.loads(request.content)
             self.algorithm_seen.append(body["algorithm"])
             claims = {"jti": "j-1", "sub": _DID}
             if self.tenant:
                 claims["tenant"] = self.tenant
-            return httpx.Response(200, json={
-                "token": _jwt(claims),
-                "token_type": "Bearer",
-                "expires_at": 9999999999,
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "token": _jwt(claims),
+                    "token_type": "Bearer",
+                    "expires_at": 9999999999,
+                },
+            )
         if path == "/auth/token/revoke":
             jti = json.loads(request.content)["jti"]
             self.revoked.append(jti)
@@ -109,11 +116,14 @@ async def test_revoke_without_jti_returns_false():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/auth/token":
             seen.append("x")
-            return httpx.Response(200, json={
-                "token": _jwt({"sub": _DID}),  # no jti
-                "token_type": "Bearer",
-                "expires_at": 9999999999,
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "token": _jwt({"sub": _DID}),  # no jti
+                    "token_type": "Bearer",
+                    "expires_at": 9999999999,
+                },
+            )
         return stub.handler(request)
 
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler))

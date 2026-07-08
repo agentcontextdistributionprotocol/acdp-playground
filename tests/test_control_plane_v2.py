@@ -59,9 +59,7 @@ async def test_forward_webhook_inbound_tenant_header_used_when_no_arg():
         return httpx.Response(204)
 
     cp = _cp(handler)
-    await cp.forward_webhook(
-        b"{}", headers={"X-Tenant-Id": "tenant-from-header"}
-    )
+    await cp.forward_webhook(b"{}", headers={"X-Tenant-Id": "tenant-from-header"})
     assert captured["tenant"] == "tenant-from-header"
     await cp.aclose()
 
@@ -186,7 +184,9 @@ async def test_declare_capability_posts_dto():
 
         captured["body"] = _json.loads(request.content)
         captured["tenant"] = request.headers.get("x-tenant-id")
-        return httpx.Response(201, json={"agent_did": "did:web:x", "capability_uri": "urn:acdp:cap:y"})
+        return httpx.Response(
+            201, json={"agent_did": "did:web:x", "capability_uri": "urn:acdp:cap:y"}
+        )
 
     cp = _cp(handler)
     out = await cp.declare_capability(
