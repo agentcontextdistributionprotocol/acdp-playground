@@ -26,11 +26,10 @@ plane / UI images each build from their own sibling repo context
 | `ui-console` | acdp-ui-console | `3000` | yes | full |
 
 The registries store to an **ephemeral SQLite** db on a `tmpfs` mount, so state
-resets on restart. The control plane is backed by the ephemeral `db` Postgres
-service (also `tmpfs`; the CP runs its Drizzle migrations on boot) for the
-event store, run records, and receipt-audit verdicts; auth nonces and
-revocations stay in memory (`AUTH_PERSISTENCE=memory`,
-`STREAM_HUB_STRATEGY=memory`).
+resets on restart. The full overlay provisions an ephemeral `db` Postgres
+service (also `tmpfs`) that the control plane requires; what the CP persists
+there and how it migrates is CP-owned (see the control plane's
+[ARCHITECTURE.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/ARCHITECTURE.md)).
 
 ### Registry config (`config/registry-a.toml`, `-b.toml`, `-c.toml`)
 
@@ -44,9 +43,11 @@ The playground-relevant choices in them are:
 - `cross_registry_resolution = true` — lets S5 route an edge across registries
 - `auth.anonymous_public_reads = true`, `require_tenant = false` (a/b) — keeps
   the legacy single-tenant scenarios (S1–S8) working with anonymous publish
-- **registry-c is the receipts-profile registry** (RFC-ACDP-0010): unlike a/b
-  it has no `[playground]` lax mode and verifies every publish so it can mint a
-  signed receipt — the S22/S24/S27 receipt scenarios target it
+- **registry-c runs the receipts profile** instead of the `[playground]` lax
+  mode — the S22/S24/S27 receipt scenarios target it. What that profile commits
+  the registry to (verify-every-publish, atomic receipt mint, profile
+  advertisement) is registry-owned — see its
+  [RECEIPTS.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/RECEIPTS.md)
 - `webhook.enabled = false` — the registry's SSRF policy refuses the loopback
   `http://playground:8000` target in the demo (webhook-driven events are
   exercised in the unit suite instead)

@@ -23,6 +23,11 @@ routes retrievals.
 
 ### Registry receipts (ACDP 0.2, RFC-ACDP-0010)
 
+The playground owns only the **verify-side** seed it uses to check registry-c's
+receipts; the receipts profile itself (what the registry signs, and when) is
+the registry's — see its
+[RECEIPTS.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/RECEIPTS.md).
+
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `REGISTRY_C_RECEIPT_SEED_B64` | *(demo seed baked in)* | Ed25519 signing seed for registry-c's receipts profile; `Settings.receipts_enabled` is `bool(...)` of it and `registry_c_receipt_public_key_b64()` derives the verify key |
