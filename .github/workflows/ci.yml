@@ -40,12 +40,12 @@ jobs:
         python: ['3.12', '3.13']
     steps:
       - name: Checkout playground
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           path: acdp-playground
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: acdp-playground/uv.lock
@@ -92,15 +92,15 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout playground
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           path: acdp-playground
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build playground image (no push)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: acdp-playground
           file: acdp-playground/Dockerfile
@@ -118,24 +118,24 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout playground
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           path: acdp-playground
 
       - name: Checkout sibling registry (acdp-registry-rs)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: agentcontextdistributionprotocol/acdp-registry-rs
           path: acdp-registry-rs
 
       - name: Checkout sibling control plane (acdp-control-plane)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: agentcontextdistributionprotocol/acdp-control-plane
           path: acdp-control-plane
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: acdp-playground/uv.lock
@@ -169,7 +169,7 @@ jobs:
 
       - name: Upload service logs (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: live-compose-logs
           path: acdp-playground/compose-logs.txt
