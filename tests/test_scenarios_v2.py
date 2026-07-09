@@ -53,7 +53,9 @@ async def test_publish_threads_extended_body_fields():
     agent = _agent(client)
     await agent.run(
         AgentTask(
-            prompt="x", title="T", context_type="analysis",
+            prompt="x",
+            title="T",
+            context_type="analysis",
             data_refs=[{"type": "primary_result", "location": "https://e.com/d.csv"}],
             data_period={"start": "2026-01-01T00:00:00Z", "end": "2026-03-31T23:59:59Z"},
             expires_at="2026-12-31T00:00:00Z",
@@ -103,9 +105,7 @@ def test_publish_omits_empty_extended_fields():
     """No data_refs/period/expires_at → those keys absent (stable hash preimage)."""
     client = _CapturingClient()
     agent = _agent(client)
-    kwargs = agent._publish_kwargs(
-        AgentTask(prompt="x", title="T", context_type="analysis"), "res"
-    )
+    kwargs = agent._publish_kwargs(AgentTask(prompt="x", title="T", context_type="analysis"), "res")
     assert "data_refs" not in kwargs
     assert "data_period" not in kwargs
     assert "expires_at" not in kwargs

@@ -99,9 +99,7 @@ def parse_registry_toml(path: Path) -> list[PinnedEntry]:
                 )
             )
         except KeyError as e:
-            raise SystemExit(
-                f"{path}: pinned_keys entry missing required field {e}: {entry!r}"
-            )
+            raise SystemExit(f"{path}: pinned_keys entry missing required field {e}: {entry!r}")
     return out
 
 
@@ -145,9 +143,7 @@ def parse_env_value(raw: str) -> list[PinnedEntry]:
         if not token:
             continue
         if "=" not in token:
-            raise SystemExit(
-                f"malformed env token (expected did=pubkey): {token!r}"
-            )
+            raise SystemExit(f"malformed env token (expected did=pubkey): {token!r}")
         did, _, value = token.partition("=")
         segs = value.strip().split(":")
         pub = segs[0]

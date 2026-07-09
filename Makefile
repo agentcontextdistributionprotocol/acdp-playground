@@ -1,4 +1,4 @@
-.PHONY: dev dev-local build-sdk run test test-live smoke smoke-live docker up down up-full down-full fmt lint clean
+.PHONY: dev dev-local build-sdk run test test-live cov smoke smoke-live docker up down up-full down-full fmt lint clean
 
 PYTHON ?= python
 UV ?= uv
@@ -28,6 +28,10 @@ run:
 
 test:
 	$(UV) run pytest -q
+
+# Offline suite with the same coverage gate CI enforces.
+cov:
+	$(UV) run pytest -q --cov --cov-report=term-missing --cov-fail-under=80
 
 # Live conformance against a running full stack. Bring it up first
 # (`make up-full` in another shell, or `$(COMPOSE_FULL) up -d --wait`).

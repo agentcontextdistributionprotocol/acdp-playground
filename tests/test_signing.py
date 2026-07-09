@@ -18,6 +18,7 @@ from acdp_client.signing import (
 
 try:
     from acdp import AcdpP256Producer
+
     HAS_P256 = True
 except ImportError:  # pragma: no cover
     HAS_P256 = False

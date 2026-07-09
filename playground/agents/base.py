@@ -142,9 +142,7 @@ class BasePlaygroundAgent:
         return kwargs
 
     async def publish(self, task: AgentTask, llm_result: str) -> AgentOutput:
-        req_json = self.producer.build_publish_request(
-            **self._publish_kwargs(task, llm_result)
-        )
+        req_json = self.producer.build_publish_request(**self._publish_kwargs(task, llm_result))
         resp: PublishResponse = await self.client.publish(
             req_json, idempotency_key=task.idempotency_key
         )

@@ -55,7 +55,9 @@ def _p256_seed(seed: bytes) -> bytes:
     candidate = seed
     for _ in range(8):
         try:
-            AcdpP256Producer.from_seed(candidate, "did:web:probe:agents:x", "did:web:probe:agents:x#k")
+            AcdpP256Producer.from_seed(
+                candidate, "did:web:probe:agents:x", "did:web:probe:agents:x#k"
+            )
             return candidate
         except ValueError:
             candidate = hashlib.sha256(candidate).digest()
@@ -100,16 +102,11 @@ class AgentBundle:
         # anonymous clients cache under None did. Tenant params are part of
         # the key so a "conflict" client (always-send header) doesn't alias
         # the normal fallback client for the same producer.
-        self._clients: dict[
-            tuple[Registry, str | None, str | None, str], AcdpClient
-        ] = {}
+        self._clients: dict[tuple[Registry, str | None, str | None, str], AcdpClient] = {}
         self._token_manager: TokenManager | None = None
 
     def _registry_url(self, registry: Registry) -> str:
-        return (
-            self._settings.registry_a_url if registry == "a"
-            else self._settings.registry_b_url
-        )
+        return self._settings.registry_a_url if registry == "a" else self._settings.registry_b_url
 
     @property
     def token_manager(self) -> TokenManager:
@@ -162,9 +159,7 @@ class AgentBundle:
         """Anonymous client for the registry — for outsider-perspective
         tests that should be denied access to restricted contexts.
         """
-        return self.client(
-            registry, tenant_id=tenant_id, tenant_header_mode=tenant_header_mode
-        )
+        return self.client(registry, tenant_id=tenant_id, tenant_header_mode=tenant_header_mode)
 
     def authority_map(
         self,
@@ -181,11 +176,15 @@ class AgentBundle:
         """
         return {
             self._settings.registry_a_authority: self.client(
-                "a", producer=producer, tenant_id=tenant_id,
+                "a",
+                producer=producer,
+                tenant_id=tenant_id,
                 tenant_header_mode=tenant_header_mode,
             ),
             self._settings.registry_b_authority: self.client(
-                "b", producer=producer, tenant_id=tenant_id,
+                "b",
+                producer=producer,
+                tenant_id=tenant_id,
                 tenant_header_mode=tenant_header_mode,
             ),
         }

@@ -47,7 +47,9 @@ class LangGraphAgent(BasePlaygroundAgent):
             answer: str
 
         async def think(state: State) -> dict[str, str]:
-            return {"draft": f"Outline:\n- key risk\n- opportunity\n- recommendation\n\n{state['prompt']}"}
+            return {
+                "draft": f"Outline:\n- key risk\n- opportunity\n- recommendation\n\n{state['prompt']}"
+            }
 
         async def respond(state: State) -> dict[str, str]:
             resp = await llm.ainvoke(state["draft"])

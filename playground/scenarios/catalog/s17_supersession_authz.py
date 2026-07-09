@@ -47,9 +47,9 @@ SCENARIO = ScenarioDef(
     id="s17_supersession_authz",
     name="Supersession authorization",
     description="A non-owner agent's attempt to supersede another producer's "
-                "context is rejected with superseded_target/not_found "
-                "(lineage-takeover prevention; registry 34aee21). Degrades "
-                "gracefully without the registry.",
+    "context is rejected with superseded_target/not_found "
+    "(lineage-takeover prevention; registry 34aee21). Degrades "
+    "gracefully without the registry.",
     registry_mode="single",
     agent_count=2,
     framework="langchain",
@@ -76,9 +76,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     summary: dict = {"degraded": False}
     try:
         owner = make_langchain_agent(spec, events, bundle, slug="owner", registry="a")
-        attacker = make_langchain_agent(
-            spec, events, bundle, slug="attacker", registry="a"
-        )
+        attacker = make_langchain_agent(spec, events, bundle, slug="attacker", registry="a")
 
         # v1 by the owner.
         try:
@@ -97,8 +95,11 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             summary["degraded"] = True
             await note("degraded", f"registry unavailable: {type(e).__name__}")
             return RunResult(
-                run_id=spec.run_id, scenario_id=SCENARIO.id, status="complete",
-                contexts=[], summary=summary,
+                run_id=spec.run_id,
+                scenario_id=SCENARIO.id,
+                status="complete",
+                contexts=[],
+                summary=summary,
                 error=None,
             )
 

@@ -76,6 +76,4 @@ async def receive_acdp_webhook(request: Request):
     cp = get_control_plane(settings)
     import asyncio
 
-    asyncio.create_task(
-        cp.forward_webhook(body, dict(request.headers), tenant_id=event.tenant_id)
-    )
+    asyncio.create_task(cp.forward_webhook(body, dict(request.headers), tenant_id=event.tenant_id))

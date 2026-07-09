@@ -16,8 +16,13 @@ from acdp_client.models import parse_error_envelope
 
 def test_parse_error_envelope_nested():
     code, msg, details = parse_error_envelope(
-        {"error": {"code": "superseded_target", "message": "nope",
-                   "details": {"reason": "not_found"}}}
+        {
+            "error": {
+                "code": "superseded_target",
+                "message": "nope",
+                "details": {"reason": "not_found"},
+            }
+        }
     )
     assert code == "superseded_target"
     assert msg == "nope"
@@ -46,8 +51,13 @@ async def test_publish_raises_superseded_error_with_reason():
         return httpx.Response(
             400,
             headers={"content-type": "application/acdp+json"},
-            json={"error": {"code": "superseded_target", "message": "denied",
-                            "details": {"reason": "not_found"}}},
+            json={
+                "error": {
+                    "code": "superseded_target",
+                    "message": "denied",
+                    "details": {"reason": "not_found"},
+                }
+            },
         )
 
     client = _client(handler)
@@ -63,8 +73,12 @@ async def test_cross_registry_supersession_reason():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             400,
-            json={"error": {"code": "superseded_target",
-                            "details": {"reason": "cross_registry_supersession_unsupported"}}},
+            json={
+                "error": {
+                    "code": "superseded_target",
+                    "details": {"reason": "cross_registry_supersession_unsupported"},
+                }
+            },
         )
 
     client = _client(handler)
@@ -92,9 +106,7 @@ async def test_framework_413_empty_body_raises_payload_too_large():
     application/acdp+json but may have an empty/non-JSON body — still typed."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            413, headers={"content-type": "application/acdp+json"}, content=b""
-        )
+        return httpx.Response(413, headers={"content-type": "application/acdp+json"}, content=b"")
 
     client = _client(handler)
     with pytest.raises(PayloadTooLargeError) as e:

@@ -5,11 +5,11 @@ from __future__ import annotations
 from playground.pinned_keys import PinnedKey, active_keys
 
 OLD = PinnedKey("did:x", "k-old", "ed25519", valid_until=1780358400)  # → 2026-06-02
-NEW = PinnedKey("did:x", "k-new", "ed25519", valid_from=1780272000)   # 2026-06-01 →
+NEW = PinnedKey("did:x", "k-new", "ed25519", valid_from=1780272000)  # 2026-06-01 →
 
-BEFORE = 1780185600   # 2026-05-31
+BEFORE = 1780185600  # 2026-05-31
 OVERLAP = 1780300000  # 2026-06-01
-AFTER = 1780444800    # 2026-06-03
+AFTER = 1780444800  # 2026-06-03
 
 
 def test_open_ended_key_always_active():

@@ -41,9 +41,9 @@ SCENARIO = ScenarioDef(
     id="s20_reserved_tenant",
     name="Reserved-tenant rejection",
     description="Asserting the reserved 'default' tenant (via X-Tenant-Id or a "
-                "token claim) is refused — it would alias the untenanted bucket. "
-                "Registry 400 schema_violation / CP 403 not_authorized; mirrored "
-                "client-side. Runs fully offline.",
+    "token claim) is refused — it would alias the untenanted bucket. "
+    "Registry 400 schema_violation / CP 403 not_authorized; mirrored "
+    "client-side. Runs fully offline.",
     registry_mode="single",
     agent_count=0,
     framework="langchain",

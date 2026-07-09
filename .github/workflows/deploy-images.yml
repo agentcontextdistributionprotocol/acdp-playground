@@ -38,6 +38,7 @@ jobs:
   image:
     name: build & push playground image
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       # The playground image installs `acdp` from PyPI, so it builds from just
       # this repo as its own context — no sibling checkout needed.

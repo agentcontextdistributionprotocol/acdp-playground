@@ -4,7 +4,7 @@
 
 Two compose files describe the stack:
 
-- **`docker-compose.yml`** — the playground + two registries
+- **`docker-compose.yml`** — the playground + three registries
 - **`docker-compose.full.yml`** — an overlay adding the control plane and UI
   console (run together via `make up-full`)
 
@@ -20,14 +20,18 @@ plane / UI images each build from their own sibling repo context
 | `playground` | acdp-playground | `8000` | yes | base |
 | `registry-a` | acdp-registry-rs | `8100` | no | base |
 | `registry-b` | acdp-registry-rs | `8200` | no | base |
+| `registry-c` | acdp-registry-rs | `8300` | no | base |
+| `db` (Postgres) | — | *(internal)* | no | full |
 | `control-plane` | acdp-control-plane | `3001` | no | full |
 | `ui-console` | acdp-ui-console | `3000` | yes | full |
 
 The registries store to an **ephemeral SQLite** db on a `tmpfs` mount, so state
-resets on restart. The control plane runs **DB-less** (`AUTH_PERSISTENCE=memory`,
-`STREAM_HUB_STRATEGY=memory`) for the demo.
+resets on restart. The full overlay provisions an ephemeral `db` Postgres
+service (also `tmpfs`) that the control plane requires; what the CP persists
+there and how it migrates is CP-owned (see the control plane's
+[ARCHITECTURE.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/ARCHITECTURE.md)).
 
-### Registry config (`config/registry-a.toml`, `-b.toml`)
+### Registry config (`config/registry-a.toml`, `-b.toml`, `-c.toml`)
 
 These are **demo configs for the registry binary** — the registry owns the
 config schema (see its
@@ -35,10 +39,15 @@ config schema (see its
 The playground-relevant choices in them are:
 
 - `authority` / `port` — `registry-a.playground.local:8100`,
-  `registry-b.playground.local:8200`
+  `registry-b.playground.local:8200`, `registry-c.playground.local:8300`
 - `cross_registry_resolution = true` — lets S5 route an edge across registries
-- `auth.anonymous_public_reads = true`, `require_tenant = false` — keeps the
-  legacy single-tenant scenarios (S1–S8) working with anonymous publish
+- `auth.anonymous_public_reads = true`, `require_tenant = false` (a/b) — keeps
+  the legacy single-tenant scenarios (S1–S8) working with anonymous publish
+- **registry-c runs the receipts profile** instead of the `[playground]` lax
+  mode — the S22/S24/S27 receipt scenarios target it. What that profile commits
+  the registry to (verify-every-publish, atomic receipt mint, profile
+  advertisement) is registry-owned — see its
+  [RECEIPTS.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/RECEIPTS.md)
 - `webhook.enabled = false` — the registry's SSRF policy refuses the loopback
   `http://playground:8000` target in the demo (webhook-driven events are
   exercised in the unit suite instead)
@@ -109,6 +118,6 @@ wiring. Key points:
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `ci.yml` | push / PR | `ruff check`, the offline unit suite; live conformance on manual `workflow_dispatch` (boots registry-a + control-plane) |
+| `ci.yml` | push / PR | `ruff check` + `ruff format --check`, the offline unit suite with an 80% coverage gate on Python 3.12 + 3.13, smoke test; PRs also build the playground image (no push); live conformance on manual `workflow_dispatch` **or the weekly schedule** (boots registry-a + control-plane, uploads compose logs on failure) |
 | `deploy-images.yml` | `v*` tag / dispatch | Build + push full-stack ghcr images |
 | `notify-website.yml` | push to `main` touching `docs/**` or `README.md` | Dispatch a `docs-updated` event to `acdp-website` |

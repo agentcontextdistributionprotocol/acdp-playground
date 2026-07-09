@@ -27,7 +27,7 @@ canonically documented.
 |----------|----------------|
 | [Getting started](getting-started.md) | Install, smoke-test, run the stack, start your first run |
 | [Architecture](architecture.md) | Components, request flow, the run lifecycle, the SSE bus |
-| [Scenarios](scenarios.md) | The S1–S21 catalog, what each proves, and how to author one |
+| [Scenarios](scenarios.md) | The S1–S32 catalog, what each proves, and how to author one |
 | [HTTP API](http-api.md) | Every route on the playground service |
 | [Client SDK](client-sdk.md) | `acdp_client` — the async wrapper the playground drives the SDK through |
 | [Agents](agents.md) | `BasePlaygroundAgent` and the LangChain / CrewAI / LangGraph adapters |
@@ -71,6 +71,7 @@ Reach for these when you need the canonical detail:
 - **Token issuance / challenge flow** → [registry AUTHENTICATION.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/AUTHENTICATION.md) · [control-plane AUTH.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/AUTH.md)
 - **Multi-tenancy rules** → [registry MULTI-TENANCY.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/MULTI-TENANCY.md) · [control-plane TENANCY.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/TENANCY.md)
 - **Registry / CP configuration knobs** → [registry CONFIGURATION.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/CONFIGURATION.md) · [control-plane CONFIGURATION.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/CONFIGURATION.md)
+- **Registry receipts** (what registry-c mints; the S22–S32 scenarios verify) → [registry RECEIPTS.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/RECEIPTS.md) · [RFC-ACDP-0010](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0010-registry-receipts.md)
 
 ## Repo links
 

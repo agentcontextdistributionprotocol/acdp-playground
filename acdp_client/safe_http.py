@@ -261,8 +261,7 @@ async def fetch_data_ref(
         actual = hashlib.sha256(data).hexdigest()
         if actual != hexdigest:
             raise DataRefHashMismatch(
-                f"data_ref content_hash mismatch: expected {hexdigest[:16]}…, "
-                f"got {actual[:16]}…"
+                f"data_ref content_hash mismatch: expected {hexdigest[:16]}…, got {actual[:16]}…"
             )
     return data
 

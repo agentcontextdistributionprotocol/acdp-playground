@@ -37,8 +37,8 @@ SCENARIO = ScenarioDef(
     id="s9_p256_publish",
     name="ECDSA-P256 Publish",
     description="An agent signs with ECDSA-P256 instead of Ed25519, publishes a "
-                "public context, and the P-256 wire signature is verified "
-                "end-to-end. Proves the SDK P-256 producer/verifier parity.",
+    "public context, and the P-256 wire signature is verified "
+    "end-to-end. Proves the SDK P-256 producer/verifier parity.",
     registry_mode="single",
     agent_count=1,
     framework="langchain",
@@ -54,8 +54,12 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
     try:
         agent = make_langchain_agent(
-            spec, events, bundle, slug="p256-signer",
-            registry="a", algorithm="ecdsa-p256",
+            spec,
+            events,
+            bundle,
+            slug="p256-signer",
+            registry="a",
+            algorithm="ecdsa-p256",
         )
 
         # Sanity: the producer really is the P-256 type.
@@ -106,7 +110,9 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             resp = await agent.client.publish(raw)
             ctx_id = resp.ctx_id
             await agent._emit(
-                "acdp.publish", ctx_id=ctx_id, title=f"{topic} — P-256 signed",
+                "acdp.publish",
+                ctx_id=ctx_id,
+                title=f"{topic} — P-256 signed",
                 preview="ecdsa-p256",
             )
             # Re-verify the body the registry hands back.
@@ -130,9 +136,12 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         if ctx_id:
             nodes.append(
                 LineageNode(
-                    ctx_id=ctx_id, agent_id=agent.agent_did,
-                    title=f"{topic} — P-256 signed", context_type="analysis",
-                    registry_authority=authority, step=1,
+                    ctx_id=ctx_id,
+                    agent_id=agent.agent_did,
+                    title=f"{topic} — P-256 signed",
+                    context_type="analysis",
+                    registry_authority=authority,
+                    step=1,
                 )
             )
 

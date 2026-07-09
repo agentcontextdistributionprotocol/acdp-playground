@@ -63,6 +63,10 @@ class CrewAIAgent(BasePlaygroundAgent):
 
         # CrewAI is sync; offload to a thread.
         def _run() -> str:
-            return str(task.execute_sync()) if hasattr(task, "execute_sync") else str(agent.execute_task(task))
+            return (
+                str(task.execute_sync())
+                if hasattr(task, "execute_sync")
+                else str(agent.execute_task(task))
+            )
 
         return await asyncio.to_thread(_run)

@@ -44,8 +44,8 @@ SCENARIO = ScenarioDef(
     id="s10_tenant_isolation",
     name="Tenant Isolation",
     description="Two tenant-bound agents. tenant-b cannot read tenant-a's "
-                "context (404); tenant-a can; a conflicting X-Tenant-Id header "
-                "is rejected. JWT tenant claim is authoritative.",
+    "context (404); tenant-a can; a conflicting X-Tenant-Id header "
+    "is rejected. JWT tenant claim is authoritative.",
     registry_mode="single",
     agent_count=2,
     framework="langchain",
@@ -79,19 +79,29 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
     try:
         tenant_a = make_langchain_agent(
-            spec, events, bundle, slug="tenant-a-agent",
-            registry="a", authenticated=True,
+            spec,
+            events,
+            bundle,
+            slug="tenant-a-agent",
+            registry="a",
+            authenticated=True,
         )
         tenant_b = make_langchain_agent(
-            spec, events, bundle, slug="tenant-b-agent",
-            registry="a", authenticated=True,
+            spec,
+            events,
+            bundle,
+            slug="tenant-b-agent",
+            registry="a",
+            authenticated=True,
         )
 
         # A separate client for tenant-a that *also* forces a conflicting
         # X-Tenant-Id header (tenant-b) to test the mismatch rejection.
         conflict_client = bundle.client(
-            "a", producer=tenant_a.producer,
-            tenant_id="tenant-b", tenant_header_mode="always",
+            "a",
+            producer=tenant_a.producer,
+            tenant_id="tenant-b",
+            tenant_header_mode="always",
         )
 
         degraded = False
@@ -133,9 +143,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             own_ok = by_label["tenant_a_own_read"]["outcome"] == "allowed"
             conflict_ok = by_label["conflict_header"]["outcome"] in {"denied", "error"}
             # If reads came back as auth_unavailable, treat as degraded.
-            if any(
-                r["outcome"] == "auth_unavailable" for r in results
-            ):
+            if any(r["outcome"] == "auth_unavailable" for r in results):
                 degraded = True
 
         all_correct = bool(cross_ok and own_ok and conflict_ok)
@@ -150,15 +158,23 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 ts=datetime.now(timezone.utc).isoformat(),
                 title="tenant isolation outcomes",
                 preview=f"cross_denied={cross_ok} own_allowed={own_ok} "
-                        f"conflict_rejected={conflict_ok} degraded={degraded}",
+                f"conflict_rejected={conflict_ok} degraded={degraded}",
             )
         )
 
         nodes = (
-            [LineageNode(ctx_id=ctx_id, agent_id=tenant_a.agent_did,
-                         title=f"Tenant-A — {topic}", context_type="analysis",
-                         registry_authority=authority, step=1)]
-            if ctx_id else []
+            [
+                LineageNode(
+                    ctx_id=ctx_id,
+                    agent_id=tenant_a.agent_did,
+                    title=f"Tenant-A — {topic}",
+                    context_type="analysis",
+                    registry_authority=authority,
+                    step=1,
+                )
+            ]
+            if ctx_id
+            else []
         )
         return RunResult(
             run_id=spec.run_id,
@@ -178,7 +194,8 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 "outcomes": outcomes,
             },
             error=(
-                None if status == "complete"
+                None
+                if status == "complete"
                 else f"S10 tenant isolation assertions failed: {outcomes}"
             ),
         )

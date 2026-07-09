@@ -17,6 +17,7 @@ _KID = f"{_DID}#key-1"
 def _jwt(claims: dict) -> str:
     def seg(d: dict) -> str:
         return base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip("=")
+
     return f"{seg({'alg': 'HS256'})}.{seg(claims)}.sig"
 
 
@@ -25,17 +26,25 @@ def _producer():
 
 
 def _ok_challenge() -> httpx.Response:
-    return httpx.Response(200, json={
-        "nonce": "n-1", "expires_at": 9999999999,
-        "signing_input": "acdp-registry-auth:v1:n-1:did:x:reg:9999999999",
-    })
+    return httpx.Response(
+        200,
+        json={
+            "nonce": "n-1",
+            "expires_at": 9999999999,
+            "signing_input": "acdp-registry-auth:v1:n-1:did:x:reg:9999999999",
+        },
+    )
 
 
 def _ok_token() -> httpx.Response:
-    return httpx.Response(200, json={
-        "token": _jwt({"jti": "j-1", "sub": _DID}),
-        "token_type": "Bearer", "expires_at": 9999999999,
-    })
+    return httpx.Response(
+        200,
+        json={
+            "token": _jwt({"jti": "j-1", "sub": _DID}),
+            "token_type": "Bearer",
+            "expires_at": 9999999999,
+        },
+    )
 
 
 async def test_challenge_429_then_retry_succeeds():
@@ -45,8 +54,9 @@ async def test_challenge_429_then_retry_succeeds():
         if request.url.path == "/auth/challenge":
             state["challenge_calls"] += 1
             if state["challenge_calls"] == 1:
-                return httpx.Response(429, headers={"retry-after": "0"},
-                                      json={"error": {"code": "rate_limited"}})
+                return httpx.Response(
+                    429, headers={"retry-after": "0"}, json={"error": {"code": "rate_limited"}}
+                )
             return _ok_challenge()
         if request.url.path == "/auth/token":
             return _ok_token()
@@ -90,8 +100,9 @@ async def test_token_429_then_retry_succeeds():
         if request.url.path == "/auth/token":
             state["token_calls"] += 1
             if state["token_calls"] == 1:
-                return httpx.Response(429, headers={"retry-after": "0"},
-                                      json={"error": {"code": "rate_limited"}})
+                return httpx.Response(
+                    429, headers={"retry-after": "0"}, json={"error": {"code": "rate_limited"}}
+                )
             return _ok_token()
         return httpx.Response(404)
 

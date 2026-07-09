@@ -36,9 +36,7 @@ async def test_s17_degrades_gracefully_without_registry(monkeypatch):
     try:
         scenario = get_scenario("s17_supersession_authz")
         q: asyncio.Queue = asyncio.Queue()
-        res = await scenario.run(
-            RunSpec(run_id="r-17", scenario_id="s17_supersession_authz"), q
-        )
+        res = await scenario.run(RunSpec(run_id="r-17", scenario_id="s17_supersession_authz"), q)
         # Degrades to a clean complete (no registry to exercise the live path).
         assert res.status == "complete"
         assert res.summary.get("degraded") is True

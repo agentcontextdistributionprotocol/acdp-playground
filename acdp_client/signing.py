@@ -82,11 +82,7 @@ def verify_signature(
     from acdp import AcdpVerifier
 
     if algorithm == ALG_ED25519:
-        return AcdpVerifier.verify_signature(
-            public_key_material, signature_b64, content_hash
-        )
+        return AcdpVerifier.verify_signature(public_key_material, signature_b64, content_hash)
     if algorithm == ALG_P256:
-        return AcdpVerifier.verify_signature_p256(
-            public_key_material, signature_b64, content_hash
-        )
+        return AcdpVerifier.verify_signature_p256(public_key_material, signature_b64, content_hash)
     raise ValueError(f"unknown signature algorithm: {algorithm!r}")

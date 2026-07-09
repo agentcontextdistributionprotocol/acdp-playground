@@ -42,9 +42,9 @@ SCENARIO = ScenarioDef(
     id="s16_dataref_ssrf",
     name="Consumer SSRF guard (data_refs)",
     description="A consumer following a data_refs[].location is screened for "
-                "private/loopback/IMDS targets, mixed DNS answers, cross-port "
-                "redirects, and non-https schemes (RFC-ACDP-0008 §4.9). Runs "
-                "fully offline with an injected resolver.",
+    "private/loopback/IMDS targets, mixed DNS answers, cross-port "
+    "redirects, and non-https schemes (RFC-ACDP-0008 §4.9). Runs "
+    "fully offline with an injected resolver.",
     registry_mode="single",
     agent_count=0,
     framework="langchain",
@@ -100,12 +100,8 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     cross_port = same_authority(
         "https://data.example.com/file", "https://data.example.com:8443/file"
     )
-    same_port = same_authority(
-        "https://data.example.com/file", "https://data.example.com:443/file"
-    )
-    outcomes["cross_port_redirect"] = (
-        "refused" if not cross_port and same_port else "WRONG"
-    )
+    same_port = same_authority("https://data.example.com/file", "https://data.example.com:443/file")
+    outcomes["cross_port_redirect"] = "refused" if not cross_port and same_port else "WRONG"
     await note("cross-port redirect", outcomes["cross_port_redirect"])
 
     # 4. http:// location — refused without connecting.

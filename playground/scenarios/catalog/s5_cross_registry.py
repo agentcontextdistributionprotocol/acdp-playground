@@ -24,9 +24,9 @@ SCENARIO = ScenarioDef(
     id="s5_cross_registry",
     name="Cross-Registry Chain",
     description="Agent A publishes to registry-a; agent B (on registry-b) "
-                "retrieves cross-registry and publishes a derivative. Verifies "
-                "cross-registry resolution and that lineage edges span "
-                "authorities.",
+    "retrieves cross-registry and publishes a derivative. Verifies "
+    "cross-registry resolution and that lineage edges span "
+    "authorities.",
     registry_mode="dual",
     agent_count=2,
     framework="langchain",
@@ -58,7 +58,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         out_b = await agent_b.run(
             AgentTask(
                 prompt="Given the source, write a 4-sentence analysis of "
-                       "shipping investment implications.",
+                "shipping investment implications.",
                 title=f"Cross-registry derivative — {topic}",
                 context_type="analysis",
                 domain="geopolitics",
@@ -74,14 +74,20 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             lineage_graph=LineageGraph(
                 nodes=[
                     LineageNode(
-                        ctx_id=out_a.ctx_id, agent_id=agent_a.agent_did,
-                        title=out_a.title, context_type="data_snapshot",
-                        registry_authority=settings.registry_a_authority, step=1,
+                        ctx_id=out_a.ctx_id,
+                        agent_id=agent_a.agent_did,
+                        title=out_a.title,
+                        context_type="data_snapshot",
+                        registry_authority=settings.registry_a_authority,
+                        step=1,
                     ),
                     LineageNode(
-                        ctx_id=out_b.ctx_id, agent_id=agent_b.agent_did,
-                        title=out_b.title, context_type="analysis",
-                        registry_authority=settings.registry_b_authority, step=2,
+                        ctx_id=out_b.ctx_id,
+                        agent_id=agent_b.agent_did,
+                        title=out_b.title,
+                        context_type="analysis",
+                        registry_authority=settings.registry_b_authority,
+                        step=2,
                     ),
                 ],
                 edges=[LineageEdge(src=out_a.ctx_id, dst=out_b.ctx_id)],

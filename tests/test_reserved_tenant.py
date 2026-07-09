@@ -85,9 +85,7 @@ def test_s20_registered():
 async def test_s20_reserved_tenant_offline_passes():
     scenario = get_scenario("s20_reserved_tenant")
     q: asyncio.Queue = asyncio.Queue()
-    res = await scenario.run(
-        RunSpec(run_id="r-20", scenario_id="s20_reserved_tenant"), q
-    )
+    res = await scenario.run(RunSpec(run_id="r-20", scenario_id="s20_reserved_tenant"), q)
     assert res.status == "complete"
     guard = res.summary["reserved_tenant_guard"]
     assert guard["guard"] == "blocked"

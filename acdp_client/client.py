@@ -318,9 +318,7 @@ class AcdpClient:
         extra = {"Idempotency-Key": idempotency_key} if idempotency_key else None
 
         async def send(h: dict[str, str]) -> httpx.Response:
-            return await self._http.post(
-                f"{self._base}/contexts", content=request_json, headers=h
-            )
+            return await self._http.post(f"{self._base}/contexts", content=request_json, headers=h)
 
         r = await self._retrying(send, extra_headers=extra)
         _raise_for_status(r)
@@ -370,9 +368,7 @@ class AcdpClient:
         encoded = self._encode_ctx(ctx_id)
 
         async def send(h: dict[str, str]) -> httpx.Response:
-            return await self._http.get(
-                f"{self._base}/contexts/{encoded}/body", headers=h
-            )
+            return await self._http.get(f"{self._base}/contexts/{encoded}/body", headers=h)
 
         r = await self._retrying(send)
         _raise_for_status(r)
@@ -544,9 +540,7 @@ class AcdpClient:
             params["cursor"] = cursor
 
         async def send(h: dict[str, str]) -> httpx.Response:
-            return await self._http.get(
-                f"{self._base}/contexts/search", params=params, headers=h
-            )
+            return await self._http.get(f"{self._base}/contexts/search", params=params, headers=h)
 
         r = await self._retrying(send)
         self._raise_cursor_error(r)
@@ -618,9 +612,7 @@ class AcdpClient:
 
     async def lineage(self, lineage_id: str) -> list[FullContext]:
         async def send(h: dict[str, str]) -> httpx.Response:
-            return await self._http.get(
-                f"{self._base}/lineages/{lineage_id}", headers=h
-            )
+            return await self._http.get(f"{self._base}/lineages/{lineage_id}", headers=h)
 
         r = await self._retrying(send)
         _raise_for_status(r)
@@ -638,9 +630,7 @@ class AcdpClient:
         """
 
         async def send(h: dict[str, str]) -> httpx.Response:
-            return await self._http.get(
-                f"{self._base}/lineages/{lineage_id}/current", headers=h
-            )
+            return await self._http.get(f"{self._base}/lineages/{lineage_id}/current", headers=h)
 
         r = await self._retrying(send)
         _raise_for_status(r)

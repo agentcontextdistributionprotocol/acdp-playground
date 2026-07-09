@@ -100,14 +100,26 @@ async def _check_scenarios_load() -> int:
 
     scenarios = list_scenarios()
     expected = {
-        "s1_single_publish", "s2_producer_consumer", "s3_fanout",
-        "s4_chain", "s5_cross_registry", "s6_restricted",
-        "s7_supersession", "s8_cross_org",
-        "s9_p256_publish", "s10_tenant_isolation", "s11_revocation",
-        "s12_key_rotation", "s13_policy_deny", "s14_domain_pack",
-        "s15_supersession_lineage", "s16_dataref_ssrf",
-        "s17_supersession_authz", "s18_idempotency",
-        "s19_cp_did_web_p256", "s20_reserved_tenant",
+        "s1_single_publish",
+        "s2_producer_consumer",
+        "s3_fanout",
+        "s4_chain",
+        "s5_cross_registry",
+        "s6_restricted",
+        "s7_supersession",
+        "s8_cross_org",
+        "s9_p256_publish",
+        "s10_tenant_isolation",
+        "s11_revocation",
+        "s12_key_rotation",
+        "s13_policy_deny",
+        "s14_domain_pack",
+        "s15_supersession_lineage",
+        "s16_dataref_ssrf",
+        "s17_supersession_authz",
+        "s18_idempotency",
+        "s19_cp_did_web_p256",
+        "s20_reserved_tenant",
         "s21_capabilities_p256",
     }
     got = {s.id for s in scenarios}
@@ -236,6 +248,7 @@ async def _check_webhook_signature() -> int:
 
     try:
         from playground.api.webhooks import _verify
+
         _verify(secret, body, expected)
     except Exception as e:  # noqa: BLE001
         print(f"  FAIL valid signature was rejected: {e}")
@@ -244,6 +257,7 @@ async def _check_webhook_signature() -> int:
     try:
         from fastapi import HTTPException
         from playground.api.webhooks import _verify as _verify2
+
         try:
             _verify2(secret, body, "sha256=deadbeef")
         except HTTPException:
@@ -278,28 +292,31 @@ async def _check_control_plane_forwarding() -> int:
     captured: list[dict[str, Any]] = []
 
     async def stub_handler(request):
-        captured.append({
-            "path": request.url.path,
-            "headers": dict(request.headers),
-            "body": (await request.body()).decode("utf-8"),
-        })
+        captured.append(
+            {
+                "path": request.url.path,
+                "headers": dict(request.headers),
+                "body": (await request.body()).decode("utf-8"),
+            }
+        )
         return JSONResponse({"ok": True})
 
-    app = Starlette(routes=[
-        Route("/runs/started", stub_handler, methods=["POST"]),
-        Route("/runs/{run_id}/complete", stub_handler, methods=["POST"]),
-        Route("/ingest/acdp", stub_handler, methods=["POST"]),
-    ])
+    app = Starlette(
+        routes=[
+            Route("/runs/started", stub_handler, methods=["POST"]),
+            Route("/runs/{run_id}/complete", stub_handler, methods=["POST"]),
+            Route("/ingest/acdp", stub_handler, methods=["POST"]),
+        ]
+    )
 
     # Pick an ephemeral port and serve in a background task.
     import socket
+
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
 
-    config = uvicorn.Config(
-        app, host="127.0.0.1", port=port, log_level="warning"
-    )
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
     server = uvicorn.Server(config)
     serve_task = asyncio.create_task(server.serve())
     # Wait for the server to bind.
@@ -347,9 +364,10 @@ async def _check_control_plane_forwarding() -> int:
             if not sig or not sig.startswith("sha256="):
                 print(f"  FAIL: missing/malformed signature on {r['path']}: {sig}")
                 return 1
-            expected = "sha256=" + hmac.new(
-                b"cp-secret", r["body"].encode("utf-8"), hashlib.sha256
-            ).hexdigest()
+            expected = (
+                "sha256="
+                + hmac.new(b"cp-secret", r["body"].encode("utf-8"), hashlib.sha256).hexdigest()
+            )
             if sig != expected:
                 print(f"  FAIL: HMAC mismatch on {r['path']}")
                 return 1
@@ -469,8 +487,10 @@ async def _check_extended_body_fields() -> int:
             captured["request"] = json.loads(request_json)
             return PublishResponse(
                 ctx_id="acdp://registry-a.playground.local/00000000-0000-4000-8000-000000000002",
-                lineage_id="lin:sha256:abc", version=1,
-                created_at=datetime.now(timezone.utc), status="active",
+                lineage_id="lin:sha256:abc",
+                version=1,
+                created_at=datetime.now(timezone.utc),
+                status="active",
             )
 
     class StubAgent(BasePlaygroundAgent):
@@ -487,7 +507,9 @@ async def _check_extended_body_fields() -> int:
     agent = StubAgent(producer, FakeClient(), asyncio.Queue(), "run-ext", slug="ext")  # type: ignore[arg-type]
     await agent.run(
         AgentTask(
-            prompt="x", title="ext", context_type="analysis",
+            prompt="x",
+            title="ext",
+            context_type="analysis",
             override_response="res",
             data_refs=[{"type": "primary_result", "location": "https://e.com/d.csv"}],
             data_period={"start": "2026-01-01T00:00:00Z", "end": "2026-03-31T23:59:59Z"},
@@ -495,8 +517,13 @@ async def _check_extended_body_fields() -> int:
         )
     )
     req = captured.get("request", {})
-    if not req.get("data_refs") or req.get("data_period", {}).get("start") != "2026-01-01T00:00:00Z":
-        print(f"  FAIL: extended fields not threaded: {req.get('data_refs')} {req.get('data_period')}")
+    if (
+        not req.get("data_refs")
+        or req.get("data_period", {}).get("start") != "2026-01-01T00:00:00Z"
+    ):
+        print(
+            f"  FAIL: extended fields not threaded: {req.get('data_refs')} {req.get('data_period')}"
+        )
         return 1
     if not str(req.get("expires_at", "")).startswith("2026-12-31"):
         print(f"  FAIL: expires_at not set: {req.get('expires_at')}")
@@ -515,7 +542,9 @@ async def _check_jcs_numeric_vectors() -> int:
 
     from acdp import AcdpCanonicalizer
 
-    rfc_dir = Path(os.environ.get("ACDP_RFC_DIR", os.path.join(ROOT, "..", "agentcontextdistributionprotocol")))
+    rfc_dir = Path(
+        os.environ.get("ACDP_RFC_DIR", os.path.join(ROOT, "..", "agentcontextdistributionprotocol"))
+    )
     vectors_path = rfc_dir / "schemas" / "conformance" / "can-011-jcs-numeric-vectors.json"
     if not vectors_path.exists():
         print(f"  SKIP: vectors not found at {vectors_path}")
@@ -583,8 +612,7 @@ async def _check_supersession_error_parse() -> int:
         return httpx.Response(
             400,
             headers={"content-type": "application/acdp+json"},
-            json={"error": {"code": "superseded_target",
-                            "details": {"reason": "not_found"}}},
+            json={"error": {"code": "superseded_target", "details": {"reason": "not_found"}}},
         )
 
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -625,10 +653,16 @@ async def _check_idempotent_replay() -> int:
             ctx = f"acdp://reg.test/{next(counter)}"
             if key:
                 by_key[key] = ctx
-        return httpx.Response(200, json={
-            "ctx_id": ctx, "lineage_id": "lin", "version": 1,
-            "created_at": "2026-06-03T00:00:00Z", "status": "active",
-        })
+        return httpx.Response(
+            200,
+            json={
+                "ctx_id": ctx,
+                "lineage_id": "lin",
+                "version": 1,
+                "created_at": "2026-06-03T00:00:00Z",
+                "status": "active",
+            },
+        )
 
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     client = AcdpClient("http://reg.test", http=http)
@@ -667,9 +701,7 @@ async def _check_typed_wire_errors() -> int:
         )
 
     def too_large(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            413, headers={"content-type": "application/acdp+json"}, content=b""
-        )
+        return httpx.Response(413, headers={"content-type": "application/acdp+json"}, content=b"")
 
     for label, handler, exc in (
         ("not_authorized", forbidden, NotAuthorizedError),

@@ -40,8 +40,8 @@ SCENARIO = ScenarioDef(
     id="s21_capabilities_p256",
     name="CP capability P-256 declaration",
     description="A P-256 agent self-declares a capability with the ecdsa-p256 "
-                "signature the control plane's capability DTO now accepts (CP #51). "
-                "Fully offline + deterministic; signature self-verified.",
+    "signature the control plane's capability DTO now accepts (CP #51). "
+    "Fully offline + deterministic; signature self-verified.",
     registry_mode="single",
     agent_count=1,
     framework="langchain",
@@ -95,9 +95,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
         alg_ok = alg in _CP_ACCEPTED_ALGS
         shape_ok = (
-            declaration["agent_did"] == did
-            and declaration["key_id"] == key_id
-            and bool(signature)
+            declaration["agent_did"] == did and declaration["key_id"] == key_id and bool(signature)
         )
 
         # Prove the signature is real — verify it against the producer's P-256

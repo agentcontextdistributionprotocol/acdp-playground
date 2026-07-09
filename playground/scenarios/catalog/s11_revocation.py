@@ -31,8 +31,8 @@ SCENARIO = ScenarioDef(
     id="s11_revocation",
     name="Token Revocation",
     description="Mint a token, use it, revoke it (RFC 7009), then confirm it "
-                "no longer works and (with a control plane) introspects as "
-                "inactive.",
+    "no longer works and (with a control plane) introspects as "
+    "inactive.",
     registry_mode="single",
     agent_count=1,
     framework="langchain",
@@ -47,7 +47,12 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
     try:
         agent = make_langchain_agent(
-            spec, events, bundle, slug="revocable", registry="a", authenticated=True,
+            spec,
+            events,
+            bundle,
+            slug="revocable",
+            registry="a",
+            authenticated=True,
         )
         tm = bundle.token_manager
         base = settings.registry_a_url
@@ -70,9 +75,11 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             )
             await events.put(
                 StepEvent(
-                    type="auth.token", run_id=spec.run_id,
+                    type="auth.token",
+                    run_id=spec.run_id,
                     ts=datetime.now(timezone.utc).isoformat(),
-                    agent_id=agent.agent_did, title="token minted + used",
+                    agent_id=agent.agent_did,
+                    title="token minted + used",
                     preview=f"jti={cached.jti}",
                 )
             )
@@ -89,9 +96,11 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 summary["revoked"] = revoked
                 await events.put(
                     StepEvent(
-                        type="auth.revoke", run_id=spec.run_id,
+                        type="auth.revoke",
+                        run_id=spec.run_id,
                         ts=datetime.now(timezone.utc).isoformat(),
-                        agent_id=agent.agent_did, title="token revoked",
+                        agent_id=agent.agent_did,
+                        title="token revoked",
                         preview=f"revoked={revoked}",
                     )
                 )

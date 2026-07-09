@@ -22,8 +22,8 @@ SCENARIO = ScenarioDef(
     id="s2_producer_consumer",
     name="Producer → Consumer",
     description="One agent publishes raw data; a second agent retrieves it, "
-                "analyses it, and publishes a derivative tagged "
-                "derived_from=[producer].",
+    "analyses it, and publishes a derivative tagged "
+    "derived_from=[producer].",
     registry_mode="single",
     agent_count=2,
     framework="langchain",
