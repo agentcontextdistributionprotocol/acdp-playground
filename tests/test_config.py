@@ -9,10 +9,8 @@ def _settings(**overrides) -> Settings:
     base = dict(
         registry_a_url="http://reg-a:8100",
         registry_b_url="http://reg-b:8200",
-        registry_c_url="http://reg-c:8300",
         registry_a_authority="registry-a.playground.local",
         registry_b_authority="registry-b.playground.local",
-        registry_c_authority="registry-c.playground.local",
     )
     base.update(overrides)
     return Settings(**base)
@@ -22,7 +20,6 @@ def test_registry_url_for_maps_known_authorities():
     s = _settings()
     assert s.registry_url_for("registry-a.playground.local") == "http://reg-a:8100"
     assert s.registry_url_for("registry-b.playground.local") == "http://reg-b:8200"
-    assert s.registry_url_for("registry-c.playground.local") == "http://reg-c:8300"
 
 
 def test_registry_url_for_unknown_authority_is_none():
@@ -34,7 +31,6 @@ def test_authority_url_map_round_trips_all():
     assert s.authority_url_map() == {
         "registry-a.playground.local": "http://reg-a:8100",
         "registry-b.playground.local": "http://reg-b:8200",
-        "registry-c.playground.local": "http://reg-c:8300",
     }
 
 

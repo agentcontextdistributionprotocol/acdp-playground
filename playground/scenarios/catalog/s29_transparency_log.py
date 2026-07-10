@@ -22,7 +22,7 @@ retained size-1 root, and that every tampered artifact — flipped inclusion
 path, flipped checkpoint root, rewritten history, substituted embedded
 checkpoint — fails closed with the ``invalid_log_proof`` taxonomy.
 
-The live half publishes twice to registry-c, verifying the real
+The live half publishes twice to registry-a, verifying the real
 ``/log/checkpoint`` and ``/log/proof?ctx_id=`` artifacts between publishes
 and the real consistency proof across the two observed tree sizes. Degrades
 gracefully without a registry.
@@ -80,7 +80,7 @@ def _verdict(raw: str) -> dict:
 async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     settings = get_settings()
     topic = spec.inputs.get("topic", SCENARIO.default_inputs["topic"])
-    authority = settings.registry_c_authority
+    authority = settings.registry_a_authority
     registry_did = f"did:web:{authority}"
     kid = f"{registry_did}#receipt-key-1"
     log_id = f"{registry_did}/log/1"
@@ -229,7 +229,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
     # ── Live: publish twice, verify the real /log artifacts in between. ──
     title = f"{topic} — logged"
-    client = AcdpClient(settings.registry_c_url, run_id=spec.run_id)
+    client = AcdpClient(settings.registry_a_url, run_id=spec.run_id)
     ctx1: str | None = None
     ctx2: str | None = None
     live_round_trip = "skipped"
@@ -238,7 +238,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     live_consistency_verified = False
     live_tamper_fail_closed = False
     try:
-        registry_pub = settings.registry_c_receipt_public_key_b64()
+        registry_pub = settings.receipt_verification_public_key_b64()
         if registry_pub is None:
             raise RuntimeError("no registry receipt key provisioned")
 

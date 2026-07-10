@@ -75,8 +75,12 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
     summary: dict = {"degraded": False}
     try:
-        owner = make_langchain_agent(spec, events, bundle, slug="owner", registry="a")
-        attacker = make_langchain_agent(spec, events, bundle, slug="attacker", registry="a")
+        owner = make_langchain_agent(
+            spec, events, bundle, slug="owner", registry="a", method="did:key"
+        )
+        attacker = make_langchain_agent(
+            spec, events, bundle, slug="attacker", registry="a", method="did:key"
+        )
 
         # v1 by the owner.
         try:

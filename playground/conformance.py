@@ -89,8 +89,9 @@ class LiveConfig:
         api_key = os.environ.get("CONTROL_PLANE_API_KEY", admin)
         return cls(
             registry_url=s.registry_a_url.rstrip("/"),
-            # registry-c is the receipts-profile registry (ACDP 0.2).
-            receipts_registry_url=s.registry_c_url.rstrip("/"),
+            # registry-a hosts the receipts profile (ACDP 0.2) alongside
+            # its legacy did:key/pinned-did:web traffic.
+            receipts_registry_url=s.registry_a_url.rstrip("/"),
             control_plane_url=(s.control_plane_url or "http://localhost:3001").rstrip("/"),
             admin_token=admin,
             api_key=api_key,

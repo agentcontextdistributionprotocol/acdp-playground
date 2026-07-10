@@ -1,7 +1,8 @@
 """S22 — registry receipts, happy path (RFC-ACDP-0010, ACDP 0.2 workstream A).
 
-An ephemeral ``did:key`` agent publishes a public context to **registry-c**,
-the dedicated receipts-profile registry. did:key is the playground's live
+An ephemeral ``did:key`` agent publishes a public context to **registry-a**,
+which also hosts the receipts profile (pinned_only playground mode coexists
+with ``[receipt]`` — see registry-a.toml). did:key is the playground's live
 verified-publish path: the registry verifies the body entirely offline (the
 key is embedded in the DID — no DID hosting), so it can mint a receipt that
 attests the producer's ``key_fingerprint``. The publish response and every
@@ -20,7 +21,7 @@ Require``:
    origin binding (``receipt.origin_registry``).
 
 The registry's receipt *verification* key is derived from the shared seed
-(``settings.registry_c_receipt_public_key_b64()``) because the playground's
+(``settings.receipt_verification_public_key_b64()``) because the playground's
 ``*.playground.local`` registry DID isn't web-hosted — in production you'd
 resolve the registry DID document instead.
 
@@ -81,15 +82,15 @@ def _require_receipt(receipt: dict | None) -> dict:
 async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     settings = get_settings()
     topic = spec.inputs.get("topic", SCENARIO.default_inputs["topic"])
-    authority = settings.registry_c_authority
+    authority = settings.registry_a_authority
     title = f"{topic} — receipted"
 
     # Deterministic ephemeral did:key producer + its real key fingerprint.
     producer = AcdpProducer.from_seed_did_key(spec.agent_seed("receipt-publisher"))
     producer_fp = AcdpVerifier.fingerprint_ed25519_b64(producer.public_key_b64)
-    registry_pub = settings.registry_c_receipt_public_key_b64()
+    registry_pub = settings.receipt_verification_public_key_b64()
 
-    client = AcdpClient(settings.registry_c_url, run_id=spec.run_id)
+    client = AcdpClient(settings.registry_a_url, run_id=spec.run_id)
     try:
         # ── Deterministic offline core: the did:key publish self-verifies. ─
         raw = producer.build_publish_request(

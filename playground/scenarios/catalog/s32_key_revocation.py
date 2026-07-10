@@ -34,7 +34,7 @@ boundary **T**, signed by K2. The consumer, driving the 0.7.0 SDK surface
   proves only possession of the attacker-held key; `parse_key_revocation`
   rejects it (`RuntimeError`).
 
-The live half publishes a genuine `key-revocation`-typed context to registry-c
+The live half publishes a genuine `key-revocation`-typed context to registry-a
 (proving a real 0.3.0 registry admits the §4 type + public-visibility shape),
 retrieves it, parses it (did:key signers run the not-self-signed check natively
 from the body), and — using the **genuine** registry receipt `created_at` of a
@@ -295,7 +295,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     )
 
     # ── Live: publish a real key-revocation context; §7 vs a genuine receipt. ─
-    client = AcdpClient(settings.registry_c_url, run_id=spec.run_id)
+    client = AcdpClient(settings.registry_a_url, run_id=spec.run_id)
     live_ctx: str | None = None
     live_round_trip = "skipped"
     live_type_admitted = False
@@ -303,7 +303,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     live_pre_compromise = False
     live_post_fail_closed = False
     try:
-        registry_pub = settings.registry_c_receipt_public_key_b64()
+        registry_pub = settings.receipt_verification_public_key_b64()
         if registry_pub is None:
             raise RuntimeError("no registry receipt key provisioned")
 
@@ -432,7 +432,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 agent_id="did:key (revoker)",
                 title="key-revocation context",
                 context_type="key-revocation",
-                registry_authority=settings.registry_c_authority,
+                registry_authority=settings.registry_a_authority,
                 step=1,
             )
         )

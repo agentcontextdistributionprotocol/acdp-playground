@@ -12,11 +12,8 @@ class Settings(BaseSettings):
     # Registries
     registry_a_url: str = "http://localhost:8100"
     registry_b_url: str = "http://localhost:8200"
-    # registry-c is the dedicated receipts-profile registry (ACDP 0.2).
-    registry_c_url: str = "http://localhost:8300"
     registry_a_authority: str = "registry-a.playground.local"
     registry_b_authority: str = "registry-b.playground.local"
-    registry_c_authority: str = "registry-c.playground.local"
 
     # LLM provider
     llm_provider: Literal["openai", "anthropic", "mock"] = "openai"
@@ -36,14 +33,16 @@ class Settings(BaseSettings):
     webhook_secret: str = "playground-dev-secret"
 
     # ── Registry receipts (RFC-ACDP-0010, ACDP 0.2) ──────────────────────
-    # registry-c is the receipts-profile registry. This is the base64 of its
-    # 32-byte Ed25519 receipt signing *seed* and MUST equal
-    # config/registry-c.toml's [receipt].signing_key_seed_b64. The receipts
-    # scenarios (S22/S24) derive the registry's verification key from this
-    # seed (AcdpProducer.from_seed(seed).public_key_b64) so they can verify
+    # registry-a hosts the receipts profile (verified publish via a pinned
+    # did:key/did:web identity, [receipt]/[lifecycle]/[log] configured — see
+    # config/registry-a.toml). This is the base64 of its 32-byte Ed25519
+    # receipt signing *seed* and MUST equal registry-a.toml's
+    # [receipt].signing_key_seed_b64. The receipts scenarios derive the
+    # registry's verification key from this seed
+    # (AcdpProducer.from_seed(seed).public_key_b64) so they can verify
     # receipts without resolving the registry's (non-web-hosted) did:web DID
     # document. Empty => receipts not provisioned; the scenarios degrade.
-    registry_c_receipt_seed_b64: str = "9NKlBoCp1saUEzMgFonzReHSPbkEN9ba8NrAyR2TYYY="
+    receipt_signing_seed_b64: str = "9NKlBoCp1saUEzMgFonzReHSPbkEN9ba8NrAyR2TYYY="
 
     # ── V2 protocol features ─────────────────────────────────────────────
     # Default signing algorithm for agents that don't override it.
@@ -77,24 +76,25 @@ class Settings(BaseSettings):
 
     @property
     def receipts_enabled(self) -> bool:
-        return bool(self.registry_c_receipt_seed_b64)
+        return bool(self.receipt_signing_seed_b64)
 
-    def registry_c_receipt_public_key_b64(self) -> str | None:
-        """Derive registry-c's Ed25519 receipt *verification* key from the
-        shared seed, as standard base64 of the raw 32-byte public key.
+    def receipt_verification_public_key_b64(self) -> str | None:
+        """Derive the receipts registry's Ed25519 receipt *verification* key
+        from the shared seed, as standard base64 of the raw 32-byte public
+        key.
 
         Returns ``None`` when no seed is provisioned. The derivation mirrors
         the registry's ``SigningKey::from_bytes(seed)`` (both use
         ed25519-dalek), so the key matches the one the registry signs
         receipts with. Pass the result to ``AcdpVerifier.verify_receipt``.
         """
-        if not self.registry_c_receipt_seed_b64:
+        if not self.receipt_signing_seed_b64:
             return None
         import base64
 
         from acdp import AcdpProducer
 
-        seed = base64.b64decode(self.registry_c_receipt_seed_b64)
+        seed = base64.b64decode(self.receipt_signing_seed_b64)
         producer = AcdpProducer.from_seed(
             seed, "did:web:receipt-probe:agents:r", "did:web:receipt-probe:agents:r#k"
         )
@@ -105,15 +105,12 @@ class Settings(BaseSettings):
             return self.registry_a_url
         if authority == self.registry_b_authority:
             return self.registry_b_url
-        if authority == self.registry_c_authority:
-            return self.registry_c_url
         return None
 
     def authority_url_map(self) -> dict[str, str]:
         return {
             self.registry_a_authority: self.registry_a_url,
             self.registry_b_authority: self.registry_b_url,
-            self.registry_c_authority: self.registry_c_url,
         }
 
 

@@ -23,7 +23,7 @@ mints head receipts and the consumer proves:
   post-supersession head expectations — the §7 step 5 binding rejects it;
 * any tamper (``head_status`` flip) breaks the signature.
 
-The live half publishes v1 to registry-c, verifies the real ``/current``
+The live half publishes v1 to registry-a, verifies the real ``/current``
 receipt (head = v1), supersedes to v2, and verifies the **fresh** receipt now
 binds the new head while the retained v1 receipt fails the new expectations.
 Degrades gracefully without a registry.
@@ -86,7 +86,7 @@ def _verify(receipt: dict, expected: dict, doc: str, now: str | None = None) -> 
 async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     settings = get_settings()
     topic = spec.inputs.get("topic", SCENARIO.default_inputs["topic"])
-    authority = settings.registry_c_authority
+    authority = settings.registry_a_authority
     registry_did = f"did:web:{authority}"
     kid = f"{registry_did}#receipt-key-1"
 
@@ -178,10 +178,10 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         )
     )
 
-    # ── Live: /current receipts across a supersession on registry-c. ─────
+    # ── Live: /current receipts across a supersession on registry-a. ─────
     title = f"{topic} — head-receipted"
     producer = AcdpProducer.from_seed_did_key(spec.agent_seed("head-producer"))
-    client = AcdpClient(settings.registry_c_url, run_id=spec.run_id)
+    client = AcdpClient(settings.registry_a_url, run_id=spec.run_id)
     ctx_v1: str | None = None
     ctx_v2: str | None = None
     live_round_trip = "skipped"
@@ -189,7 +189,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     live_v2_receipt_ok = False
     live_replay_rejected = False
     try:
-        registry_pub = settings.registry_c_receipt_public_key_b64()
+        registry_pub = settings.receipt_verification_public_key_b64()
         if registry_pub is None:
             raise RuntimeError("no registry receipt key provisioned")
 

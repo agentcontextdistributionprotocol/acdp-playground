@@ -30,7 +30,7 @@ the SDK:
   longer matches the body is rejected even though its key still resolves.
 
 The live half publishes a real ``did:key`` context to the receipts-profile
-registry (registry-c), then resolves the *genuine* registry receipt's signing
+registry (registry-a), then resolves the *genuine* registry receipt's signing
 key through the same ``receipt_key_for_algorithm`` path (a current key, so
 ``historical=false``) and verifies it — proving the §9 consumer flow works
 against a live registry, not just minted receipts. It degrades gracefully
@@ -113,7 +113,7 @@ def _verify_via_did(
 async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     settings = get_settings()
     topic = spec.inputs.get("topic", SCENARIO.default_inputs["topic"])
-    authority = settings.registry_c_authority
+    authority = settings.registry_a_authority
     registry_did = f"did:web:{authority}"
     kid_v1, kid_v2 = f"{registry_did}#receipt-key-1", f"{registry_did}#receipt-key-2"
 
@@ -233,9 +233,9 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         )
     )
 
-    # ── Live: publish to registry-c, resolve the genuine receipt's key. ──
+    # ── Live: publish to registry-a, resolve the genuine receipt's key. ──
     title = f"{topic} — receipted"
-    client = AcdpClient(settings.registry_c_url, run_id=spec.run_id)
+    client = AcdpClient(settings.registry_a_url, run_id=spec.run_id)
     ctx_published: str | None = None
     live_round_trip = "skipped"
     live_receipt_status = "none"
@@ -265,7 +265,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         full = await client.retrieve_raw(ctx_published)
         body = full["body"]
         receipt = full.get("registry_receipt")
-        registry_pub = settings.registry_c_receipt_public_key_b64()
+        registry_pub = settings.receipt_verification_public_key_b64()
         if receipt is not None and registry_pub is not None:
             echoed_hash = body["content_hash"]
             AcdpVerifier.verify_content_hash(json.dumps(body), echoed_hash)

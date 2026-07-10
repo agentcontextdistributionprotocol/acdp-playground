@@ -109,6 +109,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             slug="confidant-producer",
             registry="a",
             authenticated=True,
+            method="did:key",
         )
         audience_member = make_langchain_agent(
             spec,
@@ -117,6 +118,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             slug="confidant-reader",
             registry="a",
             authenticated=True,
+            method="did:key",
         )
         outsider = make_langchain_agent(
             spec,
@@ -125,15 +127,17 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             slug="confidant-outsider",
             registry="a",
             authenticated=True,
+            method="did:key",
         )
 
         # 2) Producer publishes a restricted context targeting only the
-        # audience_member. This needs live token issuance, which fails
-        # against a stock registry (the playground's `*.playground.local`
-        # producer DID isn't web-hosted, so the registry's auth challenge
-        # can't resolve its key). Degrade gracefully in that case — the
-        # access-control intent is still recorded — rather than aborting
-        # the whole run (mirrors S10–S14/S17/S18).
+        # audience_member. Live token issuance needs a resolvable identity;
+        # did:key sidesteps the *.playground.local did:web-hosting problem
+        # (the registry's auth challenge verifies against the key embedded
+        # in the DID itself, no fetch needed — RFC-ACDP-0007 + the
+        # registry's did:key auth support). The TokenError catch stays as a
+        # defensive fallback (mirrors S10/S24, which still degrade for
+        # reasons did:key alone doesn't fix).
         try:
             out = await producer.run(
                 AgentTask(

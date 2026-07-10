@@ -109,21 +109,67 @@ idempotency_key_ttl_seconds = 86400
 # 429 + Retry-After; the playground's TokenManager honours it cooperatively.
 challenge_rate_per_minute   = 60
 
-# NOTE: registry-a is intentionally NOT a receipts registry. The registry
-# refuses to start with both `[playground] enabled = true` (the unverified
-# run-keyed publish path the legacy scenarios rely on) and `[receipt]`
-# configured — a receipts-advertising registry must verify every publish
-# (RFC-ACDP-0010 §7, no degraded mode). Receipts live on the dedicated
-# verified-publish registry-c (config/registry-c.toml), which the S22/S24
-# receipts scenarios target via did:key.
+# ── Registry receipts (RFC-ACDP-0010, ACDP 0.2 workstream A) ─────────
+# registry-a hosts the receipts profile directly: every publish response
+# and retrieval carries a registry-signed receipt binding ctx_id +
+# lineage_id + content_hash + producer key_fingerprint, and the well-known
+# capabilities advertise `acdp-registry-receipts` (acdp_version bumps to
+# 0.3.0 because head_receipts / [lifecycle] / [log] below are enabled).
+# This coexists with `[playground] pinned_only = true` below — a
+# receipts-advertising registry must verify every publish (RFC-ACDP-0010
+# §7, no degraded mode), and pinned_only closes the unverified fallback
+# (a non-pinned agent is rejected outright, never silently accepted), so
+# every publish that reaches this registry is either a verified did:key
+# publish or a verified pinned-did:web publish.
+#
+# The seed is deterministic demo material (sha256("acdp-playground
+# -registry-a-receipt-key-v1"), kept for continuity). It MUST stay in
+# lock-step with the playground's `receipt_signing_seed_b64` setting
+# (playground/config.py) — the receipts scenarios derive the registry's
+# Ed25519 verification key from the same seed to verify receipts without
+# resolving the (non-web-hosted) registry DID. Rotate by adding the old
+# public key under [[receipt.retired_keys]] before swapping the seed.
+[receipt]
+signing_key_seed_b64 = "9NKlBoCp1saUEzMgFonzReHSPbkEN9ba8NrAyR2TYYY="
+key_id_fragment      = "receipt-key-1"
+# ACDP 0.3.0 (RFC-ACDP-0011): mint a signed lineage-head receipt on every
+# `GET /lineages/{id}/current` response, binding lineage → newest head
+# (ctx_id + version + status) at a signed `as_of` instant. Requires the
+# receipt signing key above; advertises `acdp-registry-head-receipts`.
+# Exercised by scenario S30.
+head_receipts = true
+
+# ── Lifecycle events & retraction (ACDP 0.3.0, RFC-ACDP-0013) ────────
+# Enables POST /contexts/{id}/retract|republish (producer-signed lifecycle
+# events; mark-not-delete), the §7 status derivation (`retracted` dominating
+# `superseded`/`expired`), the §8.2 default-search exclusion, and the §8.3
+# /current head exclusion. Advertises `acdp-registry-lifecycle`. Exercised
+# by scenario S28.
+[lifecycle]
+enabled = true
+
+# ── Transparency log (ACDP 0.3.0, RFC-ACDP-0012) ─────────────────────
+# Appends a Merkle leaf per accepted publish and serves GET /log/checkpoint
+# (signed tree head, receipt key), /log/proof (inclusion + consistency) and
+# /log/entries. `instance` is the <instance> segment of
+# log_id = did:web:<authority>/log/<instance>; bump it only on a deliberate
+# history reset (§7.4). Advertises `acdp-registry-transparency-log`.
+# Exercised by scenario S29.
+[log]
+enabled  = true
+instance = "1"
 
 [playground]
 enabled = true
-# pinned_only stays false (lax): publishes from the run-keyed scenario
-# agents skip DID verification. Flip to true only on a dedicated
-# strict-pinning registry — it rejects any publish whose signature isn't
-# from a currently-valid pinned key below.
-pinned_only = false
+# pinned_only = true: every publish must match a currently-valid pinned
+# key below, or a verified did:key signature — no unverified fallback.
+# This is what lets [receipt] above coexist with [playground] at all (see
+# the comment there); it's also why every scenario that publishes here
+# now uses did:key (a self-verifying identity, no pinning needed) except
+# the handful that specifically need a *stable, rotating* identity
+# (S12's rotating-publisher demo constant, S24's rotating-historical),
+# which are pinned explicitly below.
+pinned_only = true
 
 # ── Pinned keys with rotation/overlap windows (RFC-ACDP-0008 §9.3) ────
 # Demonstrates key rotation: `rotating-publisher` has an old key valid
@@ -149,3 +195,16 @@ valid_from     = 1780272000  # 2026-06-01T00:00:00Z — new key, overlaps
 agent_did      = "did:web:registry-a.playground.local:agents:p256-publisher"
 public_key_b64 = "BAkSM4c+1uo8uF3Kjtl6HByzTRglGmO/QMHPVZJdxAgoxSMgmllmO90hKczImK8x1BB7aOyEdog3uRvXx1StkF4="
 algorithm      = "ecdsa-p256"
+
+# S24 (historical key): a stable identity a consumer can revisit across
+# time — the whole point of the scenario is verifying a *pre-rotation*
+# signature stays historically authorized, which requires the same DID
+# across runs, not a fresh per-run one. Only key_v1 (pre-rotation) is ever
+# actually published live; key_v2 exists purely in the scenario's offline
+# DID-document simulation. Seed: sha256(b"acdp-playground-fixed-identity:
+# rotating-historical"), then sha256(seed + b":v1") — see
+# s24_historical_key.py's _stable_seed().
+[[playground.pinned_keys]]
+agent_did      = "did:web:registry-a.playground.local:agents:rotating-historical"
+public_key_b64 = "qIN/TlreKxmlTXqBWUVnGRcCvHhlCmWWtsI7tp2+kpM="
+algorithm      = "ed25519"

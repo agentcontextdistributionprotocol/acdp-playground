@@ -56,7 +56,9 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     authority = settings.registry_a_authority
 
     try:
-        agent = make_langchain_agent(spec, events, bundle, slug="versioner", registry="a")
+        agent = make_langchain_agent(
+            spec, events, bundle, slug="versioner", registry="a", method="did:key"
+        )
 
         # The SDK forbids a lineage guard on a v1 publish — confirm that
         # contract so a regression surfaces here rather than in production.

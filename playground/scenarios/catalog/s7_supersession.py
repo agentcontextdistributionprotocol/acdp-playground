@@ -43,7 +43,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     topic = spec.inputs.get("topic", SCENARIO.default_inputs["topic"])
 
     try:
-        agent = make_langchain_agent(spec, events, bundle, slug="curator")
+        agent = make_langchain_agent(spec, events, bundle, slug="curator", method="did:key")
 
         v1 = await agent.run(
             AgentTask(

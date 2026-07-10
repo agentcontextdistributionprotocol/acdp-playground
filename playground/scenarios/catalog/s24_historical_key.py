@@ -34,9 +34,12 @@ Deterministic core (offline):
 
 The live half publishes with ``key_v1`` and, if the registry issues a receipt,
 asserts ``receipt.key_fingerprint == fingerprint(key_v1)`` — the publish-time
-key is recorded. It degrades gracefully without a registry (and the playground
-DIDs aren't web-hosted, so full rotation lives in the offline core, mirroring
-S12).
+key is recorded. Unlike most scenarios, this agent's identity is **not**
+run-scoped: rotation needs a DID a consumer can revisit across time, and a
+receipts-registry can't live-resolve a did:web document anyway, so ``key_v1``
+is pinned in registry-a's ``playground.pinned_keys`` (a fixed, non-run-scoped
+seed — see ``_STABLE_SEED_LABEL`` below) instead of derived per run. Degrades
+gracefully if the registry is unreachable.
 """
 
 from __future__ import annotations
@@ -82,6 +85,17 @@ SCENARIO = ScenarioDef(
 
 class HistoricalAuthFailed(RuntimeError):
     """Fail-closed: historical authorization could not be established."""
+
+
+# Not run-scoped (unlike spec.agent_seed): this identity is pinned in
+# registry-a's playground.pinned_keys, which is static config — a live
+# publish under a fresh per-run key would never match a pinned entry, and
+# key rotation is meaningless for an identity that only ever exists once.
+_STABLE_SEED_LABEL = b"acdp-playground-fixed-identity:rotating-historical"
+
+
+def _stable_seed() -> bytes:
+    return hashlib.sha256(_STABLE_SEED_LABEL).digest()
 
 
 def _fp(pub_b64: str) -> str:
@@ -142,7 +156,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         # Distinct verification-method fragments for one DID: a rotation mints a
         # NEW key id, so the retired key can be retained alongside the current.
         kid_v1, kid_v2 = f"{did}#key-1", f"{did}#key-2"
-        seed = spec.agent_seed("rotating-historical")
+        seed = _stable_seed()
         # Two keys for ONE DID: v1 (pre-rotation), v2 (post-rotation).
         key_v1 = AcdpProducer.from_seed(hashlib.sha256(seed + b":v1").digest(), did, kid_v1)
         key_v2 = AcdpProducer.from_seed(hashlib.sha256(seed + b":v2").digest(), did, kid_v2)
@@ -244,8 +258,11 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         )
 
         # ── Live: publish with key_v1; assert the receipt records fp_v1. ──
+        # Anonymous (unauthenticated) is correct here: this is a pinned-key
+        # publish, verified by matching key_v1's signature against the
+        # playground.pinned_keys entry below, not by a bearer token.
         client = bundle.anonymous_client("a")
-        registry_pub = settings.registry_c_receipt_public_key_b64()
+        registry_pub = settings.receipt_verification_public_key_b64()
         ctx_id: str | None = None
         registry_outcome = "skipped"
         receipt_records_publish_key = False

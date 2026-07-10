@@ -40,9 +40,9 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     facets: list[str] = spec.inputs.get("facets", SCENARIO.default_inputs["facets"])
 
     try:
-        producer = make_langchain_agent(spec, events, bundle, slug="producer")
+        producer = make_langchain_agent(spec, events, bundle, slug="producer", method="did:key")
         consumers = [
-            make_langchain_agent(spec, events, bundle, slug=f"facet-{i}")
+            make_langchain_agent(spec, events, bundle, slug=f"facet-{i}", method="did:key")
             for i in range(len(facets))
         ]
 

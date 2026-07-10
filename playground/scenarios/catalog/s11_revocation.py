@@ -5,8 +5,11 @@ An agent mints a registry token, uses it, then revokes it (RFC 7009
 When the control plane is configured, we also introspect the token to
 confirm it reports ``active: false``.
 
-Requires live token issuance, so it degrades gracefully in the default
-(DID-less) stack.
+Requires live token issuance. Uses a did:key identity (verified against
+the key embedded in the DID, no fetch needed) rather than did:web, since
+the playground's demo authorities aren't DNS-hosted — did:web token
+issuance would degrade here otherwise. Still degrades gracefully if
+issuance fails for any other reason.
 """
 
 from __future__ import annotations
@@ -53,6 +56,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             slug="revocable",
             registry="a",
             authenticated=True,
+            method="did:key",
         )
         tm = bundle.token_manager
         base = settings.registry_a_url

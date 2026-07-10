@@ -71,6 +71,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             bundle,
             slug="buggy-producer",
             registry="a",
+            method="did:key",
         )
         producer = agent.producer
 
