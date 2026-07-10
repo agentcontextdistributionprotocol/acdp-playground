@@ -13,10 +13,8 @@ services:
     environment:
       REGISTRY_A_URL: http://registry-a:8100
       REGISTRY_B_URL: http://registry-b:8200
-      REGISTRY_C_URL: http://registry-c:8300
       REGISTRY_A_AUTHORITY: registry-a.playground.local
       REGISTRY_B_AUTHORITY: registry-b.playground.local
-      REGISTRY_C_AUTHORITY: registry-c.playground.local
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
@@ -30,8 +28,6 @@ services:
       registry-a:
         condition: service_healthy
       registry-b:
-        condition: service_healthy
-      registry-c:
         condition: service_healthy
 
   registry-a:
@@ -99,34 +95,6 @@ services:
     healthcheck:
       # See registry-a: slim image, no curl — bash /dev/tcp probe.
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8200"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  # The dedicated receipts-profile registry (RFC-ACDP-0010, ACDP 0.2). It
-  # verifies every publish (no playground lax mode) so it can mint receipts;
-  # the S22/S24 receipts scenarios publish here via did:key. The receipt
-  # signing seed lives in config/registry-c.toml (kept in lock-step with the
-  # playground's registry_c_receipt_seed_b64 setting).
-  registry-c:
-    build:
-      context: ../acdp-registry-rs
-      dockerfile: docker/Dockerfile
-      args:
-        STORAGE_FEATURE: storage-sqlite
-    ports: ["8300:8300"]
-    environment:
-      ACDP_REGISTRY_CONFIG: /app/config.toml
-      ACDP_REGISTRY_WEBHOOK__SECRET: ${WEBHOOK_SECRET:-playground-dev-secret}
-      ACDP_REGISTRY_AUTH__JWT_SECRET: ${ACDP_REGISTRY_JWT_SECRET:-cGxheWdyb3VuZC1zZWNyZXQtMzItYnl0ZXMtb2YtdGVzdC1qd3Q=}
-      RUST_LOG: info,acdp=info,acdp_registry=info
-    volumes:
-      - ./config/registry-c.toml:/app/config.toml:ro
-    tmpfs:
-      - /app/data
-    healthcheck:
-      # See registry-a: slim image, no curl — bash /dev/tcp probe.
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8300"]
       interval: 5s
       timeout: 3s
       retries: 10

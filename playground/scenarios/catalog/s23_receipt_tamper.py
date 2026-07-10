@@ -88,10 +88,10 @@ def _expect_rejected(
 
 async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     settings = get_settings()
-    # Model the receipts registry (registry-c) — its authority + receipt key.
-    authority = settings.registry_c_authority
+    # Model the receipts registry (registry-a) — its authority + receipt key.
+    authority = settings.registry_a_authority
 
-    registry_pub = settings.registry_c_receipt_public_key_b64()
+    registry_pub = settings.receipt_verification_public_key_b64()
     if registry_pub is None:
         # No receipt key provisioned — can't derive the verification key.
         return RunResult(
@@ -100,7 +100,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             status="complete",
             contexts=[],
             lineage_graph=LineageGraph(nodes=[], edges=[]),
-            summary={"degraded": True, "reason": "no registry_c_receipt_seed provisioned"},
+            summary={"degraded": True, "reason": "no receipt_signing_seed provisioned"},
             error=None,
         )
 

@@ -40,8 +40,12 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     topic = spec.inputs.get("topic", SCENARIO.default_inputs["topic"])
 
     try:
-        agent_a = make_langchain_agent(spec, events, bundle, slug="cross-a", registry="a")
-        agent_b = make_langchain_agent(spec, events, bundle, slug="cross-b", registry="b")
+        agent_a = make_langchain_agent(
+            spec, events, bundle, slug="cross-a", registry="a", method="did:key"
+        )
+        agent_b = make_langchain_agent(
+            spec, events, bundle, slug="cross-b", registry="b", method="did:key"
+        )
 
         out_a = await agent_a.run(
             AgentTask(

@@ -63,7 +63,9 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
     summary: dict = {"degraded": False, "idempotency_key": idem_key}
     try:
-        agent = make_langchain_agent(spec, events, bundle, slug="publisher", registry="a")
+        agent = make_langchain_agent(
+            spec, events, bundle, slug="publisher", registry="a", method="did:key"
+        )
 
         # One signed request body, reused verbatim for both sends.
         request_json = agent.producer.build_publish_request(

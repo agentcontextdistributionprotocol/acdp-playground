@@ -48,8 +48,12 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     topic_b = spec.inputs.get("topic_org_b", SCENARIO.default_inputs["topic_org_b"])
 
     try:
-        org_a = make_langchain_agent(spec, events, bundle, slug="org-a", registry="a")
-        org_b = make_langchain_agent(spec, events, bundle, slug="org-b", registry="b")
+        org_a = make_langchain_agent(
+            spec, events, bundle, slug="org-a", registry="a", method="did:key"
+        )
+        org_b = make_langchain_agent(
+            spec, events, bundle, slug="org-b", registry="b", method="did:key"
+        )
 
         out_a, out_b = await asyncio.gather(
             org_a.run(

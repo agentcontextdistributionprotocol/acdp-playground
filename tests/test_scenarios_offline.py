@@ -32,7 +32,6 @@ def offline_stack(monkeypatch):
     scenarios take their deterministic + degrade-gracefully paths."""
     monkeypatch.setenv("REGISTRY_A_URL", "http://127.0.0.1:1")
     monkeypatch.setenv("REGISTRY_B_URL", "http://127.0.0.1:1")
-    monkeypatch.setenv("REGISTRY_C_URL", "http://127.0.0.1:1")
     monkeypatch.setenv("CONTROL_PLANE_URL", "")
     monkeypatch.setenv("LLM_PROVIDER", "mock")  # no langchain_openai in CI
     get_settings.cache_clear()

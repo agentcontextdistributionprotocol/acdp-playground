@@ -30,6 +30,7 @@ from playground.scenarios.models import RunSpec
 
 Registry = Literal["a", "b"]
 SignatureAlg = Literal["ed25519", "ecdsa-p256"]
+DidMethod = Literal["did:web", "did:key"]
 
 
 def did_for(authority: str, slug: str) -> str:
@@ -70,6 +71,7 @@ def producer_for(
     authority: str,
     *,
     algorithm: SignatureAlg = ALG_ED25519,
+    method: DidMethod = "did:web",
 ) -> Producer:
     """Build a deterministic producer for ``slug`` on ``authority``.
 
@@ -77,8 +79,18 @@ def producer_for(
     ECDSA-P256. Both share the same seed source so a slug's identity is
     stable within a run regardless of algorithm choice at the DID level
     (the public key differs, which is expected).
+
+    ``method="did:key"`` builds an offline-verifiable identity instead —
+    the DID is derived from the key itself (no DID-document fetch), which
+    is what makes the registry's auth challenge/token flow resolvable in
+    an environment where the playground's did:web authorities aren't
+    DNS-hosted (see s6_restricted.py / s11_revocation.py).
     """
     seed = spec.agent_seed(slug)
+    if method == "did:key":
+        if algorithm == ALG_P256:
+            return AcdpP256Producer.from_seed_did_key(_p256_seed(seed))
+        return AcdpProducer.from_seed_did_key(seed)
     did = did_for(authority, slug)
     key_id = key_id_for(authority, slug)
     if algorithm == ALG_P256:
@@ -205,6 +217,7 @@ def make_langchain_agent(
     authority: str | None = None,
     authenticated: bool = False,
     algorithm: SignatureAlg = ALG_ED25519,
+    method: DidMethod = "did:web",
     tenant_id: str | None = None,
     tenant_header_mode: TenantHeaderMode = "fallback",
 ) -> LangChainAgent:
@@ -212,14 +225,15 @@ def make_langchain_agent(
 
     Set ``authenticated=True`` to attach a :class:`TokenManager` —
     required for publishing/retrieving restricted-visibility contexts.
-    ``algorithm`` picks the signer (Ed25519 or ECDSA-P256). ``tenant_id``
+    ``algorithm`` picks the signer (Ed25519 or ECDSA-P256). ``method``
+    picks the DID method (see :func:`producer_for`). ``tenant_id``
     /``tenant_header_mode`` drive the ``X-Tenant-Id`` fallback header.
     """
     settings = get_settings()
     auth = authority or (
         settings.registry_a_authority if registry == "a" else settings.registry_b_authority
     )
-    producer = producer_for(spec, slug, auth, algorithm=algorithm)
+    producer = producer_for(spec, slug, auth, algorithm=algorithm, method=method)
     bound = producer if authenticated else None
     client = bundle.client(
         registry,

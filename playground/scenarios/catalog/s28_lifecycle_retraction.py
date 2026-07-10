@@ -22,7 +22,7 @@ string) and the consumer verifies them with
 * the §4/§12 authorization rule the host owns: ``actor`` must equal the
   context's ``body.agent_id``.
 
-The live half drives registry-c (lifecycle-profile): publish v1 → supersede
+The live half drives registry-a (lifecycle-profile): publish v1 → supersede
 v2 → **retract v2** (status ``retracted``, body still retrievable, default
 search excludes it, ``/current`` 404s because v1 is superseded — RFC-ACDP-0013
 §8.3 leaves no eligible head), a double retract is refused
@@ -103,7 +103,7 @@ def _retraction_state(events: list[dict]) -> bool:
 async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     settings = get_settings()
     topic = spec.inputs.get("topic", SCENARIO.default_inputs["topic"])
-    authority = settings.registry_c_authority
+    authority = settings.registry_a_authority
     title = f"{topic} — retractable"
 
     producer = AcdpProducer.from_seed_did_key(spec.agent_seed("lifecycle-producer"))
@@ -190,7 +190,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     )
 
     # ── Live: publish v1 → v2, retract v2, observe, republish. ───────────
-    client = AcdpClient(settings.registry_c_url, run_id=spec.run_id)
+    client = AcdpClient(settings.registry_a_url, run_id=spec.run_id)
     ctx_v1: str | None = None
     ctx_v2: str | None = None
     live_round_trip = "skipped"

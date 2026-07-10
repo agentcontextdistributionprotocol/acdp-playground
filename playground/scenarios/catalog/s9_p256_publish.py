@@ -60,6 +60,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             slug="p256-signer",
             registry="a",
             algorithm="ecdsa-p256",
+            method="did:key",
         )
 
         # Sanity: the producer really is the P-256 type.

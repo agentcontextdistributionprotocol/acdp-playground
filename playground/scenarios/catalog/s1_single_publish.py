@@ -35,7 +35,9 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     topic = spec.inputs.get("topic", SCENARIO.default_inputs["topic"])
 
     try:
-        agent = make_langchain_agent(spec, events, bundle, slug="solo", registry="a")
+        agent = make_langchain_agent(
+            spec, events, bundle, slug="solo", registry="a", method="did:key"
+        )
         out = await agent.run(
             AgentTask(
                 prompt=f"Summarize three notable trends in {topic} in 4 sentences.",
