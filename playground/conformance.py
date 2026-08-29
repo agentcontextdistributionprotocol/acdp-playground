@@ -43,7 +43,7 @@ _PROBE_CTX_ID = "acdp://registry-a.playground.local/00000000-0000-4000-8000-0000
 # A well-formed, never-published ctx_id on the receipts registry's own
 # authority, for the lifecycle-endpoint probe (a retract of a context that does
 # not exist / is not the caller's must fail closed with the ACDP envelope).
-_RECEIPTS_PROBE_CTX_ID = "acdp://registry-c.playground.local/00000000-0000-4000-8000-0000000000fe"
+_RECEIPTS_PROBE_CTX_ID = "acdp://registry-a.playground.local/00000000-0000-4000-8000-0000000000fe"
 _ACDP_CONTENT_TYPE = "application/acdp+json"
 
 # Spec lines a conforming registry in this stack may advertise. All Final:
@@ -149,7 +149,7 @@ async def probe_error_envelope_content_type(client: httpx.AsyncClient, cfg: Live
 
 
 async def probe_receipts_profile_advertised(client: httpx.AsyncClient, cfg: LiveConfig) -> str:
-    """registry-c advertises the receipts profile (RFC-ACDP-0010, ACDP 0.2).
+    """registry-a advertises the receipts profile (RFC-ACDP-0010, ACDP 0.2).
 
     Provisioning ``[receipt]`` bumps the capabilities document to
     ``acdp_version`` 0.2.0 (or 0.3.0 once the lifecycle/log profiles are on)
@@ -179,7 +179,7 @@ async def probe_receipts_profile_advertised(client: httpx.AsyncClient, cfg: Live
 
 
 async def probe_did_key_method_advertised(client: httpx.AsyncClient, cfg: LiveConfig) -> str:
-    """registry-c advertises ``did:key`` in ``supported_did_methods`` (ACDP 0.2).
+    """registry-a advertises ``did:key`` in ``supported_did_methods`` (ACDP 0.2).
 
     The did:key ephemeral-agent scenarios can only publish if the registry
     accepts did:key producers; the capabilities document is the contract that
@@ -207,7 +207,7 @@ async def probe_ingest_body_limit_413(client: httpx.AsyncClient, cfg: LiveConfig
 
 # ── 0.3.0 endpoint probes (RFC-ACDP-0011/0012/0013) ─────────────────────────
 #
-# These drive the REAL 0.3.0 contracts on registry-c (the receipts/lifecycle/
+# These drive the REAL 0.3.0 contracts on registry-a (the receipts/lifecycle/
 # log registry). Unlike the read-only probes above they publish a deterministic
 # context first where the contract needs live state (a Merkle leaf, a lineage
 # head). They HARD-FAIL when the real binary drifts from the shape the offline
@@ -235,7 +235,7 @@ async def _publish_probe_context(client: httpx.AsyncClient, cfg: LiveConfig) -> 
 
     The seed is fixed so the content_hash is stable: a re-run idempotently
     replays the same context (RFC-ACDP-0003) rather than growing the log
-    unboundedly. Anonymous publish (registry-c admits did:key producers — see
+    unboundedly. Anonymous publish (registry-a admits did:key producers — see
     ``probe_did_key_method_advertised``).
     """
     producer = AcdpProducer.from_seed_did_key(_PROBE_SEED)
@@ -544,7 +544,7 @@ REGISTRY_PROBES = (
     probe_receipts_profile_advertised,
     probe_did_key_method_advertised,
 )
-# RFC-ACDP-0011/0012/0013 endpoint contracts on registry-c. Real probes: they
+# RFC-ACDP-0011/0012/0013 endpoint contracts on registry-a. Real probes: they
 # hard-fail on drift wherever the profile is advertised (mock-drift detection).
 ENDPOINT_0_3_0_PROBES = (
     probe_log_checkpoint_signed,

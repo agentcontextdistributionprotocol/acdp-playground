@@ -24,12 +24,12 @@ everything else talks over Railway's private network.
 
 - **Dynamic `$PORT`.** Railway injects `PORT`. The playground binds it
   (`Dockerfile` CMD); the control plane reads `process.env.PORT`; ui-console
-  reads `PORT`; the registry takes `ACDP_REGISTRY__REGISTRY__PORT`. Set an
+  reads `PORT`; the registry takes `ACDP_REGISTRY_REGISTRY__PORT`. Set an
   **explicit** `PORT` per service so internal addresses are deterministic.
 - **Private networking is IPv6.** A service is only reachable at
   `<service>.railway.internal` if it binds `::`, not `0.0.0.0`. Set `HOST=::`
   (playground, CP), `HOSTNAME=::` (ui-console), and
-  `ACDP_REGISTRY__REGISTRY__BIND=::` (registries).
+  `ACDP_REGISTRY_REGISTRY__BIND=::` (registries).
 - **Shared secrets must match across services** (see the secrets table) — a
   mismatch silently breaks webhook HMAC verification or admin auth.
 
@@ -87,7 +87,7 @@ Deploy* (`/healthz` for registry/CP/playground, `/` for ui-console).
 Generate the shared secrets **once** and reuse them consistently:
 
 ```bash
-openssl rand -base64 32   # → JWT_SECRET (CP) and ACDP_REGISTRY__AUTH__JWT_SECRET
+openssl rand -base64 32   # → JWT_SECRET (CP) and ACDP_REGISTRY_AUTH__JWT_SECRET
 # pick stable strings for the rest
 ```
 
@@ -95,33 +95,33 @@ openssl rand -base64 32   # → JWT_SECRET (CP) and ACDP_REGISTRY__AUTH__JWT_SEC
 
 | Secret                     | Must be equal across …                                                        |
 |----------------------------|-------------------------------------------------------------------------------|
-| registry webhook secret    | `registry-*` `ACDP_REGISTRY__WEBHOOK__SECRET` = `playground` `WEBHOOK_SECRET`  |
+| registry webhook secret    | `registry-*` `ACDP_REGISTRY_WEBHOOK__SECRET` = `playground` `WEBHOOK_SECRET`  |
 | CP ingest HMAC             | `control-plane` `WEBHOOK_SECRET` = `playground` `CONTROL_PLANE_HMAC_SECRET`    |
 | CP admin key               | `playground` `CONTROL_PLANE_ADMIN_TOKEN` ∈ `control-plane` `AUTH_ADMIN_API_KEYS` |
 
 ### `registry-a`  (registry-b: swap `a`→`b`, port 8100→8200)
 
-The registry runs on built-in defaults overlaid by `ACDP_REGISTRY__*` env (no
+The registry runs on built-in defaults overlaid by `ACDP_REGISTRY_*` env (no
 config file needed — the image's entrypoint passes none).
 
 ```
-ACDP_REGISTRY__REGISTRY__AUTHORITY=registry-a.playground.local
-ACDP_REGISTRY__REGISTRY__PORT=8100
-ACDP_REGISTRY__REGISTRY__BIND=::
-ACDP_REGISTRY__REGISTRY__ALLOW_PUBLIC_BIND=true
-ACDP_REGISTRY__PLAYGROUND__ENABLED=true
-ACDP_REGISTRY__STORAGE__BACKEND=sqlite
-ACDP_REGISTRY__STORAGE__SQLITE_PATH=/app/data/registry-a.db
-ACDP_REGISTRY__AUTH__ENABLED=true
-ACDP_REGISTRY__AUTH__ANONYMOUS_PUBLIC_READS=true
-ACDP_REGISTRY__AUTH__REQUIRE_TENANT=false
-ACDP_REGISTRY__AUTH__JWT_SECRET=<base64 ≥32 bytes>
-ACDP_REGISTRY__WEBHOOK__SECRET=<registry-webhook-secret>
+ACDP_REGISTRY_REGISTRY__AUTHORITY=registry-a.playground.local
+ACDP_REGISTRY_REGISTRY__PORT=8100
+ACDP_REGISTRY_REGISTRY__BIND=::
+ACDP_REGISTRY_REGISTRY__ALLOW_PUBLIC_BIND=true
+ACDP_REGISTRY_PLAYGROUND__ENABLED=true
+ACDP_REGISTRY_STORAGE__BACKEND=sqlite
+ACDP_REGISTRY_STORAGE__SQLITE_PATH=/app/data/registry-a.db
+ACDP_REGISTRY_AUTH__ENABLED=true
+ACDP_REGISTRY_AUTH__ANONYMOUS_PUBLIC_READS=true
+ACDP_REGISTRY_AUTH__REQUIRE_TENANT=false
+ACDP_REGISTRY_AUTH__JWT_SECRET=<base64 ≥32 bytes>
+ACDP_REGISTRY_WEBHOOK__SECRET=<registry-webhook-secret>
 ```
 
 > SQLite under `/app/data` is **ephemeral** on Railway (resets on redeploy) —
 > fine for a demo. For persistence, attach a Railway **volume** mounted at
-> `/app/data`. The full `[section]→ACDP_REGISTRY__SECTION__KEY` mapping mirrors
+> `/app/data`. The full `[section]→ACDP_REGISTRY_SECTION__KEY` mapping mirrors
 > `config/registry-a.toml`; add more keys the same way if you need them.
 
 ### `control-plane`  (mirrors `docker-compose.full.yml`)
@@ -163,7 +163,7 @@ REGISTRY_B_AUTHORITY=registry-b.playground.local
 CONTROL_PLANE_URL=http://control-plane.railway.internal:3001
 CONTROL_PLANE_HMAC_SECRET=<cp-ingest-hmac>      # == control-plane WEBHOOK_SECRET
 CONTROL_PLANE_ADMIN_TOKEN=<cp-admin-key>        # ∈ control-plane AUTH_ADMIN_API_KEYS
-WEBHOOK_SECRET=<registry-webhook-secret>        # == registry ACDP_REGISTRY__WEBHOOK__SECRET
+WEBHOOK_SECRET=<registry-webhook-secret>        # == registry ACDP_REGISTRY_WEBHOOK__SECRET
 ```
 
 ### `ui-console`
@@ -188,7 +188,7 @@ then `playground`, then `ui-console`. After each is green:
 ```bash
 # public playground domain
 curl https://<playground-domain>/healthz        # → 200
-curl https://<playground-domain>/scenarios | jq 'length'   # → 21
+curl https://<playground-domain>/scenarios | jq 'length'   # → 32
 
 # run an offline scenario end-to-end (no backends needed)
 curl -X POST https://<playground-domain>/runs \
@@ -209,11 +209,11 @@ Open the **ui-console** public domain to drive the stack from the browser.
 
 - **A service can't reach another (`Connection refused` on `*.railway.internal`).**
   The target isn't bound to IPv6. Confirm `HOST=::` / `HOSTNAME=::` /
-  `ACDP_REGISTRY__REGISTRY__BIND=::`, and that the port in the URL matches the
+  `ACDP_REGISTRY_REGISTRY__BIND=::`, and that the port in the URL matches the
   target's listen port.
 - **Registry rejects its bind (`refuses non-loopback bind`).** Set
-  `ACDP_REGISTRY__REGISTRY__ALLOW_PUBLIC_BIND=true` (and/or
-  `ACDP_REGISTRY__PLAYGROUND__ENABLED=true`).
+  `ACDP_REGISTRY_REGISTRY__ALLOW_PUBLIC_BIND=true` (and/or
+  `ACDP_REGISTRY_PLAYGROUND__ENABLED=true`).
 - **Forwarded webhooks 401 at the CP, or registry webhooks fail HMAC.** A
   secret mismatch — re-check the shared-secret table in §3.
 - **`data_ref` SSRF scenarios (e.g. S16) or CP outbound webhooks fail against

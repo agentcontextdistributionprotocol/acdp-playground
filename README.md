@@ -15,7 +15,7 @@ section of [agentcontextdistributionprotocol.io](https://agentcontextdistributio
 |-----|--------|
 | [Getting started](docs/getting-started.md) | Install, smoke-test, run the stack, first run |
 | [Architecture](docs/architecture.md) | Components, request flow, the run lifecycle, the SSE bus |
-| [Scenarios](docs/scenarios.md) | The S1–S21 catalog and how to author one |
+| [Scenarios](docs/scenarios.md) | The S1–S32 catalog and how to author one |
 | [HTTP API](docs/http-api.md) | Every route on the playground service |
 | [Client library](docs/client-sdk.md) | `acdp_client` — the async wrapper the playground drives the SDK through |
 | [Agents](docs/agents.md) | `BasePlaygroundAgent` + LangChain / CrewAI / LangGraph |
@@ -40,7 +40,7 @@ acdp_client/                  # async httpx + Pydantic aliases over the acdp-py 
 playground/
   agents/                     # BasePlaygroundAgent + LangChain/CrewAI/LangGraph
   scenarios/
-    catalog/                  # S1–S5, S7, S8 — runnable end-to-end
+    catalog/                  # S1–S32 — auto-discovered, runnable end-to-end
   api/                        # FastAPI routers: scenarios, runs, contexts, webhooks
   config.py                   # pydantic-settings (.env)
   events.py                   # in-process SSE bus
@@ -104,6 +104,18 @@ curl -N localhost:8000/runs/RUN_ID/events
 | `s18_idempotency` | Idempotent publish | Repeated `Idempotency-Key` replays one context |
 | `s19_cp_did_web_p256` | CP did:web P-256 | P-256 verification method the CP now resolves (offline) |
 | `s20_reserved_tenant` | Reserved-tenant guard | Asserting `default` tenant is rejected (offline) |
+| `s21_capabilities_p256` | P-256 capability | `ecdsa-p256` capability declaration accepted (offline) |
+| `s22_receipts` | Registry Receipts | did:key publish + registry-signed receipt verified under a Require policy |
+| `s23_receipt_tamper` | Receipt Tamper | Every missing/mutated/mismatched receipt fails closed (offline) |
+| `s24_historical_key` | Historical Key | Pre-rotation context is HistoricallyAuthorized via receipt + retained key |
+| `s25_did_key` | did:key Agents | Ephemeral did:key agents self-verify offline; rotation is a new identity |
+| `s26_divergence` | Divergence Diagnostics | `explain_hash_mismatch` names the JCS divergence cause |
+| `s27_receipt_key_rotation` | Receipt-Key Rotation | Registry rotates its receipt key; a historical receipt still verifies |
+| `s28_lifecycle_retraction` | Lifecycle Events & Retraction | Signed retract/republish (mark-not-delete); 409 on conflicting transitions |
+| `s29_transparency_log` | Transparency Log Proofs | Signed checkpoint + inclusion + consistency proofs; tamper fails closed |
+| `s30_head_receipt_freshness` | Lineage-Head Receipt Freshness | `/current` answers are registry-signed; `as_of` freshness/stale policy |
+| `s31_witness_cosigning` | Transparency-Log Witness Cosigning | Independent witness cosigns a checkpoint; consumer verifies quorum |
+| `s32_key_revocation` | Producer Key-Revocation Signal | Time-scoped key-compromise signal; pre/post-compromise classification |
 
 > **V2 scenarios (S9–S15)** exercise the features that landed across the
 > sibling repos — P-256 signing, multi-tenancy, token revocation,
@@ -138,6 +150,37 @@ curl -N localhost:8000/runs/RUN_ID/events
 > declaration the control plane's capability DTO now accepts (it previously
 > rejected P-256 at the validation boundary); the signature is self-verified
 > against the producer's key.
+>
+> **ACDP 0.2 trust & hardening (S22–S27)** cover registry receipts and the
+> RFC-ACDP-0010 §9 key lifecycle: a registry-signed receipt on every publish
+> (**S22**), every dishonest receipt failing closed (**S23**), the retired-key
+> lifecycle on both the producer (**S24**) and registry receipt-key (**S27**)
+> sides, ephemeral did:key agents (**S25**), and the `explain_hash_mismatch`
+> diagnostic (**S26**). Deterministic cores run fully offline; live receipt
+> round-trips degrade gracefully against a stock registry.
+>
+> **ACDP 0.3.0 (S28–S30)** cover lifecycle events & retraction
+> (RFC-ACDP-0013, **S28**), the registry's Merkle transparency log
+> (RFC-ACDP-0012, **S29**), and signed lineage-head receipts on `/current`
+> (RFC-ACDP-0011, **S30**) — all served live by registry-a's receipts/
+> lifecycle/log profiles. Each mints its artifacts offline with the SDK
+> primitives, so the deterministic core runs with no registry; the live
+> halves degrade gracefully.
+>
+> **ACDP 0.4 (S31)** proves transparency-log **witness cosigning**
+> (RFC-ACDP-0015) with the playground itself acting as an independent
+> witness (the PLAYGROUND-AS-WITNESS pattern — no control-plane witness
+> required): it discharges the §7 witness obligation, mints its own `did:key`
+> cosignature, and a consumer verifies the cosignature plus an N-witnessed
+> quorum; a cosignature over a tampered root fails closed as
+> `invalid_witness_cosignature`.
+>
+> **S32** proves the producer **key-revocation signal** (RFC-ACDP-0014): a
+> did:web producer rotates K1→K2 and publishes a signed `key-revocation`
+> context naming K1's fingerprint with a compromise boundary T; a consumer
+> classifies a K1-signed context as historically authorized only when its
+> receipt-attested `created_at` predates T, and rejects a revocation of K1
+> signed by K1 itself.
 
 ## V2 protocol features
 

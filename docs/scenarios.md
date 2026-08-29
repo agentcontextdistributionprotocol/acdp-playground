@@ -79,7 +79,7 @@ sibling repos:
   deterministic crypto cores run fully offline; the live receipt round-trips
   degrade gracefully against a stock registry.
 - **ACDP 0.3.0 (S28–S30)** — lifecycle, head receipts, transparency log
-  (RFC-ACDP-0011/0012/0013), served live by registry-c's three new profiles.
+  (RFC-ACDP-0011/0012/0013), served live by registry-a's three new profiles.
   **S28** retracts and republishes a context with producer-signed lifecycle
   events (`verify_lifecycle_event`, replay/tamper fail-closed, the §7.1
   order-based derivation, 409 `invalid_lifecycle_transition` on a double
@@ -107,7 +107,7 @@ sibling repos:
   cosignature over a *tampered* root is refused as
   `invalid_witness_cosignature` at the §8 checkpoint binding and earns no
   quorum credit. The deterministic core runs with no registry; the live half
-  publishes twice to registry-c and cosigns the real `/log/checkpoint`,
+  publishes twice to registry-a and cosigns the real `/log/checkpoint`,
   degrading gracefully.
 - **ACDP 0.3.0 key revocation (S32)** — the producer **key-revocation signal**
   (RFC-ACDP-0014), the time-scoping scalpel that rotation is not. A did:web
@@ -120,7 +120,7 @@ sibling repos:
   (pre-compromise)*; at/after T, or with no verified receipt, it fails closed;
   and a revocation of K1 signed by K1 itself is rejected. The deterministic
   core runs with no registry; the live half publishes a genuine
-  `key-revocation`-typed context to registry-c (proving a real 0.3.0 registry
+  `key-revocation`-typed context to registry-a (proving a real 0.3.0 registry
   admits the §4 type) and runs the §7 boundary against a genuine receipt time,
   degrading gracefully.
 
