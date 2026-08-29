@@ -34,7 +34,9 @@ dependencies = [
     # evaluate_witness_quorum — a transparency-log checkpoint is cosigned by
     # independent witnesses and the consumer evaluates an N-witnessed quorum —
     # driven by the S31 scenario.
-    "acdp>=0.7.0",
+    # 0.8.0/0.8.1 unify the whole acdp family (crate + language bindings) onto
+    # a single lockstep version — no new API surface over 0.7.0.
+    "acdp>=0.8.1",
 ]
 
 [project.optional-dependencies]
