@@ -36,7 +36,14 @@ dependencies = [
     # driven by the S31 scenario.
     # 0.8.0/0.8.1 unify the whole acdp family (crate + language bindings) onto
     # a single lockstep version — no new API surface over 0.7.0.
-    "acdp>=0.8.1",
+    # 0.8.2/0.8.3 add the RFC-ACDP-0016 anchors surface: build_publish_request/
+    # build_supersede_request gain `anchors` (a JSON-encoded array of
+    # {scheme, content_hash, uri?, ...extensions} objects), and
+    # build_supersede_request gains `clear_anchors` — omitting `anchors` now
+    # correctly carries the previous version's anchors forward, and
+    # clear_anchors=True is the explicit way to drop them — driven by the S33
+    # scenario.
+    "acdp>=0.8.3",
 ]
 
 [project.optional-dependencies]

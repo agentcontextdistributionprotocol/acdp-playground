@@ -41,6 +41,7 @@ an async `run(spec, events)` coroutine, and is auto-discovered at import time by
 | `s30_head_receipt_freshness` | Lineage-Head Receipt Freshness | `/current` answers are registry-signed; bindings, `as_of` freshness/stale policy, replayed pre-supersession receipts rejected (RFC-ACDP-0011) | degrades |
 | `s31_witness_cosigning` | Transparency-Log Witness Cosigning | An independent did:key witness discharges the §7 obligation (checkpoint signature + consistency) then cosigns the checkpoint; the consumer verifies the cosignature and an N-witnessed quorum; a cosignature over a tampered root fails `invalid_witness_cosignature` (RFC-ACDP-0015) | degrades |
 | `s32_key_revocation` | Producer Key-Revocation Signal | A producer rotates K1→K2 and publishes a signed `key-revocation` context (`revoked_key_fingerprint`=K1, `compromised_since`=T). A consumer (`parse_key_revocation` + `classify_under_revocation`) verifies a K1-signed context with a receipt-attested `created_at` before T as historically authorized (pre-compromise); at/after T or with no verified receipt it fails closed; a K1-signed revocation of K1 is rejected (not self-signed) (RFC-ACDP-0014) | degrades |
+| `s33_anchors` | External Anchors | A well-formed `anchors` entry is accepted and signed byte-exactly like any other field (anc-001); a scheme-unaware verifier still produces a valid verdict while structurally never dereferencing `anchors[].uri` (anc-005); a tampered anchor fails closed; supersede exercises the anchors carry-forward / `clear_anchors` fix (RFC-ACDP-0016) | degrades |
 
 ## Scenario waves
 
@@ -123,6 +124,24 @@ sibling repos:
   `key-revocation`-typed context to registry-a (proving a real 0.3.0 registry
   admits the §4 type) and runs the §7 boundary against a genuine receipt time,
   degrading gracefully.
+- **ACDP 0.5.0 (S33)** — **external anchors** (RFC-ACDP-0016), the field that
+  ties a context to an artifact in a system ACDP itself never needs to
+  understand — a settlement record, a decision log, a commitment scheme. S33
+  pins the two conformance stories the spec's `anc-*` fixture pack defines:
+  **anc-001** — a well-formed `anchors` entry (`{scheme, content_hash, uri}`)
+  is accepted and signed byte-exactly like any other field, and a tampered
+  anchor fails closed exactly as tampering with any other field would; and
+  **anc-005** — a verifier with no resolution logic for a given `scheme`
+  still produces a fully valid verdict, and — the stricter §6 rule S33 makes
+  structurally observable rather than merely asserted — `anchors[].uri` is
+  never dereferenced by ACDP-level verification: both offline verify calls
+  run inside a DNS trap that fails the run if anything ever resolves the
+  anchor's host. The deterministic core runs with no registry; the live half
+  publishes an anchored context to registry-a and supersedes it twice to
+  exercise the 0.8.3 `Producer::new_version_from` fix — omitting `anchors` on
+  supersede now correctly carries the previous version's anchors forward, and
+  `clear_anchors=True` is the explicit way to drop them — degrading
+  gracefully.
 
 ## Graceful degradation
 
