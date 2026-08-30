@@ -15,7 +15,7 @@ section of [agentcontextdistributionprotocol.io](https://agentcontextdistributio
 |-----|--------|
 | [Getting started](docs/getting-started.md) | Install, smoke-test, run the stack, first run |
 | [Architecture](docs/architecture.md) | Components, request flow, the run lifecycle, the SSE bus |
-| [Scenarios](docs/scenarios.md) | The S1–S32 catalog and how to author one |
+| [Scenarios](docs/scenarios.md) | The S1–S33 catalog and how to author one |
 | [HTTP API](docs/http-api.md) | Every route on the playground service |
 | [Client library](docs/client-sdk.md) | `acdp_client` — the async wrapper the playground drives the SDK through |
 | [Agents](docs/agents.md) | `BasePlaygroundAgent` + LangChain / CrewAI / LangGraph |
@@ -40,7 +40,7 @@ acdp_client/                  # async httpx + Pydantic aliases over the acdp-py 
 playground/
   agents/                     # BasePlaygroundAgent + LangChain/CrewAI/LangGraph
   scenarios/
-    catalog/                  # S1–S32 — auto-discovered, runnable end-to-end
+    catalog/                  # S1–S33 — auto-discovered, runnable end-to-end
   api/                        # FastAPI routers: scenarios, runs, contexts, webhooks
   config.py                   # pydantic-settings (.env)
   events.py                   # in-process SSE bus
@@ -116,6 +116,7 @@ curl -N localhost:8000/runs/RUN_ID/events
 | `s30_head_receipt_freshness` | Lineage-Head Receipt Freshness | `/current` answers are registry-signed; `as_of` freshness/stale policy |
 | `s31_witness_cosigning` | Transparency-Log Witness Cosigning | Independent witness cosigns a checkpoint; consumer verifies quorum |
 | `s32_key_revocation` | Producer Key-Revocation Signal | Time-scoped key-compromise signal; pre/post-compromise classification |
+| `s33_anchors` | External Anchors | Well-formed anchor accepted & signed byte-exactly; scheme-unaware verifier never dereferences `anchors[].uri`; tamper fails closed; supersede carries anchors forward / `clear_anchors` drops them |
 
 > **V2 scenarios (S9–S15)** exercise the features that landed across the
 > sibling repos — P-256 signing, multi-tenancy, token revocation,
@@ -181,6 +182,17 @@ curl -N localhost:8000/runs/RUN_ID/events
 > classifies a K1-signed context as historically authorized only when its
 > receipt-attested `created_at` predates T, and rejects a revocation of K1
 > signed by K1 itself.
+>
+> **S33** proves **external anchors** (RFC-ACDP-0016, ACDP 0.5.0): a
+> well-formed `anchors` entry is accepted and signed byte-exactly like any
+> other field (**anc-001**), and a scheme-unaware verifier still produces a
+> fully valid verdict while `anchors[].uri` is never dereferenced by
+> ACDP-level verification per §6 (**anc-005**), proven inside a DNS trap
+> rather than merely asserted; a tampered anchor fails closed like any other
+> field. The live half exercises the 0.8.3 `Producer::new_version_from` fix —
+> omitting `anchors` on supersede now carries the previous version's anchors
+> forward, and `clear_anchors=True` explicitly drops them — degrading
+> gracefully without a registry.
 
 ## V2 protocol features
 
