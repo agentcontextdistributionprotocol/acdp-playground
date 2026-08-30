@@ -271,6 +271,27 @@ async def test_s32_key_revocation_core(offline_stack):
     assert s.get("degraded") is True  # live key-revocation publish needs a registry
 
 
+# ── ACDP 0.5.0 (RFC-ACDP-0016) external anchors deterministic core ───────
+
+
+async def test_s33_anchors_core(offline_stack):
+    res = await _run("s33_anchors")
+    assert res.status == "complete"
+    s = res.summary
+    assert s["offline_core_ok"] is True
+    # anc-001: a well-formed, recognized-scheme anchor is accepted and
+    # verifies like any other signed field.
+    assert s["anc001_well_formed_anchor_verified"] is True
+    # anc-005: a scheme-unaware verifier still produces a valid verdict.
+    assert s["anc005_scheme_unaware_verified"] is True
+    # A tampered anchor fails closed (anchors are signed byte-exactly).
+    assert s["tamper_rejected"] is True
+    # §6/§14: anchors[].uri is structurally never dereferenced — the DNS
+    # trap around every verify call would have raised otherwise.
+    assert s["anchor_uri_dereferenced"] is False
+    assert s.get("degraded") is True  # live publish/supersede needs a registry
+
+
 # ── graceful degradation contract (complete + degraded: true) ────────────
 
 

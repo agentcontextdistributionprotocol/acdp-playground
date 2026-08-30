@@ -84,7 +84,12 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         )
 
         # ── Divergence 1: acdp_version omitted (0.1.x) vs explicit (0.2) ──
-        req_explicit = json.loads(producer.build_publish_request(**common))
+        # Pinned to 0.2.0 explicitly: explain_hash_mismatch's canned
+        # divergence pattern for "omitted vs explicit acdp_version" is keyed
+        # to the 0.1.x -> 0.2 transition specifically, not to whatever
+        # acdp_version the SDK defaults to emitting today (which has moved
+        # on as newer protocol surfaces landed).
+        req_explicit = json.loads(producer.build_publish_request(**common, acdp_version="0.2.0"))
         req_omitted = json.loads(producer.build_publish_request(**common, omit_acdp_version=True))
         hash_explicit = req_explicit["content_hash"]
         hash_omitted = req_omitted["content_hash"]

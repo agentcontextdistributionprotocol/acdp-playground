@@ -48,6 +48,8 @@ EXPECTED = {
     "s31_witness_cosigning",
     # ACDP 0.3.0 (RFC-ACDP-0014): producer key-revocation signal.
     "s32_key_revocation",
+    # ACDP 0.5.0 (RFC-ACDP-0016): external anchors.
+    "s33_anchors",
 }
 
 

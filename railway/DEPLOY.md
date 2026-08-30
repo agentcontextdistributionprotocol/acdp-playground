@@ -188,7 +188,7 @@ then `playground`, then `ui-console`. After each is green:
 ```bash
 # public playground domain
 curl https://<playground-domain>/healthz        # → 200
-curl https://<playground-domain>/scenarios | jq 'length'   # → 32
+curl https://<playground-domain>/scenarios | jq 'length'   # → 33
 
 # run an offline scenario end-to-end (no backends needed)
 curl -X POST https://<playground-domain>/runs \
