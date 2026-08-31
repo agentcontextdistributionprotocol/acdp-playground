@@ -74,11 +74,19 @@ All three read the LLM provider from settings (`LLM_PROVIDER`, `LLM_MODEL`, and
 the matching API key) and lazy-import their heavyweight dependencies so the base
 install stays light.
 
-> **Catalog usage.** Every scenario in the current catalog (S1–S32) uses
-> `LangChainAgent` via `_factory.make_langchain_agent`; the CrewAI and
-> LangGraph adapters exist as reference implementations (importable from their
-> module paths — `playground.agents` only exports `LangChainAgent`) but no
-> scenario instantiates them yet. Install them with the `multiagent` extra.
+> **Catalog usage.** `LangChainAgent` via `_factory.make_langchain_agent` is
+> the only adapter any scenario uses, and only a subset of the catalog uses
+> it: 15 of the 33 scenarios (S1–S11, S15, S17, S18, S26) drive an LLM agent
+> that way. The rest are deterministic protocol-conformance scenarios that
+> need no LLM — most drive producers directly through `_factory`'s
+> `producer_for` / `AgentBundle` helpers or a raw `AcdpProducer` (as S33
+> does), and a few (S12, S13, S14, S16, S20) build no producer at all,
+> exercising the HTTP, guard, or key-window layers on their own. Note that
+> every `ScenarioDef` declares `framework="langchain"` regardless; that field
+> is catalog metadata, not evidence an agent is built. The CrewAI and
+> LangGraph adapters exist as reference implementations (importable from
+> their module paths — `playground.agents` only exports `LangChainAgent`) but
+> no scenario instantiates them. Install them with the `multiagent` extra.
 
 ### `LangChainAgent` (`framework = "langchain"`)
 
