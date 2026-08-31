@@ -36,7 +36,7 @@ the playground fans every protocol step out to the client over **SSE**.
 | `main.py` | FastAPI app, CORS, router wiring, lifespan |
 | `config.py` | `pydantic-settings` over `.env`; `get_settings()` is `lru_cache`d |
 | `api/` | HTTP routers: `health`, `scenarios`, `runs`, `contexts`, `webhooks` |
-| `scenarios/` | Scenario registry, run lifecycle, and the S1–S32 catalog |
+| `scenarios/` | Scenario registry, run lifecycle, and the S1–S33 catalog |
 | `agents/` | `BasePlaygroundAgent` + LangChain / CrewAI / LangGraph adapters |
 | `events.py` | In-process SSE bus — one `asyncio.Queue` per run |
 | `control_plane.py` | Optional fire-and-forget bridge to the control plane |
