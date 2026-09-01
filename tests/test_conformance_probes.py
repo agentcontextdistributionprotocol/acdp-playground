@@ -53,9 +53,9 @@ def _client(handler) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=_BASE)
 
 
-def test_version_set_accepts_0_4_0():
-    assert "0.4.0" in conformance._ACCEPTED_ACDP_VERSIONS
-    assert {"0.2.0", "0.3.0"} <= conformance._ACCEPTED_ACDP_VERSIONS
+def test_version_set_accepts_0_5_0():
+    assert "0.5.0" in conformance._ACCEPTED_ACDP_VERSIONS
+    assert {"0.2.0", "0.3.0", "0.4.0"} <= conformance._ACCEPTED_ACDP_VERSIONS
 
 
 def test_new_0_3_0_probes_registered():
