@@ -48,10 +48,10 @@ _ACDP_CONTENT_TYPE = "application/acdp+json"
 
 # Spec lines a conforming registry in this stack may advertise. All Final:
 # 0.2.0 (receipts / trust hardening), 0.3.0 (lifecycle, lineage-head receipts,
-# transparency log — RFC-ACDP-0011/0012/0013), and 0.4.0 (witness cosigning —
-# RFC-ACDP-0015). Accepting 0.4.0 keeps the profile probe green once a future
-# 0.4.0-advertising registry ships.
-_ACCEPTED_ACDP_VERSIONS = frozenset({"0.2.0", "0.3.0", "0.4.0"})
+# transparency log — RFC-ACDP-0011/0012/0013), 0.4.0 (witness cosigning —
+# RFC-ACDP-0015), and 0.5.0 (anchors — RFC-ACDP-0016). Accepting 0.5.0 keeps
+# the profile probe green against the registry's current advertised version.
+_ACCEPTED_ACDP_VERSIONS = frozenset({"0.2.0", "0.3.0", "0.4.0", "0.5.0"})
 
 # RFC-ACDP-0011/0012/0013 server-profile names, advertised at
 # ``GET /.well-known/acdp.json`` when the registry runs the corresponding 0.3.0

@@ -121,6 +121,18 @@ async def _check_scenarios_load() -> int:
         "s19_cp_did_web_p256",
         "s20_reserved_tenant",
         "s21_capabilities_p256",
+        "s22_receipts",
+        "s23_receipt_tamper",
+        "s24_historical_key",
+        "s25_did_key",
+        "s26_divergence",
+        "s27_receipt_key_rotation",
+        "s28_lifecycle_retraction",
+        "s29_transparency_log",
+        "s30_head_receipt_freshness",
+        "s31_witness_cosigning",
+        "s32_key_revocation",
+        "s33_anchors",
     }
     got = {s.id for s in scenarios}
     missing = expected - got
