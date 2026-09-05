@@ -29,8 +29,9 @@ async def test_ingest_body_limit_413(live_client: httpx.AsyncClient, live_config
 
 async def test_receipts_profile_advertised(live_client: httpx.AsyncClient, live_config: LiveConfig):
     summary = await conformance.probe_receipts_profile_advertised(live_client, live_config)
-    # The stack's registries may run any Final spec line (0.2.0 / 0.3.0 / 0.4.0 / 0.5.0).
-    assert any(v in summary for v in ("0.2.0", "0.3.0", "0.4.0", "0.5.0"))
+    # The probe enforces a minimum acdp_version, not an allowlist of spec lines —
+    # any version >= the floor passes, so just confirm the probe ran and reported one.
+    assert "acdp_version=" in summary
 
 
 async def test_did_key_method_advertised(live_client: httpx.AsyncClient, live_config: LiveConfig):
