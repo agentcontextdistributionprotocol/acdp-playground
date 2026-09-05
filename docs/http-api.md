@@ -24,8 +24,11 @@ The playground exposes a small FastAPI surface. The base URL is
 ### `GET /healthz`
 
 ```json
-{ "ok": true, "service": "acdp-playground" }
+{ "ok": true, "service": "acdp-playground", "version": "0.1.0" }
 ```
+
+`version` is the installed distribution's version (`"unknown"` if the app is
+run from an uninstalled source tree).
 
 ### `GET /readyz`
 

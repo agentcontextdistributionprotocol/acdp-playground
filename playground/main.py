@@ -12,6 +12,7 @@ from playground import logging_setup
 from playground.api import contexts, health, runs, scenarios, webhooks
 from playground.config import get_settings
 from playground.control_plane import get_control_plane
+from playground.version import SERVICE_VERSION
 
 log = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="ACDP Playground",
-    version="0.1.0",
+    version=SERVICE_VERSION,
     description="Runs ACDP scenarios. Spins agents, streams events, owns run lifecycle.",
     lifespan=lifespan,
 )
