@@ -75,6 +75,7 @@ def _parse_acdp_version(raw: object) -> tuple[int, int, int] | None:
         return None
     return (int(m[1]), int(m[2]), int(m[3]))
 
+
 # RFC-ACDP-0011/0012/0013 server-profile names, advertised at
 # ``GET /.well-known/acdp.json`` when the registry runs the corresponding 0.3.0
 # surface. The 0.3.0-endpoint probes below are scoped to when the profile is
