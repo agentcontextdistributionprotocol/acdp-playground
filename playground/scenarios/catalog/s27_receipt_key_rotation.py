@@ -43,13 +43,12 @@ import asyncio
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from acdp import AcdpDidDocument, AcdpProducer, AcdpVerifier, DidResolutionError
 
 from acdp_client import AcdpClient, AcdpHTTPError
 from acdp_client.models import StepEvent
-
 from playground.config import get_settings
 from playground.scenarios._receipts import did_document, ed25519_jwk_vm, mint_receipt
 from playground.scenarios.models import (
@@ -224,7 +223,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         StepEvent(
             type="acdp.verify",
             run_id=spec.run_id,
-            ts=datetime.now(timezone.utc).isoformat(),
+            ts=datetime.now(UTC).isoformat(),
             agent_id=registry_did,
             title="Registry receipt-key rotation verified",
             preview=f"historical={historical_status}; current={current_status}; "
@@ -255,7 +254,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.publish",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=producer.agent_did,
                 ctx_id=ctx_published,
                 title=title,

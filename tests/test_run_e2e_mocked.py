@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import httpx
@@ -25,7 +25,7 @@ def _publish_response(authority: str = "registry-a.playground.local") -> dict:
         "ctx_id": f"acdp://{authority}/{uuid.uuid4()}",
         "lineage_id": f"lin:sha256:{uuid.uuid4().hex}",
         "version": 1,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "status": "active",
     }
 
@@ -49,7 +49,7 @@ def _fake_get_factory():
             "ctx_id": "acdp://registry-a.playground.local/x",
             "lineage_id": "lin:sha256:x",
             "origin_registry": "registry-a.playground.local",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "content_hash": "sha256:abc",
             "signature": {"algorithm": "ed25519", "key_id": "k", "value": "v"},
             "version": 1,
@@ -74,25 +74,25 @@ async def test_s1_run_end_to_end_with_mocked_registry():
     with (
         patch.object(httpx.AsyncClient, "post", _fake_post_factory()),
         patch.object(httpx.AsyncClient, "get", _fake_get_factory()),
+        TestClient(app) as client,
     ):
-        with TestClient(app) as client:
-            r = client.post("/runs", json={"scenario_id": "s1_single_publish"})
-            assert r.status_code == 202, r.text
-            run_id = r.json()["run_id"]
+        r = client.post("/runs", json={"scenario_id": "s1_single_publish"})
+        assert r.status_code == 202, r.text
+        run_id = r.json()["run_id"]
 
-            # Drain the SSE stream — TestClient supports it via iter_lines.
-            with client.stream("GET", f"/runs/{run_id}/events") as stream:
-                saw_complete = False
-                for raw in stream.iter_lines():
-                    if not raw or not raw.startswith("data: "):
-                        continue
-                    payload = json.loads(raw[len("data: ") :])
-                    if payload.get("type") == "run.complete":
-                        saw_complete = True
-                        break
+        # Drain the SSE stream — TestClient supports it via iter_lines.
+        with client.stream("GET", f"/runs/{run_id}/events") as stream:
+            saw_complete = False
+            for raw in stream.iter_lines():
+                if not raw or not raw.startswith("data: "):
+                    continue
+                payload = json.loads(raw[len("data: ") :])
+                if payload.get("type") == "run.complete":
+                    saw_complete = True
+                    break
 
-            assert saw_complete, "did not see run.complete event"
+        assert saw_complete, "did not see run.complete event"
 
-            detail = client.get(f"/runs/{run_id}").json()
-            assert detail["status"] == "complete"
-            assert detail["result"]["contexts"], "no contexts in result"
+        detail = client.get(f"/runs/{run_id}").json()
+        assert detail["status"] == "complete"
+        assert detail["result"]["contexts"], "no contexts in result"

@@ -10,11 +10,11 @@ import hashlib
 import hmac
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from acdp_client.models import WebhookEvent, StepEvent
+from acdp_client.models import StepEvent, WebhookEvent
 from playground.config import get_settings
 from playground.control_plane import get_control_plane
 from playground.events import get_queue
@@ -67,9 +67,7 @@ async def receive_acdp_webhook(request: Request):
     if event.run_id:
         queue = get_queue(event.run_id)
         if queue is not None:
-            step = StepEvent.from_webhook(
-                event.run_id, datetime.now(timezone.utc).isoformat(), event
-            )
+            step = StepEvent.from_webhook(event.run_id, datetime.now(UTC).isoformat(), event)
             await queue.put(step)
 
     # Forward to control plane (no-op when CONTROL_PLANE_URL unset).

@@ -5,11 +5,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Final
 
 from acdp_client.models import StepEvent
-
 from playground.config import get_settings
 from playground.control_plane import get_control_plane
 from playground.scenarios.models import RunResult, RunSpec, ScenarioDef
@@ -21,7 +20,7 @@ _results: Final[dict[str, RunResult]] = {}
 
 
 def _ts() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def get_result(run_id: str) -> RunResult | None:
@@ -57,7 +56,7 @@ async def execute(
     try:
         assert scenario.run is not None
         result = await scenario.run(spec, events)
-    except Exception as e:  # noqa: BLE001 — we surface the error in the result
+    except Exception as e:  # we surface the error in the result
         tb = traceback.format_exc()
         log.exception("scenario %s failed", scenario.id)
         result = RunResult(

@@ -9,10 +9,10 @@ against a controlled mock transport here.
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
-
-import asyncio
 
 from acdp_client import (
     AcdpClient,

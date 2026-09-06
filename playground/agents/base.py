@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -95,7 +95,7 @@ class BasePlaygroundAgent:
         ev = StepEvent(
             type=event_type,  # type: ignore[arg-type]
             run_id=self.run_id,
-            ts=datetime.now(timezone.utc).isoformat(),
+            ts=datetime.now(UTC).isoformat(),
             agent_id=self.agent_did,
             framework=self.framework,
             **fields,
@@ -291,7 +291,7 @@ def build_llm(provider: str, model: str, *, api_key: str = "") -> Any:
 class _MockLLM:
     """Deterministic offline LLM used in smoke tests."""
 
-    async def ainvoke(self, prompt: str) -> Any:  # noqa: D401 — mimics langchain
+    async def ainvoke(self, prompt: str) -> Any:  # mimics langchain's ainvoke signature
         snippet = prompt.strip().splitlines()[0][:80]
         text = (
             "MOCK_LLM_RESPONSE :: "

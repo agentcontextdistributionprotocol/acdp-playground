@@ -22,14 +22,15 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from textwrap import indent
 
 # Ensure repo root on sys.path so `acdp_client` resolves when run as a script.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from acdp import AcdpProducer, AcdpVerifier  # noqa: E402
-from acdp_client import AcdpClient  # noqa: E402
+from acdp import AcdpProducer, AcdpVerifier
+
+from acdp_client import AcdpClient
 
 # ── presentation helpers ─────────────────────────────────────────────────
 
@@ -209,7 +210,9 @@ async def step_2_beta_retrieve_and_verify(client: AcdpClient, ctx_id: str):
         kv("", "  → proves the content_hash was signed by alpha,")
         kv("", "    and (transitively) that the body the registry")
         kv("", "    accepted matched that content_hash.")
-    except Exception as e:
+    except (ValueError, RuntimeError) as e:
+        # AcdpVerifier.verify_signature raises ValueError on malformed
+        # base64 input, RuntimeError on a verification failure.
         kv("signature check", f"✗ FAILED: {e}")
     return body_dict
 
@@ -287,7 +290,7 @@ async def step_4_verify_lineage(client: AcdpClient, alpha_lineage_id: str, beta_
 
 
 async def main() -> int:
-    started = datetime.now(timezone.utc).isoformat()
+    started = datetime.now(UTC).isoformat()
     topic = sys.argv[1] if len(sys.argv) > 1 else "TSMC's 2-nanometer roadmap"
 
     hr("ACDP DETAILED DEMO  •  producer → consumer with real OpenAI calls")
@@ -299,25 +302,27 @@ async def main() -> int:
     beta = make_producer("demo-beta")
     await step_0_identities(alpha, beta)
 
-    async with AcdpClient(REG_URL, run_id="detailed-demo") as client_a:
-        async with AcdpClient(REG_URL, run_id="detailed-demo") as client_b:
-            _, alpha_resp = await step_1_alpha_publish(alpha, client_a, topic)
-            alpha_body = await step_2_beta_retrieve_and_verify(
-                client_b,
-                alpha_resp.ctx_id,
-            )
-            _, beta_resp = await step_3_beta_publish_derivative(
-                beta,
-                client_b,
-                alpha_resp.ctx_id,
-                alpha_body,
-                topic,
-            )
-            await step_4_verify_lineage(
-                client_b,
-                alpha_resp.lineage_id,
-                beta_resp.ctx_id,
-            )
+    async with (
+        AcdpClient(REG_URL, run_id="detailed-demo") as client_a,
+        AcdpClient(REG_URL, run_id="detailed-demo") as client_b,
+    ):
+        _, alpha_resp = await step_1_alpha_publish(alpha, client_a, topic)
+        alpha_body = await step_2_beta_retrieve_and_verify(
+            client_b,
+            alpha_resp.ctx_id,
+        )
+        _, beta_resp = await step_3_beta_publish_derivative(
+            beta,
+            client_b,
+            alpha_resp.ctx_id,
+            alpha_body,
+            topic,
+        )
+        await step_4_verify_lineage(
+            client_b,
+            alpha_resp.lineage_id,
+            beta_resp.ctx_id,
+        )
 
     hr("DONE")
     print(f"  alpha  → {alpha_resp.ctx_id}")

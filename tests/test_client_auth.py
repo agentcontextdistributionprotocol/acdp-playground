@@ -6,8 +6,8 @@ import time
 
 import httpx
 import pytest
-
 from acdp import AcdpProducer
+
 from acdp_client import AcdpClient, AcdpHTTPError, TokenManager
 
 

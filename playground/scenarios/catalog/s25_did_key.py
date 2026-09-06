@@ -26,13 +26,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from acdp import AcdpProducer, AcdpVerifier
 
 from acdp_client import AcdpHTTPError
 from acdp_client.models import StepEvent
-
 from playground.config import get_settings
 from playground.scenarios._factory import AgentBundle
 from playground.scenarios.models import (
@@ -112,7 +111,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.verify",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=original.agent_did,
                 title="did:key bodies verified offline",
                 preview=f"{offline_verified}/{n} verified offline; "
@@ -134,7 +133,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                     StepEvent(
                         type="acdp.publish",
                         run_id=spec.run_id,
-                        ts=datetime.now(timezone.utc).isoformat(),
+                        ts=datetime.now(UTC).isoformat(),
                         agent_id=producer.agent_did,
                         ctx_id=resp.ctx_id,
                         title="ephemeral did:key publish",

@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from acdp import AcdpProducer, AcdpVerifier
+
 from acdp_client.signing import (
     ALG_ED25519,
     ALG_P256,
@@ -77,8 +77,9 @@ def test_cross_algorithm_verify_fails():
     """A P-256 signature must not verify under the Ed25519 verifier."""
     p = _p256()
     req = json.loads(p.build_publish_request(title="t", context_type="analysis"))
-    # Wrong key material/algorithm combo → SDK raises (returns non-True).
-    with pytest.raises(Exception):
+    # Wrong key material/algorithm combo → SDK raises ValueError (SEC1 P-256
+    # key doesn't decode to the 32 raw bytes the Ed25519 verifier expects).
+    with pytest.raises(ValueError):
         AcdpVerifier.verify_signature(
             p.public_key_sec1_b64, req["signature"]["value"], req["content_hash"]
         )

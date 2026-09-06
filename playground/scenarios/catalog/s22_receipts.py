@@ -35,13 +35,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from acdp import AcdpProducer, AcdpVerifier
 
 from acdp_client import AcdpClient, AcdpHTTPError
 from acdp_client.models import StepEvent
-
 from playground.config import get_settings
 from playground.scenarios.models import (
     LineageGraph,
@@ -121,7 +120,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 StepEvent(
                     type="acdp.publish",
                     run_id=spec.run_id,
-                    ts=datetime.now(timezone.utc).isoformat(),
+                    ts=datetime.now(UTC).isoformat(),
                     agent_id=producer.agent_did,
                     ctx_id=ctx_id,
                     title=title,
@@ -171,7 +170,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 StepEvent(
                     type="acdp.verify",
                     run_id=spec.run_id,
-                    ts=datetime.now(timezone.utc).isoformat(),
+                    ts=datetime.now(UTC).isoformat(),
                     agent_id=producer.agent_did,
                     ctx_id=ctx_id,
                     title="Registry receipt verified",

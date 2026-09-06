@@ -3,7 +3,6 @@ endpoints, and Retry-After cooperative retry."""
 
 from __future__ import annotations
 
-
 import httpx
 
 from playground.config import Settings
@@ -11,11 +10,11 @@ from playground.control_plane import ControlPlaneClient
 
 
 def _cp(handler, **overrides) -> ControlPlaneClient:
-    params = dict(
-        control_plane_url="http://cp.test",
-        control_plane_hmac_secret="cp-secret",
-        control_plane_admin_token="admin-tok",
-    )
+    params = {
+        "control_plane_url": "http://cp.test",
+        "control_plane_hmac_secret": "cp-secret",
+        "control_plane_admin_token": "admin-tok",
+    }
     params.update(overrides)
     settings = Settings(**params)
     cp = ControlPlaneClient(settings)

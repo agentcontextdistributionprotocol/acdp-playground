@@ -29,7 +29,7 @@ import hmac
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -153,7 +153,7 @@ class ControlPlaneClient:
         payload = {
             "run_id": run_id,
             "scenario_id": scenario_id,
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": datetime.now(UTC).isoformat(),
             "inputs": inputs,
         }
         await self._post(
@@ -173,7 +173,7 @@ class ControlPlaneClient:
         payload = {
             "run_id": run_id,
             "status": _CP_TERMINAL_STATUS.get(status, status),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": datetime.now(UTC).isoformat(),
             "result": result,
         }
         await self._post(

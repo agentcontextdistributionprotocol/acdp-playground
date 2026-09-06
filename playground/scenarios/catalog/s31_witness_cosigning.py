@@ -48,13 +48,12 @@ import asyncio
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from acdp import AcdpMerkle, AcdpProducer, AcdpVerifier
 
 from acdp_client import AcdpClient, AcdpHTTPError
 from acdp_client.models import StepEvent
-
 from playground.config import get_settings
 from playground.scenarios._receipts import (
     did_document,
@@ -259,7 +258,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         StepEvent(
             type="acdp.verify",
             run_id=spec.run_id,
-            ts=datetime.now(timezone.utc).isoformat(),
+            ts=datetime.now(UTC).isoformat(),
             agent_id=witness_did,
             title="Witness cosignature minted + quorum met (offline)",
             preview=f"obligation={obligation_ok} cosig_verified={cosig_verified} "
@@ -297,7 +296,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.publish",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=producer.agent_did,
                 ctx_id=ctx1,
                 title=title,
@@ -365,7 +364,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             json.dumps(_witnessed_subset(con_ckpt)),
             live_witness_did,
             live_witness_seed_hex,
-            datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+            datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
         )
         live_cosig_v = _verdict(
             AcdpVerifier.verify_witness_cosignature(
@@ -393,7 +392,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             json.dumps(dict(_witnessed_subset(con_ckpt), root_hash="sha256:" + "e" * 64)),
             live_witness_did,
             live_witness_seed_hex,
-            datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+            datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
         )
         live_lie_v = _verdict(
             AcdpVerifier.verify_witness_cosignature(
@@ -409,7 +408,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.verify",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=live_witness_did,
                 ctx_id=ctx2,
                 title="Live checkpoint cosigned + quorum met",

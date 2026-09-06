@@ -19,7 +19,7 @@ import hmac
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 # Make sure we run from the repo root regardless of CWD.
@@ -195,8 +195,9 @@ async def _check_agent_publish_path() -> int:
     print("\n[3/14] BasePlaygroundAgent.publish against fake registry")
     try:
         from acdp import AcdpProducer
-        from playground.agents.base import AgentTask, BasePlaygroundAgent
+
         from acdp_client.models import PublishResponse
+        from playground.agents.base import AgentTask, BasePlaygroundAgent
     except Exception as e:  # noqa: BLE001
         print(f"  FAIL import: {e}")
         return 1
@@ -210,7 +211,7 @@ async def _check_agent_publish_path() -> int:
                 ctx_id="acdp://registry-a.playground.local/00000000-0000-4000-8000-000000000001",
                 lineage_id="lin:sha256:abc",
                 version=1,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
                 status="active",
             )
 
@@ -268,6 +269,7 @@ async def _check_webhook_signature() -> int:
 
     try:
         from fastapi import HTTPException
+
         from playground.api.webhooks import _verify as _verify2
 
         try:
@@ -489,6 +491,7 @@ async def _check_extended_body_fields() -> int:
     publish request, and omits them when unset."""
     print("\n[8/14] extended body fields (data_refs / data_period / expires_at)")
     from acdp import AcdpProducer
+
     from acdp_client.models import PublishResponse
     from playground.agents.base import AgentTask, BasePlaygroundAgent
 
@@ -501,7 +504,7 @@ async def _check_extended_body_fields() -> int:
                 ctx_id="acdp://registry-a.playground.local/00000000-0000-4000-8000-000000000002",
                 lineage_id="lin:sha256:abc",
                 version=1,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
                 status="active",
             )
 
@@ -740,7 +743,7 @@ async def _check_reserved_tenant_guard() -> int:
     """The reserved `default` tenant can never be *asserted* (registry 400
     schema_violation / CP 403 not_authorized, mirrored client-side; CP #50)."""
     print("\n[14/14] reserved-tenant guard (default sentinel)")
-    from acdp_client import AcdpClient, RESERVED_TENANT, reject_reserved_tenant
+    from acdp_client import RESERVED_TENANT, AcdpClient, reject_reserved_tenant
     from playground.control_plane import _tenant_header
 
     if RESERVED_TENANT != "default":

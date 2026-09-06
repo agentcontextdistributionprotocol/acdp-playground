@@ -21,8 +21,8 @@ import os
 import httpx
 import pytest
 
-from playground.conformance import LiveConfig
 from playground.config import Settings
+from playground.conformance import LiveConfig
 from playground.control_plane import ControlPlaneClient
 
 pytestmark = pytest.mark.skipif(

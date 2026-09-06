@@ -6,8 +6,8 @@ import base64
 import json
 
 import httpx
-
 from acdp import AcdpProducer
+
 from acdp_client.token_manager import TokenManager, _decode_unverified_claims
 
 _DID = "did:web:registry-a.playground.local:agents:t"

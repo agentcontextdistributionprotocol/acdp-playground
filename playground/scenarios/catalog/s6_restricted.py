@@ -27,12 +27,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from acdp_client import AcdpHTTPError, TokenError
 from acdp_client.models import StepEvent
-
 from playground.agents.base import AgentTask
 from playground.config import get_settings
 from playground.scenarios._factory import (
@@ -156,7 +155,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 StepEvent(
                     type="acdp.search",
                     run_id=spec.run_id,
-                    ts=datetime.now(timezone.utc).isoformat(),
+                    ts=datetime.now(UTC).isoformat(),
                     title="restricted publish degraded (auth unavailable)",
                     preview=str(e)[:100],
                 )
@@ -196,7 +195,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.search" if all_correct else "run.error",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 title="restricted-visibility outcomes",
                 preview=(
                     f"anon={outcomes['anonymous']['outcome']} "

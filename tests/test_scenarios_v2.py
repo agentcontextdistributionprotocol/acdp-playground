@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
-
+from datetime import UTC, datetime
 
 from acdp import AcdpProducer
+
 from acdp_client.models import PublishResponse
 from playground.agents.base import AgentTask, BasePlaygroundAgent
 
@@ -27,7 +27,7 @@ class _CapturingClient:
             ctx_id=f"acdp://reg/ctx-{self._version}",
             lineage_id="lin:sha256:" + "a" * 64,
             version=req.get("version", self._version),
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             status="active",
         )
 

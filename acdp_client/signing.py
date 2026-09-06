@@ -19,12 +19,12 @@ and keeps the ``algorithm`` string the single source of truth.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from acdp import AcdpP256Producer, AcdpProducer
 
-    Producer = Union[AcdpProducer, AcdpP256Producer]
+    Producer = AcdpProducer | AcdpP256Producer
 else:  # runtime: the SDK classes are concrete, duck-typed
     Producer = object
 
@@ -36,7 +36,7 @@ ALG_P256 = "ecdsa-p256"
 _P256_CLASS_NAMES = {"AcdpP256Producer", "PyAcdpP256Producer"}
 
 
-def producer_algorithm(producer: "Producer") -> str:
+def producer_algorithm(producer: Producer) -> str:
     """Return the wire signature algorithm for ``producer``.
 
     Detected from the concrete SDK class name rather than ``isinstance``
@@ -49,11 +49,11 @@ def producer_algorithm(producer: "Producer") -> str:
     return ALG_ED25519
 
 
-def is_p256(producer: "Producer") -> bool:
+def is_p256(producer: Producer) -> bool:
     return producer_algorithm(producer) == ALG_P256
 
 
-def public_key_material(producer: "Producer") -> str:
+def public_key_material(producer: Producer) -> str:
     """Return the producer's public key in the encoding its algorithm uses.
 
     * Ed25519 → raw 32-byte key, standard base64 (``public_key_b64``)

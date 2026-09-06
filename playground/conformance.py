@@ -27,7 +27,7 @@ import json
 import os
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import quote
 
 import httpx
@@ -79,7 +79,7 @@ class LiveConfig:
     api_key: str
 
     @classmethod
-    def from_settings(cls, settings: Settings | None = None) -> "LiveConfig":
+    def from_settings(cls, settings: Settings | None = None) -> LiveConfig:
         s = settings or Settings()
         admin = s.control_plane_admin_token or os.environ.get(
             "CONTROL_PLANE_ADMIN_TOKEN", "playground-cp-admin"
@@ -218,7 +218,7 @@ async def probe_ingest_body_limit_413(client: httpx.AsyncClient, cfg: LiveConfig
 
 def _now_ms() -> str:
     """Canonical millisecond-precision RFC 3339 UTC (RFC-ACDP-0001 §5.3)."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 async def _advertises(client: httpx.AsyncClient, base_url: str, profile: str) -> bool:

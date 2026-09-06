@@ -26,11 +26,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
-from acdp_client import AcdpClient, RESERVED_TENANT, reject_reserved_tenant
+from acdp_client import RESERVED_TENANT, AcdpClient, reject_reserved_tenant
 from acdp_client.models import StepEvent
 from playground.control_plane import _tenant_header
 from playground.scenarios.models import RunResult, RunSpec, ScenarioDef
@@ -59,7 +59,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="scenario.note",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 title=title,
                 preview=preview,
             )

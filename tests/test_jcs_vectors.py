@@ -20,7 +20,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 from acdp import AcdpCanonicalizer
 
 _RFC_DIR = Path(os.environ.get("ACDP_RFC_DIR", "../agentcontextdistributionprotocol"))

@@ -23,7 +23,6 @@ from acdp_client import AcdpClient, TokenManager
 from acdp_client.client import TenantHeaderMode
 from acdp_client.models import StepEvent
 from acdp_client.signing import ALG_ED25519, ALG_P256, Producer
-
 from playground.agents import LangChainAgent
 from playground.config import Settings, get_settings
 from playground.scenarios.models import RunSpec
