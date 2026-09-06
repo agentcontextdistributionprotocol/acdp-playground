@@ -8,10 +8,10 @@ per-invocation state (run_id, inputs, deterministic seed material);
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Awaitable, Callable, Literal
+from collections.abc import Awaitable, Callable
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
-
 
 RegistryMode = Literal["single", "dual", "cross_org"]
 Framework = Literal["langchain", "crewai", "langgraph", "mixed"]
@@ -26,7 +26,7 @@ class ScenarioDef(BaseModel):
     framework: Framework = "langchain"
     default_inputs: dict[str, Any] = Field(default_factory=dict)
     # populated by registry on discovery
-    run: Callable[["RunSpec", "Any"], Awaitable["RunResult"]] | None = None
+    run: Callable[[RunSpec, Any], Awaitable[RunResult]] | None = None
 
 
 class RunRequest(BaseModel):
@@ -48,7 +48,7 @@ class RunSpec(BaseModel):
         each run (because run_id changes). Within one run, the same
         slug always yields the same key.
         """
-        digest = hashlib.sha256(f"{self.run_id}:{slug}".encode("utf-8")).digest()
+        digest = hashlib.sha256(f"{self.run_id}:{slug}".encode()).digest()
         return digest
 
 

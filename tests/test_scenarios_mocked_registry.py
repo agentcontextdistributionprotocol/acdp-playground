@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import patch
 from urllib.parse import unquote
 
@@ -56,7 +56,7 @@ class FakeRegistry:
         ctx_id = f"acdp://{authority}/{uuid.uuid4()}"
         lineage_id = req.get("lineage_id") or f"lin:sha256:{uuid.uuid4().hex}"
         version = req.get("version") or len(self.lineages.get(lineage_id, [])) + 1
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(UTC).isoformat()
 
         body = {
             **req,
@@ -94,7 +94,7 @@ class FakeRegistry:
     def get(self, url: str) -> httpx.Response:
         req = httpx.Request("GET", url)
         path = httpx.URL(url).path
-        if path.endswith("/healthz") or path.endswith("/readyz"):
+        if path.endswith(("/healthz", "/readyz")):
             return httpx.Response(200, json={"ok": True}, request=req)
         if "/lineages/" in path:
             lineage_id = unquote(path.split("/lineages/", 1)[1])

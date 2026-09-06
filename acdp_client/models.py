@@ -336,7 +336,7 @@ class StepEvent(_Open):
     receipt_present: bool | None = None
 
     @classmethod
-    def from_webhook(cls, run_id: str, ts: str, event: WebhookEvent) -> "StepEvent":
+    def from_webhook(cls, run_id: str, ts: str, event: WebhookEvent) -> StepEvent:
         kind = {
             "context_published": "acdp.publish",
             "context_retrieved": "acdp.retrieve",

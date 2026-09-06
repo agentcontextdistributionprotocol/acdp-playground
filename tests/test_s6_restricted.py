@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import patch
 
@@ -30,7 +30,7 @@ def _retrieve_body(ctx_id: str, visibility: str = "restricted") -> dict[str, Any
             "ctx_id": ctx_id,
             "lineage_id": "lin:sha256:s6",
             "origin_registry": "registry-a.playground.local",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "content_hash": "sha256:s6",
             "signature": {"algorithm": "ed25519", "key_id": "k", "value": "v"},
             "version": 1,
@@ -103,7 +103,7 @@ def _build_handler():
                     "ctx_id": ctx_id,
                     "lineage_id": "lin:sha256:s6",
                     "version": 1,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                     "status": "active",
                 },
                 request=request,

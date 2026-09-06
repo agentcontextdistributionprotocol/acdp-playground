@@ -34,13 +34,12 @@ import asyncio
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from acdp import AcdpMerkle, AcdpProducer, AcdpVerifier
 
 from acdp_client import AcdpClient, AcdpHTTPError
 from acdp_client.models import StepEvent
-
 from playground.config import get_settings
 from playground.scenarios._receipts import (
     did_document,
@@ -219,7 +218,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         StepEvent(
             type="acdp.verify",
             run_id=spec.run_id,
-            ts=datetime.now(timezone.utc).isoformat(),
+            ts=datetime.now(UTC).isoformat(),
             agent_id=registry_did,
             title="Transparency-log proofs verified (minted log)",
             preview=f"checkpoints={checkpoints_verified} inclusion={inclusion_verified} "
@@ -257,7 +256,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.publish",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=producer.agent_did,
                 ctx_id=ctx1,
                 title=title,
@@ -306,7 +305,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.verify",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=producer.agent_did,
                 ctx_id=ctx1,
                 title="Log inclusion verified",
@@ -370,7 +369,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.verify",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=producer.agent_did,
                 ctx_id=ctx2,
                 title="Log consistency verified",

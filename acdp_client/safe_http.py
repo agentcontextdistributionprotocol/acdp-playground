@@ -28,12 +28,11 @@ from __future__ import annotations
 
 import hashlib
 import socket
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Iterable
 from urllib.parse import urlsplit
 
 import httpx
-
 from acdp import AcdpSsrfPolicy, SsrfRejected
 
 # A resolver maps a hostname to the list of textual IP addresses DNS
@@ -82,11 +81,11 @@ class SsrfPolicy:
     total_timeout: float = 30.0
 
     @classmethod
-    def production(cls) -> "SsrfPolicy":
+    def production(cls) -> SsrfPolicy:
         return cls()
 
     @classmethod
-    def allow_test_loopback(cls) -> "SsrfPolicy":
+    def allow_test_loopback(cls) -> SsrfPolicy:
         """Permit loopback (for a local registry/data stack) but still block
         RFC-1918 + link-local/IMDS — maps to the Rust SDK's
         ``SsrfPolicy::allow_test_loopback``.

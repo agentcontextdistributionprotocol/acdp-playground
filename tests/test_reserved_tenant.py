@@ -16,17 +16,16 @@ import httpx
 import pytest
 
 from acdp_client import (
+    RESERVED_TENANT,
     AcdpClient,
     AcdpHTTPError,
     NotAuthorizedError,
-    RESERVED_TENANT,
     is_reserved_tenant,
     reject_reserved_tenant,
 )
 from playground.control_plane import _tenant_header
 from playground.scenarios import get_scenario, list_scenarios
 from playground.scenarios.models import RunSpec
-
 
 # ── standalone guard ────────────────────────────────────────────────────
 

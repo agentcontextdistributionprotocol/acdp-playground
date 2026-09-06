@@ -26,7 +26,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from acdp_client import AcdpDidDocument, DidResolutionError
 from acdp_client.models import StepEvent
@@ -71,7 +71,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="scenario.note",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 title=title,
                 preview=preview,
             )
@@ -130,7 +130,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.verify",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=did,
                 title="did:web document is CP-resolvable (P-256, JWK-only)",
                 preview=f"conformant={conformant} resolve={resolve_detail}",

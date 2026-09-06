@@ -6,12 +6,12 @@ from playground.config import Settings, get_settings
 
 
 def _settings(**overrides) -> Settings:
-    base = dict(
-        registry_a_url="http://reg-a:8100",
-        registry_b_url="http://reg-b:8200",
-        registry_a_authority="registry-a.playground.local",
-        registry_b_authority="registry-b.playground.local",
-    )
+    base = {
+        "registry_a_url": "http://reg-a:8100",
+        "registry_b_url": "http://reg-b:8200",
+        "registry_a_authority": "registry-a.playground.local",
+        "registry_b_authority": "registry-b.playground.local",
+    }
     base.update(overrides)
     return Settings(**base)
 

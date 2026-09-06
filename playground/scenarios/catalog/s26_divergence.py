@@ -27,13 +27,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from acdp import AcdpVerifier
 
 from acdp_client import AcdpHTTPError
 from acdp_client.models import StepEvent
-
 from playground.config import get_settings
 from playground.scenarios._factory import AgentBundle, make_langchain_agent
 from playground.scenarios.models import LineageGraph, RunResult, RunSpec, ScenarioDef
@@ -75,13 +74,13 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         )
         producer = agent.producer
 
-        common = dict(
-            title=f"{topic} — divergence probe",
-            context_type="analysis",
-            visibility="public",
-            summary="content_hash reproduction across SDK versions.",
-            domain="finance",
-        )
+        common = {
+            "title": f"{topic} — divergence probe",
+            "context_type": "analysis",
+            "visibility": "public",
+            "summary": "content_hash reproduction across SDK versions.",
+            "domain": "finance",
+        }
 
         # ── Divergence 1: acdp_version omitted (0.1.x) vs explicit (0.2) ──
         # Pinned to 0.2.0 explicitly: explain_hash_mismatch's canned
@@ -106,7 +105,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.verify",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=agent.agent_did,
                 title="acdp_version divergence diagnosed",
                 preview=version_explanation.splitlines()[-1][:160],

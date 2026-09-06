@@ -51,14 +51,13 @@ import asyncio
 import hashlib
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from acdp import AcdpProducer, AcdpVerifier
 
 from acdp_client import AcdpClient, AcdpHTTPError
 from acdp_client.models import StepEvent
 from acdp_client.signing import verify_signature
-
 from playground.config import get_settings
 from playground.scenarios._factory import did_for
 from playground.scenarios._receipts import mint_receipt
@@ -284,7 +283,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         StepEvent(
             type="acdp.verify",
             run_id=spec.run_id,
-            ts=datetime.now(timezone.utc).isoformat(),
+            ts=datetime.now(UTC).isoformat(),
             agent_id=did,
             title="Key-revocation boundary verified (offline)",
             preview=f"producer_signed={trust_class_producer_signed} "
@@ -340,7 +339,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         # genuine publish time (so the victim is pre-compromise). signer != revoked.
         revoker = AcdpProducer.from_seed_did_key(spec.agent_seed("live-revoker"))
         t_boundary = (
-            datetime.strptime(t_pub, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+            datetime.strptime(t_pub, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
             + timedelta(seconds=1)
         ).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
         raw_rev = revoker.build_publish_request(
@@ -364,7 +363,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.publish",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=revoker.agent_did,
                 ctx_id=live_ctx,
                 title="key-revocation context published",
@@ -398,7 +397,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.verify",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=revoker.agent_did,
                 ctx_id=live_ctx,
                 title="Live §7 boundary vs a genuine receipt",

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from acdp import AcdpVerifier
 
@@ -66,7 +66,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="scenario.note",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 title=title,
                 preview=preview,
             )
@@ -79,7 +79,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         alg = producer_algorithm(producer)
         assert alg == "ecdsa-p256", f"expected ecdsa-p256 producer, got {alg}"
 
-        declared_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        declared_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         signing_input = capability_signing_input(did, capability_uri, declared_at)
         signature = producer.sign_challenge(signing_input)
 
@@ -119,7 +119,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.verify",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=did,
                 title="capability declaration is CP-acceptable (P-256, self-verified)",
                 preview=f"conformant={conformant}",

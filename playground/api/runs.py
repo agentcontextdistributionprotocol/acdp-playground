@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
-from playground.events import create_queue, get_queue, drop_queue
+from playground.events import create_queue, drop_queue, get_queue
 from playground.scenarios import (
     RunRequest,
     execute,
@@ -50,7 +50,7 @@ async def start_run(req: RunRequest) -> dict:
         "scenario_id": scenario.id,
         "status": "running",
         "stream_url": f"/runs/{run_id}/events",
-        "started_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -89,7 +89,7 @@ async def stream_events(run_id: str, request: Request) -> StreamingResponse:
                     return
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=15.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": keepalive\n\n"
                     continue
                 yield f"data: {event.model_dump_json()}\n\n"

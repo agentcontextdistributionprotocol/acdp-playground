@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 
 from acdp_client.models import StepEvent
-
 from playground.agents.base import AgentTask
 from playground.config import get_settings
 from playground.scenarios._factory import AgentBundle, make_langchain_agent

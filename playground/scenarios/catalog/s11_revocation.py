@@ -16,12 +16,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from acdp_client import TokenError
 from acdp_client.models import StepEvent
-
 from playground.agents.base import AgentTask
 from playground.config import get_settings
 from playground.control_plane import get_control_plane
@@ -81,7 +80,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 StepEvent(
                     type="auth.token",
                     run_id=spec.run_id,
-                    ts=datetime.now(timezone.utc).isoformat(),
+                    ts=datetime.now(UTC).isoformat(),
                     agent_id=agent.agent_did,
                     title="token minted + used",
                     preview=f"jti={cached.jti}",
@@ -102,7 +101,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                     StepEvent(
                         type="auth.revoke",
                         run_id=spec.run_id,
-                        ts=datetime.now(timezone.utc).isoformat(),
+                        ts=datetime.now(UTC).isoformat(),
                         agent_id=agent.agent_did,
                         title="token revoked",
                         preview=f"revoked={revoked}",

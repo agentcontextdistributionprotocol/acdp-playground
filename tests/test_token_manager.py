@@ -7,8 +7,8 @@ import time
 
 import httpx
 import pytest
-
 from acdp import AcdpProducer
+
 from acdp_client.token_manager import (
     CachedToken,
     ChallengeError,

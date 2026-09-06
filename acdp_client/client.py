@@ -15,7 +15,8 @@ client transparently:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, AsyncIterator, Awaitable, Callable, Literal
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import TYPE_CHECKING, Literal, Self
 from urllib.parse import quote
 
 import httpx
@@ -147,7 +148,7 @@ def _build_http_error(r: httpx.Response) -> AcdpHTTPError:
         # Framework-generated rejections (413/408, registry #26) may carry an
         # empty or non-JSON body while still advertising application/acdp+json.
         pass
-    kwargs = dict(code=code, message=message, details=details)
+    kwargs = {"code": code, "message": message, "details": details}
     # 413 is a status-level signal that may arrive with no parseable envelope,
     # so branch on status before code.
     if r.status_code == 413:
@@ -188,8 +189,8 @@ class AcdpClient:
         run_id: str | None = None,
         timeout: float = 30.0,
         http: httpx.AsyncClient | None = None,
-        producer: "Producer | None" = None,
-        token_manager: "TokenManager | None" = None,
+        producer: Producer | None = None,
+        token_manager: TokenManager | None = None,
         tenant_id: str | None = None,
         tenant_header_mode: TenantHeaderMode = "fallback",
     ):
@@ -222,7 +223,7 @@ class AcdpClient:
         if self._owns_http:
             await self._http.aclose()
 
-    async def __aenter__(self) -> "AcdpClient":
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -645,7 +646,7 @@ class AcdpClient:
     async def resolve(
         self,
         ctx_id: str,
-        authority_map: dict[str, "AcdpClient"],
+        authority_map: dict[str, AcdpClient],
     ) -> FullContext:
         """Retrieve a context, routing to the registry that owns it.
 
@@ -671,7 +672,7 @@ class AcdpClient:
         self,
         data_ref: dict,
         *,
-        policy: "SsrfPolicy | None" = None,
+        policy: SsrfPolicy | None = None,
     ) -> bytes:
         """Follow a ``data_refs[].location`` under the consumer SSRF guard.
 

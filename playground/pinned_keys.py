@@ -31,9 +31,7 @@ class PinnedKey:
         """
         if self.valid_from is not None and now < self.valid_from:
             return False
-        if self.valid_until is not None and now >= self.valid_until:
-            return False
-        return True
+        return not (self.valid_until is not None and now >= self.valid_until)
 
 
 def active_keys(keys: list[PinnedKey], now: int) -> list[PinnedKey]:

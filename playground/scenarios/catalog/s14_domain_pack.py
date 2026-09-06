@@ -19,13 +19,12 @@ import hashlib
 import hmac
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 
 from acdp_client.models import StepEvent
-
 from playground.config import get_settings
 from playground.scenarios.models import RunResult, RunSpec, ScenarioDef
 
@@ -58,7 +57,7 @@ def _event(ctx_type: str) -> bytes:
         "version": 1,
         "derived_from": [],
         "registry_authority": "registry-a.playground.local",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     return json.dumps(payload).encode()
 
@@ -126,7 +125,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         StepEvent(
             type="scenario.note",
             run_id=spec.run_id,
-            ts=datetime.now(timezone.utc).isoformat(),
+            ts=datetime.now(UTC).isoformat(),
             title="domain-pack gating",
             preview=f"packs={summary.get('packs')} base={base_status} unknown={unknown_status}",
         )

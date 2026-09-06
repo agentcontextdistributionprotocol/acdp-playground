@@ -15,13 +15,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 
 from acdp_client.models import StepEvent
-
 from playground.config import get_settings
 from playground.scenarios.models import RunResult, RunSpec, ScenarioDef
 
@@ -85,7 +84,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         StepEvent(
             type="policy.check",
             run_id=spec.run_id,
-            ts=datetime.now(timezone.utc).isoformat(),
+            ts=datetime.now(UTC).isoformat(),
             title="authz enforcement",
             preview=f"anon={anon_status} admin={admin_status}",
         )

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Translate a registry's `[playground] pinned_keys` TOML into the
 control plane's `CONTROL_PLANE_PINNED_KEYS` env-var format.
 

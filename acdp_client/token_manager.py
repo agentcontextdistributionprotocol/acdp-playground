@@ -214,7 +214,7 @@ class TokenManager:
 
     async def token_for(
         self,
-        producer: "Producer",
+        producer: Producer,
         registry_base_url: str,
     ) -> CachedToken:
         """Return a fresh token for ``(producer, registry)``.
@@ -242,7 +242,7 @@ class TokenManager:
 
     def invalidate(
         self,
-        producer: "Producer",
+        producer: Producer,
         registry_base_url: str,
         *,
         reason: RefreshReason = RefreshReason.REACTIVE_401,
@@ -294,7 +294,7 @@ class TokenManager:
         json_body: dict,
         *,
         reason: RefreshReason,
-        producer: "Producer",
+        producer: Producer,
         registry_base_url: str,
         kind: str,
     ) -> httpx.Response:
@@ -329,7 +329,7 @@ class TokenManager:
 
     async def _mint(
         self,
-        producer: "Producer",
+        producer: Producer,
         registry_base_url: str,
         *,
         reason: RefreshReason,
@@ -480,7 +480,7 @@ class TokenManager:
 
     async def revoke(
         self,
-        producer: "Producer",
+        producer: Producer,
         registry_base_url: str,
     ) -> bool:
         """Revoke the cached token for ``(producer, registry)``.
@@ -529,7 +529,7 @@ class TokenManager:
     def _log_failure(
         self,
         reason: RefreshReason,
-        producer: "Producer",
+        producer: Producer,
         registry_base_url: str,
         failure_kind: str,
         detail: str,

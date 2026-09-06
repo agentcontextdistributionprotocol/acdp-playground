@@ -37,7 +37,7 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from acdp import AcdpProducer, AcdpVerifier
 
@@ -47,7 +47,6 @@ from acdp_client import (
     InvalidLifecycleTransitionError,
 )
 from acdp_client.models import StepEvent
-
 from playground.config import get_settings
 from playground.scenarios._receipts import mint_lifecycle_event
 from playground.scenarios.models import (
@@ -79,7 +78,7 @@ SCENARIO = ScenarioDef(
 
 def _now_ms() -> str:
     """Canonical millisecond-precision RFC 3339 UTC (RFC-ACDP-0001 §5.3)."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 def _verify_event(event: dict, ctx_id: str) -> dict:
@@ -181,7 +180,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         StepEvent(
             type="acdp.verify",
             run_id=spec.run_id,
-            ts=datetime.now(timezone.utc).isoformat(),
+            ts=datetime.now(UTC).isoformat(),
             agent_id=producer.agent_did,
             title="Lifecycle event construction verified",
             preview=f"signed={event_verified} replay_rejected={replay_rejected} "
@@ -218,7 +217,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.publish",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=producer.agent_did,
                 ctx_id=ctx_v1,
                 title=f"{title} (v1)",
@@ -238,7 +237,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.publish",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=producer.agent_did,
                 ctx_id=ctx_v2,
                 title=f"{title} (v2)",
@@ -264,7 +263,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.verify",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=producer.agent_did,
                 ctx_id=ctx_v2,
                 title="Context retracted",
@@ -332,7 +331,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.verify",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=producer.agent_did,
                 ctx_id=ctx_v2,
                 title="Context republished",

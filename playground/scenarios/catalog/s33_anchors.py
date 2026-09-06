@@ -45,13 +45,12 @@ import json
 import logging
 import socket
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from acdp import AcdpProducer, AcdpVerifier
 
 from acdp_client import AcdpHTTPError
 from acdp_client.models import StepEvent
-
 from playground.config import get_settings
 from playground.scenarios._factory import AgentBundle
 from playground.scenarios.models import (
@@ -172,7 +171,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.verify",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=producer.agent_did,
                 title="Anchored bodies verified offline (anchors[].uri never dereferenced)",
                 preview=f"anc-001={anc001_verified} anc-005={anc005_verified} "
@@ -196,7 +195,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 StepEvent(
                     type="acdp.publish",
                     run_id=spec.run_id,
-                    ts=datetime.now(timezone.utc).isoformat(),
+                    ts=datetime.now(UTC).isoformat(),
                     agent_id=producer.agent_did,
                     ctx_id=ctx1,
                     title=topic,
@@ -244,7 +243,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 StepEvent(
                     type="acdp.verify",
                     run_id=spec.run_id,
-                    ts=datetime.now(timezone.utc).isoformat(),
+                    ts=datetime.now(UTC).isoformat(),
                     agent_id=producer.agent_did,
                     ctx_id=ctx3,
                     title="Supersede anchors carry-forward + clear_anchors verified live",

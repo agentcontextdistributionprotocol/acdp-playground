@@ -18,10 +18,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from acdp_client.models import StepEvent
-
 from playground.agents.base import AgentTask
 from playground.config import get_settings
 from playground.scenarios._factory import AgentBundle, make_langchain_agent
@@ -123,7 +122,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="scenario.note",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 title="supersession outcome",
                 preview=f"v1_guard_rejected={v1_guard_rejected} "
                 f"same_lineage={same_lineage} v2_version={v2.version}",

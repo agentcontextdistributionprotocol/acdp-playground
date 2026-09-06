@@ -12,7 +12,7 @@ import pytest
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from pinned_keys_diff import (  # type: ignore[import-not-found]  # noqa: E402
+from pinned_keys_diff import (  # type: ignore[import-not-found]
     PinnedEntry,
     diff_entries,
     main,

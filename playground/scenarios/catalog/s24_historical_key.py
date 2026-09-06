@@ -48,14 +48,13 @@ import asyncio
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from acdp import AcdpDidDocument, AcdpProducer, AcdpVerifier, DidResolutionError
 
 from acdp_client import AcdpHTTPError
 from acdp_client.models import StepEvent
 from acdp_client.signing import verify_signature
-
 from playground.config import get_settings
 from playground.scenarios._factory import AgentBundle, did_for
 from playground.scenarios._receipts import did_document, ed25519_jwk_vm
@@ -247,7 +246,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             StepEvent(
                 type="acdp.verify",
                 run_id=spec.run_id,
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 agent_id=did,
                 title="Historical key verification",
                 preview=f"historically_authorized={historically_authorized} "
@@ -273,7 +272,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 StepEvent(
                     type="acdp.publish",
                     run_id=spec.run_id,
-                    ts=datetime.now(timezone.utc).isoformat(),
+                    ts=datetime.now(UTC).isoformat(),
                     agent_id=did,
                     ctx_id=ctx_id,
                     title=title,
@@ -297,7 +296,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 StepEvent(
                     type="acdp.verify",
                     run_id=spec.run_id,
-                    ts=datetime.now(timezone.utc).isoformat(),
+                    ts=datetime.now(UTC).isoformat(),
                     agent_id=did,
                     ctx_id=ctx_id,
                     title="Receipt records the publish-time key",
