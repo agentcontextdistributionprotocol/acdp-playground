@@ -63,6 +63,14 @@ _MIN_ACDP_VERSION = (0, 2, 0)
 # summary so an operator sees when a stack is ahead of this list.
 _KNOWN_ACDP_VERSIONS = frozenset({"0.2.0", "0.3.0", "0.4.0", "0.5.0"})
 
+# Strict MAJOR.MINOR.PATCH, no prerelease/build suffix. This is not just a
+# playground preference: RFC-ACDP-0007 §3.5 check 1 requires acdp_version to
+# match ^\d+\.\d+\.\d+$ as a consumer-side MUST ("MUST NOT proceed" on
+# failure), and the JSON schema (schemas/json/acdp-capabilities.schema.json)
+# pins the same pattern. A suffixed value here means something non-conformant
+# is running — do not "fix" this by tolerating a tail. (Digit groups are
+# intentionally bounded tighter than the spec's bare \d+ — see the parser's
+# own docstring — a divergence that's practically unreachable, not a bug.)
 _ACDP_VERSION_RE = re.compile(r"(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})")
 
 
