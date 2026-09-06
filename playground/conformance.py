@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -46,12 +47,42 @@ _PROBE_CTX_ID = "acdp://registry-a.playground.local/00000000-0000-4000-8000-0000
 _RECEIPTS_PROBE_CTX_ID = "acdp://registry-a.playground.local/00000000-0000-4000-8000-0000000000fe"
 _ACDP_CONTENT_TYPE = "application/acdp+json"
 
-# Spec lines a conforming registry in this stack may advertise. All Final:
-# 0.2.0 (receipts / trust hardening), 0.3.0 (lifecycle, lineage-head receipts,
-# transparency log — RFC-ACDP-0011/0012/0013), 0.4.0 (witness cosigning —
-# RFC-ACDP-0015), and 0.5.0 (anchors — RFC-ACDP-0016). Accepting 0.5.0 keeps
-# the profile probe green against the registry's current advertised version.
-_ACCEPTED_ACDP_VERSIONS = frozenset({"0.2.0", "0.3.0", "0.4.0", "0.5.0"})
+# The receipts profile (RFC-ACDP-0010 §11) cannot be advertised below this
+# spec line: a bare registry stays 0.1.0 and only a configured [receipt]
+# signer lifts it. Asserted as a MINIMUM, not an exact set — the registry
+# computes its own acdp_version as a max() over per-feature claims
+# (acdp-registry-rs .../server/src/main.rs::ladder_claims), so every new
+# RFC raises it and an exact allowlist goes red on each one (#58: 0.5.0
+# anchors broke this probe until PR #61 appended the string). Raise this
+# floor only when the playground genuinely drops support for a spec line.
+_MIN_ACDP_VERSION = (0, 2, 0)
+
+# Spec lines this playground has actually been exercised against. NOT the
+# accept/reject gate — anything >= the floor is accepted. Kept so a reader
+# can see what is validated vs. merely tolerated, and surfaced in the probe
+# summary so an operator sees when a stack is ahead of this list.
+_KNOWN_ACDP_VERSIONS = frozenset({"0.2.0", "0.3.0", "0.4.0", "0.5.0"})
+
+# Strict MAJOR.MINOR.PATCH, no prerelease/build suffix. This is not just a
+# playground preference: RFC-ACDP-0007 §3.5 check 1 requires acdp_version to
+# match ^\d+\.\d+\.\d+$ as a consumer-side MUST ("MUST NOT proceed" on
+# failure), and the JSON schema (schemas/json/acdp-capabilities.schema.json)
+# pins the same pattern. A suffixed value here means something non-conformant
+# is running — do not "fix" this by tolerating a tail. (Digit groups are
+# intentionally bounded tighter than the spec's bare \d+ — see the parser's
+# own docstring — a divergence that's practically unreachable, not a bug.)
+_ACDP_VERSION_RE = re.compile(r"(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})")
+
+
+def _parse_acdp_version(raw: object) -> tuple[int, int, int] | None:
+    """Parse ``MAJOR.MINOR.PATCH`` into a comparable tuple; None if malformed."""
+    if not isinstance(raw, str):
+        return None
+    m = _ACDP_VERSION_RE.fullmatch(raw)
+    if m is None:
+        return None
+    return (int(m[1]), int(m[2]), int(m[3]))
+
 
 # RFC-ACDP-0011/0012/0013 server-profile names, advertised at
 # ``GET /.well-known/acdp.json`` when the registry runs the corresponding 0.3.0
@@ -151,12 +182,15 @@ async def probe_error_envelope_content_type(client: httpx.AsyncClient, cfg: Live
 async def probe_receipts_profile_advertised(client: httpx.AsyncClient, cfg: LiveConfig) -> str:
     """registry-a advertises the receipts profile (RFC-ACDP-0010, ACDP 0.2).
 
-    Provisioning ``[receipt]`` bumps the capabilities document to
-    ``acdp_version`` 0.2.0 (or 0.3.0 once the lifecycle/log profiles are on)
-    and appends the ``acdp-registry-receipts`` profile
-    at ``GET /.well-known/acdp.json``. This is the externally-observable signal
-    the S22/S24 scenarios rely on; a registry without the seed silently stays
-    0.1.0 and the receipts half would degrade unnoticed without this probe.
+    Provisioning ``[receipt]`` bumps the capabilities document's
+    ``acdp_version`` above the ``_MIN_ACDP_VERSION`` floor (0.2.0) and appends
+    the ``acdp-registry-receipts`` profile at ``GET /.well-known/acdp.json``.
+    This is the externally-observable signal the S22/S24 scenarios rely on; a
+    registry without the seed silently stays 0.1.0 and the receipts half would
+    degrade unnoticed without this probe. Asserted as a minimum, not an exact
+    match: the registry's own ``acdp_version`` is a max() over per-feature
+    claims, so it legitimately climbs (0.3.0, 0.4.0, 0.5.0, ...) as more RFCs
+    land, and this probe should keep passing rather than going red on each one.
     """
     url = f"{cfg.receipts_registry_url}/.well-known/acdp.json"
     r = await client.get(url)
@@ -165,17 +199,21 @@ async def probe_receipts_profile_advertised(client: httpx.AsyncClient, cfg: Live
     )
     body = r.json()
     profiles = body.get("profiles", [])
+    assert isinstance(profiles, list), f"receipts-profile: profiles is not a list ({profiles!r})"
     assert "acdp-registry-receipts" in profiles, (
         f"receipts-profile: acdp-registry-receipts not advertised (profiles={profiles})"
     )
-    # Registries in this stack may run either spec line — both are Final:
-    # 0.2.0 (receipts/trust-hardening) or 0.3.0 (lifecycle + head receipts +
-    # transparency log, RFC-ACDP-0011/0012/0013).
-    assert body.get("acdp_version") in _ACCEPTED_ACDP_VERSIONS, (
-        f"receipts-profile: expected acdp_version in {sorted(_ACCEPTED_ACDP_VERSIONS)}, "
-        f"got {body.get('acdp_version')!r}"
+    raw_version = body.get("acdp_version")
+    parsed = _parse_acdp_version(raw_version)
+    assert parsed is not None, (
+        f"receipts-profile: acdp_version {raw_version!r} is not a MAJOR.MINOR.PATCH version"
     )
-    return f"receipts profile advertised (acdp_version={body.get('acdp_version')})"
+    assert parsed >= _MIN_ACDP_VERSION, (
+        "receipts-profile: expected acdp_version >= "
+        f"{'.'.join(map(str, _MIN_ACDP_VERSION))}, got {raw_version!r}"
+    )
+    note = "" if raw_version in _KNOWN_ACDP_VERSIONS else " (spec line ahead of the known set)"
+    return f"receipts profile advertised (acdp_version={raw_version}){note}"
 
 
 async def probe_did_key_method_advertised(client: httpx.AsyncClient, cfg: LiveConfig) -> str:
@@ -192,6 +230,9 @@ async def probe_did_key_method_advertised(client: httpx.AsyncClient, cfg: LiveCo
         f"did:key-method: expected 200, got {r.status_code} ({r.text[:200]})"
     )
     methods = r.json().get("supported_did_methods", [])
+    assert isinstance(methods, list), (
+        f"did:key-method: supported_did_methods is not a list ({methods!r})"
+    )
     assert "did:key" in methods, f"did:key-method: did:key not advertised (methods={methods})"
     return f"did:key advertised in supported_did_methods ({methods})"
 
@@ -226,7 +267,9 @@ async def _advertises(client: httpx.AsyncClient, base_url: str, profile: str) ->
     ``GET /.well-known/acdp.json`` capabilities document."""
     r = await client.get(f"{base_url}/.well-known/acdp.json")
     assert r.status_code == 200, f"capabilities: expected 200, got {r.status_code} ({r.text[:200]})"
-    return profile in (r.json().get("profiles") or [])
+    profiles = r.json().get("profiles") or []
+    assert isinstance(profiles, list), f"capabilities: profiles is not a list ({profiles!r})"
+    return profile in profiles
 
 
 async def _publish_probe_context(client: httpx.AsyncClient, cfg: LiveConfig) -> tuple[str, str]:

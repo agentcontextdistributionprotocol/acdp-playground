@@ -48,14 +48,113 @@ _CHECKPOINT = {
     "signature": {"algorithm": "ed25519", "key_id": "did:web:reg#receipt-key-1", "value": "AA"},
 }
 
+# probe_receipts_profile_advertised asserts the receipts profile BEFORE the
+# version, and _WELL_KNOWN's profiles list does not include it — every test
+# below that exercises the version logic must add it.
+_WELL_KNOWN_RECEIPTS = dict(
+    _WELL_KNOWN, profiles=[*_WELL_KNOWN["profiles"], "acdp-registry-receipts"]
+)
+
 
 def _client(handler) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=_BASE)
 
 
-def test_version_set_accepts_0_5_0():
-    assert "0.5.0" in conformance._ACCEPTED_ACDP_VERSIONS
-    assert {"0.2.0", "0.3.0", "0.4.0"} <= conformance._ACCEPTED_ACDP_VERSIONS
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("0.2.0", (0, 2, 0)),
+        ("0.5.0", (0, 5, 0)),
+        ("1.0.0", (1, 0, 0)),
+        ("0.10.0", (0, 10, 0)),
+        ("10.20.30", (10, 20, 30)),
+        ("999999.0.0", (999999, 0, 0)),
+    ],
+)
+def test_parse_acdp_version_accepts_well_formed(raw, expected):
+    assert conformance._parse_acdp_version(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        None,
+        5,
+        ["0.5.0"],
+        "",
+        "0.5",
+        "0.5.0.1",
+        "v0.5.0",
+        "0.05.0",
+        "abc",
+        " 0.5.0 ",
+        "0.5.0-rc.1",
+        "9999999999.0.0",
+        "1000000.0.0",
+    ],
+)
+def test_parse_acdp_version_rejects_malformed(raw):
+    assert conformance._parse_acdp_version(raw) is None
+
+
+def test_version_ordering_is_numeric_not_lexicographic():
+    assert conformance._parse_acdp_version("0.10.0") > conformance._parse_acdp_version("0.9.0")
+
+
+async def test_receipts_probe_accepts_future_spec_line():
+    """The #58 regression: a spec line newer than the known set still passes,
+    flagged (not failed) in the summary."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        wk = dict(_WELL_KNOWN_RECEIPTS, acdp_version="0.6.0")
+        return httpx.Response(200, json=wk)
+
+    async with _client(handler) as client:
+        summary = await conformance.probe_receipts_profile_advertised(client, _CFG)
+    assert "acdp_version=0.6.0" in summary
+    assert "ahead of the known set" in summary
+
+
+async def test_receipts_probe_accepts_floor_exactly():
+    def handler(request: httpx.Request) -> httpx.Response:
+        wk = dict(_WELL_KNOWN_RECEIPTS, acdp_version="0.2.0")
+        return httpx.Response(200, json=wk)
+
+    async with _client(handler) as client:
+        summary = await conformance.probe_receipts_profile_advertised(client, _CFG)
+    assert "acdp_version=0.2.0" in summary
+    assert "ahead of the known set" not in summary
+
+
+async def test_receipts_probe_rejects_below_floor():
+    def handler(request: httpx.Request) -> httpx.Response:
+        wk = dict(_WELL_KNOWN_RECEIPTS, acdp_version="0.1.0")
+        return httpx.Response(200, json=wk)
+
+    async with _client(handler) as client:
+        with pytest.raises(AssertionError):
+            await conformance.probe_receipts_profile_advertised(client, _CFG)
+
+
+@pytest.mark.parametrize("bad_version", [None, 5, "0.5"])
+async def test_receipts_probe_rejects_malformed_version(bad_version):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if bad_version is None:
+            wk = {k: v for k, v in _WELL_KNOWN_RECEIPTS.items() if k != "acdp_version"}
+        else:
+            wk = dict(_WELL_KNOWN_RECEIPTS, acdp_version=bad_version)
+        return httpx.Response(200, json=wk)
+
+    async with _client(handler) as client:
+        with pytest.raises(AssertionError):
+            await conformance.probe_receipts_profile_advertised(client, _CFG)
+
+
+def test_known_versions_are_all_above_floor():
+    for raw in conformance._KNOWN_ACDP_VERSIONS:
+        parsed = conformance._parse_acdp_version(raw)
+        assert parsed is not None
+        assert parsed >= conformance._MIN_ACDP_VERSION
 
 
 def test_new_0_3_0_probes_registered():
@@ -95,6 +194,55 @@ async def test_log_checkpoint_probe_fails_on_drift():
     async with _client(handler) as client:
         with pytest.raises(AssertionError):
             await conformance.probe_log_checkpoint_signed(client, _CFG)
+
+
+async def test_receipts_probe_rejects_profiles_as_string():
+    """#64: a bare-string ``profiles`` must not pass via substring matching.
+
+    A malformed/malicious registry returning
+    ``"profiles": "acdp-registry-receipts-not-really"`` would satisfy
+    ``"acdp-registry-receipts" in profiles`` under Python's substring fallback
+    even though that is a different, non-conformant profile name. The
+    ``isinstance(profiles, list)`` guard must reject this outright.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        wk = dict(_WELL_KNOWN_RECEIPTS, profiles="acdp-registry-receipts-not-really")
+        return httpx.Response(200, json=wk)
+
+    async with _client(handler) as client:
+        with pytest.raises(AssertionError, match="not a list"):
+            await conformance.probe_receipts_profile_advertised(client, _CFG)
+
+
+async def test_advertises_helper_rejects_profiles_as_string():
+    """#64: the shared ``_advertises`` helper (used by every 0.3.0-endpoint
+    probe) has the same substring-matching risk and must reject a bare-string
+    ``profiles`` rather than silently matching a substring."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        wk = dict(_WELL_KNOWN, profiles="acdp-registry-transparency-log-not-really")
+        return httpx.Response(200, json=wk)
+
+    async with _client(handler) as client:
+        with pytest.raises(AssertionError, match="not a list"):
+            await conformance.probe_log_checkpoint_signed(client, _CFG)
+
+
+async def test_did_key_method_probe_rejects_methods_as_string():
+    """#64: ``probe_did_key_method_advertised`` has the same substring-matching
+    risk as the two sites above — a bare-string ``supported_did_methods`` must
+    not pass via substring matching (``"did:key" in "did:key-not-really"`` is
+    ``True`` under Python's string fallback even though it is a different,
+    non-conformant methods list)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        wk = dict(_WELL_KNOWN, supported_did_methods="did:key-not-really")
+        return httpx.Response(200, json=wk)
+
+    async with _client(handler) as client:
+        with pytest.raises(AssertionError, match="not a list"):
+            await conformance.probe_did_key_method_advertised(client, _CFG)
 
 
 async def test_log_checkpoint_probe_skips_when_profile_absent():

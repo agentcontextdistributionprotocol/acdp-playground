@@ -6,6 +6,7 @@ offline — registry-touching paths are stubbed so no network is used.
 
 from __future__ import annotations
 
+from importlib.metadata import version as _dist_version
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -13,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from acdp_client import AcdpClient, AcdpHTTPError
 from playground.main import app
+from playground.version import SERVICE_VERSION
 
 
 @pytest.fixture()
@@ -27,7 +29,24 @@ def client() -> TestClient:
 def test_healthz(client: TestClient):
     r = client.get("/healthz")
     assert r.status_code == 200
-    assert r.json() == {"ok": True, "service": "acdp-playground"}
+    body = r.json()
+    assert body == {
+        "ok": True,
+        "service": "acdp-playground",
+        "version": SERVICE_VERSION,
+    }
+    assert isinstance(body["version"], str)
+    assert body["version"] != ""
+
+
+def test_healthz_version_matches_root(client: TestClient):
+    healthz_version = client.get("/healthz").json()["version"]
+    root_version = client.get("/").json()["version"]
+    assert healthz_version == root_version
+
+
+def test_service_version_resolves_from_distribution_metadata():
+    assert SERVICE_VERSION == _dist_version("acdp-playground")
 
 
 def test_readyz_reports_both_registries(client: TestClient):

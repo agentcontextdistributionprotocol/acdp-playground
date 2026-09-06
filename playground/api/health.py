@@ -8,13 +8,14 @@ from fastapi import APIRouter
 
 from acdp_client import AcdpClient
 from playground.config import get_settings
+from playground.version import SERVICE_VERSION
 
 router = APIRouter(tags=["meta"])
 
 
 @router.get("/healthz")
 async def healthz() -> dict:
-    return {"ok": True, "service": "acdp-playground"}
+    return {"ok": True, "service": "acdp-playground", "version": SERVICE_VERSION}
 
 
 @router.get("/readyz")
