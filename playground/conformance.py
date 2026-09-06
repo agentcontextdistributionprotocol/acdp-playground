@@ -199,6 +199,7 @@ async def probe_receipts_profile_advertised(client: httpx.AsyncClient, cfg: Live
     )
     body = r.json()
     profiles = body.get("profiles", [])
+    assert isinstance(profiles, list), f"receipts-profile: profiles is not a list ({profiles!r})"
     assert "acdp-registry-receipts" in profiles, (
         f"receipts-profile: acdp-registry-receipts not advertised (profiles={profiles})"
     )
@@ -229,6 +230,9 @@ async def probe_did_key_method_advertised(client: httpx.AsyncClient, cfg: LiveCo
         f"did:key-method: expected 200, got {r.status_code} ({r.text[:200]})"
     )
     methods = r.json().get("supported_did_methods", [])
+    assert isinstance(methods, list), (
+        f"did:key-method: supported_did_methods is not a list ({methods!r})"
+    )
     assert "did:key" in methods, f"did:key-method: did:key not advertised (methods={methods})"
     return f"did:key advertised in supported_did_methods ({methods})"
 
@@ -263,7 +267,9 @@ async def _advertises(client: httpx.AsyncClient, base_url: str, profile: str) ->
     ``GET /.well-known/acdp.json`` capabilities document."""
     r = await client.get(f"{base_url}/.well-known/acdp.json")
     assert r.status_code == 200, f"capabilities: expected 200, got {r.status_code} ({r.text[:200]})"
-    return profile in (r.json().get("profiles") or [])
+    profiles = r.json().get("profiles") or []
+    assert isinstance(profiles, list), f"capabilities: profiles is not a list ({profiles!r})"
+    return profile in profiles
 
 
 async def _publish_probe_context(client: httpx.AsyncClient, cfg: LiveConfig) -> tuple[str, str]:

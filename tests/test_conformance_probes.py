@@ -196,6 +196,55 @@ async def test_log_checkpoint_probe_fails_on_drift():
             await conformance.probe_log_checkpoint_signed(client, _CFG)
 
 
+async def test_receipts_probe_rejects_profiles_as_string():
+    """#64: a bare-string ``profiles`` must not pass via substring matching.
+
+    A malformed/malicious registry returning
+    ``"profiles": "acdp-registry-receipts-not-really"`` would satisfy
+    ``"acdp-registry-receipts" in profiles`` under Python's substring fallback
+    even though that is a different, non-conformant profile name. The
+    ``isinstance(profiles, list)`` guard must reject this outright.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        wk = dict(_WELL_KNOWN_RECEIPTS, profiles="acdp-registry-receipts-not-really")
+        return httpx.Response(200, json=wk)
+
+    async with _client(handler) as client:
+        with pytest.raises(AssertionError, match="not a list"):
+            await conformance.probe_receipts_profile_advertised(client, _CFG)
+
+
+async def test_advertises_helper_rejects_profiles_as_string():
+    """#64: the shared ``_advertises`` helper (used by every 0.3.0-endpoint
+    probe) has the same substring-matching risk and must reject a bare-string
+    ``profiles`` rather than silently matching a substring."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        wk = dict(_WELL_KNOWN, profiles="acdp-registry-transparency-log-not-really")
+        return httpx.Response(200, json=wk)
+
+    async with _client(handler) as client:
+        with pytest.raises(AssertionError, match="not a list"):
+            await conformance.probe_log_checkpoint_signed(client, _CFG)
+
+
+async def test_did_key_method_probe_rejects_methods_as_string():
+    """#64: ``probe_did_key_method_advertised`` has the same substring-matching
+    risk as the two sites above — a bare-string ``supported_did_methods`` must
+    not pass via substring matching (``"did:key" in "did:key-not-really"`` is
+    ``True`` under Python's string fallback even though it is a different,
+    non-conformant methods list)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        wk = dict(_WELL_KNOWN, supported_did_methods="did:key-not-really")
+        return httpx.Response(200, json=wk)
+
+    async with _client(handler) as client:
+        with pytest.raises(AssertionError, match="not a list"):
+            await conformance.probe_did_key_method_advertised(client, _CFG)
+
+
 async def test_log_checkpoint_probe_skips_when_profile_absent():
     """A legitimately-0.2.0 registry (no transparency-log profile) is a
     documented skip, not a failure."""
