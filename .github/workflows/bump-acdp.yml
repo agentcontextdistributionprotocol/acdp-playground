@@ -15,4 +15,6 @@ jobs:
       ecosystem: uv
       package: acdp
       version: ${{ github.event.inputs.version }}
-    secrets: inherit
+    secrets:
+      ACDP_BOT_APP_ID: '${{ secrets.ACDP_BOT_APP_ID }}'
+      ACDP_BOT_PRIVATE_KEY: '${{ secrets.ACDP_BOT_PRIVATE_KEY }}'
