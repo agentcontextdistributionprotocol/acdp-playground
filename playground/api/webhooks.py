@@ -46,9 +46,15 @@ async def receive_acdp_webhook(request: Request):
     except json.JSONDecodeError:
         raise HTTPException(400, "invalid JSON") from None
 
+    # This guard covers `model_validate` and NOTHING ELSE. It is not the
+    # blanket safety net its width suggests: everything below runs unguarded,
+    # so a failure there returns 5xx to the registry, which then retries and
+    # logs the delivery as failed. Widening a `WebhookType` without also
+    # handling the new value downstream converts a silent drop into a retry
+    # storm — see the mapping note in `StepEvent.from_webhook` (playground#71).
     try:
         event = WebhookEvent.model_validate(payload)
-    except Exception as e:  # noqa: BLE001 — never fatal
+    except Exception as e:  # noqa: BLE001 — malformed payloads must not 5xx
         log.warning("webhook payload didn't match WebhookEvent: %s payload=%s", e, payload)
         return
 
