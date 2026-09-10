@@ -152,3 +152,123 @@ def test_webhook_run_id_from_header_when_absent_in_body():
         assert step.type == "acdp.search"
     finally:
         drop_queue(run_id)
+
+
+# ── RFC-ACDP-0013 lifecycle deliveries (playground#71) ───────────────────────
+#
+# These two bodies are the documented acdp-registry-rs deliveries, copied from
+# its ``docs/WEBHOOKS.md``, and are paired with the **dotted** ``X-ACDP-Event``
+# header the registry actually sends. That split is the point of the fixtures:
+# the registry derives the body's ``type`` from
+# ``#[serde(tag = "type", rename_all = "snake_case")]`` (underscores) while the
+# header carries ``event.name()`` (dots), and its own test pins them as
+# deliberately different wire contracts. A fixture that used the dotted form in
+# the body would be asserting against a contract the registry never emits.
+
+_RETRACTED = {
+    "event_id": "e0f5-envelope-delivery-id",
+    "schema_version": "1.0",
+    "type": "context_retracted",
+    "registry_authority": "registry-a.playground.local",
+    "ctx_id": "acdp://registry-a.playground.local/c9",
+    "lineage_id": "lin:sha256:9f2b",
+    "actor": "did:web:registry-a.playground.local:agents:producer",
+    "lifecycle_event_id": "0195a1c2-0000-7000-8000-000000000001",
+    "reason": "superseded by a newer context",
+    "at": "2026-06-10T12:03:00Z",
+}
+
+# `reason` is omitted entirely when absent — never null.
+_REPUBLISHED = {
+    "event_id": "e0f2-envelope-delivery-id",
+    "schema_version": "1.0",
+    "type": "context_republished",
+    "registry_authority": "registry-a.playground.local",
+    "ctx_id": "acdp://registry-a.playground.local/c9",
+    "lineage_id": "lin:sha256:9f2b",
+    "actor": "did:web:registry-a.playground.local:agents:producer",
+    "lifecycle_event_id": "0195a1c3-0000-7000-8000-000000000002",
+    "at": "2026-06-10T12:04:00Z",
+}
+
+
+def _post_delivery(payload: dict, dotted_event: str, run_id: str):
+    """POST one registry-shaped delivery and return the queued SSE step."""
+    secret = get_settings().webhook_secret
+    body = json.dumps(dict(payload, run_id=run_id)).encode()
+    with TestClient(app) as client:
+        resp = client.post(
+            "/webhooks/acdp",
+            content=body,
+            headers={
+                "X-ACDP-Signature": _sign(secret, body),
+                # Dotted in the header, underscored in the body — as emitted.
+                "X-ACDP-Event": dotted_event,
+                "X-ACDP-Event-Id": payload["event_id"],
+                "Content-Type": "application/json",
+            },
+        )
+    assert resp.status_code == 204
+    return resp
+
+
+def test_retracted_delivery_reaches_the_sse_stream():
+    run_id = "run-lifecycle-retract"
+    queue = create_queue(run_id)
+    try:
+        _post_delivery(_RETRACTED, "context.retracted", run_id)
+        step = queue.get_nowait()
+        assert step.type == "acdp.retract"
+        assert step.ctx_id == _RETRACTED["ctx_id"]
+        assert step.title == "Context retracted"
+        assert step.preview == "superseded by a newer context"
+    finally:
+        drop_queue(run_id)
+
+
+def test_republished_delivery_reaches_the_sse_stream():
+    run_id = "run-lifecycle-republish"
+    queue = create_queue(run_id)
+    try:
+        _post_delivery(_REPUBLISHED, "context.republished", run_id)
+        step = queue.get_nowait()
+        assert step.type == "acdp.republish"
+        assert step.title == "Context republished"
+        # `reason` was omitted, not null.
+        assert step.preview is None
+    finally:
+        drop_queue(run_id)
+
+
+def test_lifecycle_dedup_uses_the_envelope_id_not_the_actor_minted_one():
+    """acdp-registry-rs#179: the actor-minted id is `lifecycle_event_id` and the
+    envelope's `event_id` (== X-ACDP-Event-Id) stays the per-delivery dedupe key.
+    Deduping on the actor-minted id would re-create the bug #179 fixed — a
+    retract redelivered under a new envelope id would be collapsed away."""
+    run_id = "run-lifecycle-dedup"
+    queue = create_queue(run_id)
+    try:
+        _post_delivery(_RETRACTED, "context.retracted", run_id)
+        step = queue.get_nowait()
+        assert step.event_id == _RETRACTED["event_id"]
+        assert step.event_id != _RETRACTED["lifecycle_event_id"]
+    finally:
+        drop_queue(run_id)
+
+
+def test_registry_body_type_is_underscored_for_every_emitted_event():
+    """The five values acdp-registry-rs serialises into the body's `type`. If
+    the registry ever switched the body to the dotted header form, this fails
+    loudly here rather than silently dropping every delivery at validation."""
+    from acdp_client.models import StepEvent, WebhookEvent
+
+    expected = {
+        "context_published": "acdp.publish",
+        "context_retrieved": "acdp.retrieve",
+        "context_retracted": "acdp.retract",
+        "context_republished": "acdp.republish",
+        "search_executed": "acdp.search",
+    }
+    for wire_type, step_type in expected.items():
+        event = WebhookEvent.model_validate({"type": wire_type})
+        assert StepEvent.from_webhook("r", "t", event).type == step_type

@@ -245,9 +245,18 @@ class CursorError(RuntimeError):
 # ── Webhook + SSE event types ────────────────────────────────────────────
 
 
+# The registry's wire values, verbatim. acdp-registry-rs derives these from
+# ``#[serde(tag = "type", rename_all = "snake_case")]`` on its ``WebhookEvent``
+# enum, so the JSON body carries **underscores**. The dotted form
+# (``context.published``) that rides in the ``X-ACDP-Event`` header is a
+# deliberately separate wire contract and never appears in the body — see
+# acdp-registry-rs ``crates/acdp-registry-webhook/src/lib.rs``
+# (``no_delivery_emits_a_duplicate_json_key``).
 WebhookType = Literal[
     "context_published",
     "context_retrieved",
+    "context_retracted",
+    "context_republished",
     "search_executed",
 ]
 
@@ -265,8 +274,9 @@ class WebhookEvent(_Open):
 
     type: WebhookType
     # `context_published` always carries an agent; `context_retrieved` and
-    # `search_executed` may be agent-less (CP REG fix 4345daf), so this is
-    # optional rather than required.
+    # `search_executed` may be agent-less (CP REG fix 4345daf), and the two
+    # lifecycle types name the responsible party in `actor` instead — so this
+    # is optional rather than required.
     agent_id: str | None = None
     registry_authority: str | None = None
     run_id: str | None = None
@@ -287,6 +297,16 @@ class WebhookEvent(_Open):
     # (kept verbatim) whose mere presence drives ``receipt_present``.
     key_fingerprint: str | None = None
     registry_receipt: dict | None = None
+    # RFC-ACDP-0013 lifecycle fields, carried only by ``context_retracted`` /
+    # ``context_republished``. ``lifecycle_event_id`` is the *actor-minted*
+    # event id from the signed lifecycle event; it is deliberately NOT the
+    # de-dup key. Dedupe stays on the envelope's ``event_id`` (identical to
+    # ``X-ACDP-Event-Id``) for every type — see acdp-registry-rs #179, which
+    # renamed this field precisely because the two collided on the wire.
+    actor: str | None = None
+    lifecycle_event_id: str | None = None
+    reason: str | None = None
+    at: datetime | None = None
 
 
 StepEventType = Literal[
@@ -296,6 +316,9 @@ StepEventType = Literal[
     "acdp.retrieve",
     "acdp.search",
     "acdp.verify",
+    # ACDP 0.3 lifecycle transitions (RFC-ACDP-0013).
+    "acdp.retract",
+    "acdp.republish",
     "auth.token",
     "auth.revoke",
     "policy.check",
@@ -305,6 +328,12 @@ StepEventType = Literal[
     "run.error",
     "webhook.received",
 ]
+
+
+_LIFECYCLE_TITLES = {
+    "context_retracted": "Context retracted",
+    "context_republished": "Context republished",
+}
 
 
 class StepEvent(_Open):
@@ -337,11 +366,18 @@ class StepEvent(_Open):
 
     @classmethod
     def from_webhook(cls, run_id: str, ts: str, event: WebhookEvent) -> StepEvent:
+        # ``.get`` rather than ``[]``: this runs in the webhook receiver
+        # *outside* the validation try/except, so an unmapped type would 500
+        # the delivery back at the registry instead of degrading. A type new
+        # enough to pass validation but not yet mapped still reaches the SSE
+        # stream, as a generic ``webhook.received``.
         kind = {
             "context_published": "acdp.publish",
             "context_retrieved": "acdp.retrieve",
+            "context_retracted": "acdp.retract",
+            "context_republished": "acdp.republish",
             "search_executed": "acdp.search",
-        }[event.type]
+        }.get(event.type, "webhook.received")
         # Lift the trust signals the registry carries. Like the control plane,
         # receipt_present is only meaningful on publish (the registry attaches
         # the receipt when it accepts the context); key_fingerprint rides along
@@ -354,8 +390,12 @@ class StepEvent(_Open):
             agent_id=event.agent_id,
             ctx_id=event.ctx_id,
             derived_from=event.derived_from,
+            title=_LIFECYCLE_TITLES.get(event.type),
+            preview=event.reason,
             registry_authority=event.registry_authority,
             tenant_id=event.tenant_id,
+            # The envelope id (== ``X-ACDP-Event-Id``), never
+            # ``lifecycle_event_id`` — see the note on ``WebhookEvent``.
             event_id=event.event_id,
             key_fingerprint=event.key_fingerprint,
             receipt_present=receipt_present,
