@@ -285,7 +285,12 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 body = full["body"]
                 AcdpVerifier.verify_content_hash(json.dumps(body), body["content_hash"])
                 AcdpVerifier.verify_receipt(
-                    json.dumps(receipt), registry_pub, ctx_id, body["content_hash"], fp_v1
+                    json.dumps(receipt),
+                    json.dumps(body),  # §8 step 3: receipt ↔ served-body bindings
+                    registry_pub,
+                    ctx_id,
+                    body["content_hash"],
+                    fp_v1,
                 )
                 receipt_records_publish_key = receipt.get("key_fingerprint") == fp_v1
                 registry_outcome = "verified" if receipt_records_publish_key else "fp_mismatch"

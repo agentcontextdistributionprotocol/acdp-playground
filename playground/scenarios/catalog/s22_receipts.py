@@ -145,9 +145,12 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             body_offline_ok = AcdpVerifier.verify_body_offline(json.dumps(body))
             recomputed_hash = echoed_hash  # verified above
 
-            # 2) verify the receipt signature + binding cross-checks.
+            # 2) verify the receipt signature + binding cross-checks. The body
+            #    goes in too: RFC-ACDP-0010 §8 step 3 binds the receipt's
+            #    lineage_id / origin_registry / created_at to the served body's.
             receipt_verified = AcdpVerifier.verify_receipt(
                 json.dumps(receipt),
+                json.dumps(body),
                 registry_pub,
                 ctx_id,
                 recomputed_hash,

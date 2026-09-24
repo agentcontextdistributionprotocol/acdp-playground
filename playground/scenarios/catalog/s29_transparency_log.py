@@ -286,6 +286,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         AcdpVerifier.verify_content_hash(json.dumps(full1["body"]), full1["body"]["content_hash"])
         AcdpVerifier.verify_receipt(
             json.dumps(receipt1),
+            json.dumps(full1["body"]),  # §8 step 3: receipt ↔ served-body bindings
             registry_pub,
             ctx1,
             full1["body"]["content_hash"],

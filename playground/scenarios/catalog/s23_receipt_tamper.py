@@ -16,7 +16,11 @@ flags on the live stack.
 The discrepancy classes mirror the control plane's audit flags:
 ``missing_receipt``, ``created_at`` (non-canonical byte form, §8 step 6),
 ``key_fingerprint`` (rotated/foreign producer key), ``ctx_id`` /
-``content_hash`` (body re-binding), and an invalid signature.
+``content_hash`` (body re-binding), an invalid signature, and the two §8 step 3
+*served-body* bindings — ``lineage_id`` and ``origin_registry``. Those last two
+are only expressible because ``verify_receipt`` takes the served body: the
+receipt is otherwise self-consistent, so nothing else in the §8 sequence sees
+the substitution.
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ from acdp_client.identifiers import synthetic_ctx_id, synthetic_lineage_id
 from acdp_client.models import StepEvent
 from playground.config import get_settings
 from playground.scenarios._factory import producer_for
+from playground.scenarios._receipts import synthesize_retrieval_body
 from playground.scenarios._sdk_guard import expect_rejection
 from playground.scenarios.models import LineageGraph, RunResult, RunSpec, ScenarioDef
 
@@ -68,6 +73,7 @@ def _expect_rejected(
     label: str,
     receipt: dict,
     *,
+    body: dict,
     registry_pub: str,
     expected_ctx: str,
     recomputed_hash: str,
@@ -75,13 +81,18 @@ def _expect_rejected(
 ) -> tuple[bool, str]:
     """Run verify_receipt and assert it FAILS closed. Returns (rejected, why).
 
+    ``body`` is the object the registry served alongside the receipt —
+    RFC-ACDP-0010 §8 step 3 binds the receipt's ``lineage_id`` /
+    ``origin_registry`` / ``created_at`` to it.
+
     Only failures the SDK can actually *express* count as a rejection — a
     ``TypeError`` from calling ``verify_receipt`` wrongly propagates instead of
-    being scored 6/6 fail-closed (see :mod:`playground.scenarios._sdk_guard`).
+    being scored 8/8 fail-closed (see :mod:`playground.scenarios._sdk_guard`).
     """
     rejected, why = expect_rejection(
         lambda: AcdpVerifier.verify_receipt(
             json.dumps(receipt),
+            json.dumps(body),
             registry_pub,
             expected_ctx,
             recomputed_hash,
@@ -117,18 +128,41 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     producer_fp = AcdpVerifier.fingerprint_ed25519_b64(producer.public_key_b64)
 
     ctx_id = synthetic_ctx_id(authority, "s23-tamper-victim")
-    body_hash = "sha256:" + "ab" * 32
+    lineage_id = synthetic_lineage_id("s23-tamper-victim")
+    created_at = "2026-06-12T00:00:00.000Z"
 
-    # A structurally-valid receipt skeleton (all 8 RFC-ACDP-0010 fields). Its
-    # signature is intentionally bogus — every adversarial variant is caught on
-    # a *binding* cross-check before the signature is even reached, except the
-    # "valid bindings / bad signature" case which exercises the signature gate.
+    # The body the honest registry served for that context: a real signed
+    # publish request plus the four fields a registry assigns. The receipt
+    # attests *this* body — RFC-ACDP-0010 §8 step 3 cross-checks the receipt's
+    # lineage_id / origin_registry / created_at against it, which is what makes
+    # cases (g) and (h) below expressible at all.
+    body = synthesize_retrieval_body(
+        producer.build_publish_request(
+            title="Receipted context under attack",
+            context_type="analysis",
+            visibility="public",
+            summary="The body a misbehaving registry serves tampered receipts for.",
+            domain="provenance",
+            tags=["receipts", "tamper"],
+        ),
+        ctx_id=ctx_id,
+        lineage_id=lineage_id,
+        origin_registry=authority,
+        created_at=created_at,
+    )
+    body_hash = body["content_hash"]
+
+    # A structurally-valid receipt skeleton (all 8 RFC-ACDP-0010 fields), whose
+    # bindings match that body exactly. Its signature is intentionally bogus —
+    # every adversarial variant is caught on a *binding* cross-check before the
+    # signature is even reached, except the "valid bindings / bad signature"
+    # case which exercises the signature gate.
     base = {
         "registry_did": f"did:web:{authority}",
         "ctx_id": ctx_id,
-        "lineage_id": synthetic_lineage_id("s23-tamper-victim"),
+        "lineage_id": lineage_id,
         "origin_registry": authority,
-        "created_at": "2026-06-12T00:00:00.000Z",
+        "created_at": created_at,
         "content_hash": body_hash,
         "key_fingerprint": producer_fp,
         "signature": {
@@ -153,6 +187,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     rejected, why = _expect_rejected(
         "created_at",
         bad,
+        body=body,
         registry_pub=registry_pub,
         expected_ctx=ctx_id,
         recomputed_hash=body_hash,
@@ -166,6 +201,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     rejected, why = _expect_rejected(
         "key_fingerprint",
         bad,
+        body=body,
         registry_pub=registry_pub,
         expected_ctx=ctx_id,
         recomputed_hash=body_hash,
@@ -179,6 +215,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     rejected, why = _expect_rejected(
         "ctx_id",
         bad,
+        body=body,
         registry_pub=registry_pub,
         expected_ctx=ctx_id,
         recomputed_hash=body_hash,
@@ -190,6 +227,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     rejected, why = _expect_rejected(
         "content_hash",
         base,
+        body=body,
         registry_pub=registry_pub,
         expected_ctx=ctx_id,
         recomputed_hash="sha256:" + "cd" * 32,
@@ -201,12 +239,61 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     rejected, why = _expect_rejected(
         "signature",
         base,
+        body=body,
         registry_pub=registry_pub,
         expected_ctx=ctx_id,
         recomputed_hash=body_hash,
         producer_fp=producer_fp,
     )
     checks["forged_signature"] = {"rejected": rejected, "why": why[:120]}
+
+    # (g) Re-bound lineage_id — the receipt claims a lineage the served body
+    #     does not belong to (§8 step 3). Everything cross_check covers still
+    #     matches, so only the body binding can catch this.
+    bad = copy.deepcopy(base)
+    bad["lineage_id"] = synthetic_lineage_id("s23-tamper-other-lineage")
+    rejected, why = _expect_rejected(
+        "lineage_id",
+        bad,
+        body=body,
+        registry_pub=registry_pub,
+        expected_ctx=ctx_id,
+        recomputed_hash=body_hash,
+        producer_fp=producer_fp,
+    )
+    # Be specific. A bare "it raised" would also be satisfied by a malformed
+    # identifier, a bad signature, or any earlier §8 gate; only
+    # cross_check_body's message says "body lineage_id".
+    checks["rebound_lineage_id"] = {
+        "rejected": rejected and "body lineage_id" in why,
+        "why": why[:200],
+    }
+
+    # (h) Re-bound origin_registry — the receipt attributes the served body to
+    #     a different registry of origin (§8 step 3). ``registry_did`` moves
+    #     with it: cross_check enforces registry_did == did:web:<origin_registry>
+    #     *within* the receipt and would otherwise reject on that internal
+    #     inconsistency long before the body is consulted. So the adversary is
+    #     a second registry issuing an internally-perfect receipt for someone
+    #     else's body — which is exactly the case step 3 exists for.
+    other_authority = settings.registry_b_authority
+    bad = copy.deepcopy(base)
+    bad["origin_registry"] = other_authority
+    bad["registry_did"] = f"did:web:{other_authority}"
+    bad["signature"]["key_id"] = f"did:web:{other_authority}#receipt-key-1"
+    rejected, why = _expect_rejected(
+        "origin_registry",
+        bad,
+        body=body,
+        registry_pub=registry_pub,
+        expected_ctx=ctx_id,
+        recomputed_hash=body_hash,
+        producer_fp=producer_fp,
+    )
+    checks["rebound_origin_registry"] = {
+        "rejected": rejected and "body origin_registry" in why,
+        "why": why[:200],
+    }
 
     all_failed_closed = all(c["rejected"] for c in checks.values())
 

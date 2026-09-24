@@ -102,9 +102,43 @@ async def test_s23_receipt_tamper_fails_closed(offline_stack):
     s = res.summary
     assert s["all_failed_closed"] is True
     # Each adversarial class fired (missing, created_at, fingerprint, ctx_id,
-    # content_hash, signature).
+    # content_hash, signature, and the two RFC-ACDP-0010 §8 step 3 served-body
+    # bindings).
     assert all(c["rejected"] for c in s["checks"].values())
-    assert len(s["checks"]) == 6
+    assert set(s["checks"]) == {
+        "missing_receipt",
+        "mutated_created_at",
+        "mismatched_fingerprint",
+        "rebound_ctx_id",
+        "mismatched_content_hash",
+        "forged_signature",
+        "rebound_lineage_id",
+        "rebound_origin_registry",
+    }
+    assert len(s["checks"]) == 8
+
+
+async def test_s23_rejects_body_binding_mismatch(offline_stack):
+    """§8 step 3: the two bindings that only exist because verify_receipt now
+    takes the served body.
+
+    Both receipts are internally consistent — the key fingerprint, the ctx_id,
+    the content_hash and (for the origin case) ``registry_did`` ==
+    ``did:web:<origin_registry>`` all still cross-check — so nothing earlier in
+    the §8 sequence sees the substitution. The assertions match
+    ``cross_check_body``'s own wording ("… ≠ **body** <field> …"), which no
+    other gate emits, so a generic raise cannot pass for the check.
+    """
+    res = await _run("s23_receipt_tamper")
+    checks = res.summary["checks"]
+
+    lineage = checks["rebound_lineage_id"]
+    assert lineage["rejected"] is True
+    assert "body lineage_id" in lineage["why"]
+
+    origin = checks["rebound_origin_registry"]
+    assert origin["rejected"] is True
+    assert "body origin_registry" in origin["why"]
 
 
 async def test_s24_historical_key_core(offline_stack):
@@ -161,7 +195,28 @@ async def test_s27_receipt_key_rotation_core(offline_stack):
     assert s["removed_key_fail_closed"] is True
     assert s["downgrade_rejected"] is True
     assert s["tampered_historical_rejected"] is True
+    assert s["cross_bound_body_rejected"] is True
     assert s.get("degraded") is True  # live receipt round-trip needs a registry
+
+
+async def test_s27_two_receipts_bind_their_own_bodies(offline_stack):
+    """RFC-ACDP-0010 §8 step 3 is live: a receipt attests the body the registry
+    served *at its own time*, not any body from the same context.
+
+    The two receipts straddle the registry's key rotation and deliberately carry
+    different ``created_at`` values, so the bodies served alongside them differ
+    in exactly that field — same producer content, same signature, same
+    ``content_hash``. Lifting the historical receipt onto the current receipt's
+    body therefore fails on ``created_at`` alone, under a key that resolves and
+    with every ``cross_check`` binding still intact. This is the negative half
+    of the two positives above: without step 3 the swap would verify.
+    """
+    res = await _run("s27_receipt_key_rotation")
+    s = res.summary
+    assert s["historical_receipt_verified"] is True  # against its own body
+    assert s["current_receipt_verified"] is True  # against its own body
+    assert s["cross_bound_body_rejected"] is True  # crossed over: refused
+    assert "body created_at" in s["cross_bound_body_why"]
 
 
 # ── ACDP 0.3.0 (RFC-ACDP-0011/0012/0013) deterministic cores ─────────────

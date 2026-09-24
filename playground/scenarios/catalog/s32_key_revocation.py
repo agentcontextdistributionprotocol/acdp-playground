@@ -61,7 +61,7 @@ from acdp_client.models import StepEvent
 from acdp_client.signing import verify_signature
 from playground.config import get_settings
 from playground.scenarios._factory import did_for
-from playground.scenarios._receipts import mint_receipt
+from playground.scenarios._receipts import mint_receipt, synthesize_retrieval_body
 from playground.scenarios.models import (
     LineageGraph,
     LineageNode,
@@ -211,8 +211,23 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     )
     victim_lineage = synthetic_lineage_id(victim_ctx_id)
 
-    def _receipt(created_at: str) -> dict:
-        return mint_receipt(
+    def _attested(created_at: str) -> tuple[dict, dict]:
+        """The ``(receipt, body)`` pair a registry would serve for the victim
+        context at ``created_at``.
+
+        Minted as a pair because RFC-ACDP-0010 §8 step 3 binds them: the
+        receipt's ``lineage_id`` / ``origin_registry`` / ``created_at`` MUST
+        equal the served body's, so a receipt has no meaning apart from the
+        body it attests.
+        """
+        body = synthesize_retrieval_body(
+            raw_victim,
+            ctx_id=victim_ctx_id,
+            lineage_id=victim_lineage,
+            origin_registry=authority,
+            created_at=created_at,
+        )
+        receipt = mint_receipt(
             reg,
             reg_kid,
             registry_did=registry_did,
@@ -223,24 +238,31 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             content_hash=ch_victim,
             key_fingerprint=fp_k1,
         )
+        return receipt, body
 
-    def _verified_created_at(receipt: dict) -> str:
-        """Verify the receipt per RFC-ACDP-0010 §8 (incl. that it attests fp(K1))
-        and return its receipt-attested created_at — the ONLY §7 time input."""
+    def _verified_created_at(receipt: dict, body: dict) -> str:
+        """Verify the receipt per RFC-ACDP-0010 §8 (incl. that it attests fp(K1)
+        and binds the served body) and return its receipt-attested created_at —
+        the ONLY §7 time input."""
         AcdpVerifier.verify_receipt(
-            json.dumps(receipt), reg.public_key_b64, victim_ctx_id, ch_victim, fp_k1
+            json.dumps(receipt),
+            json.dumps(body),
+            reg.public_key_b64,
+            victim_ctx_id,
+            ch_victim,
+            fp_k1,
         )
         return receipt["created_at"]
 
     # §7 step 2 — before T → historically authorized (pre-compromise).
-    before_verdict = _authz([parsed], fp_k1, _verified_created_at(_receipt(BEFORE_T)))
+    before_verdict = _authz([parsed], fp_k1, _verified_created_at(*_attested(BEFORE_T)))
     pre_compromise_authorized = (
         before_verdict.get("authorization") == "historically_authorized_pre_compromise"
         and before_verdict.get("boundary") == BOUNDARY_T
     )
 
     # §7 step 3 — at/after T → fail closed despite a valid receipt.
-    after_verdict = _authz([parsed], fp_k1, _verified_created_at(_receipt(AFTER_T)))
+    after_verdict = _authz([parsed], fp_k1, _verified_created_at(*_attested(AFTER_T)))
     post_compromise_fail_closed = (
         after_verdict.get("authorization") == "none"
         and after_verdict.get("boundary") == BOUNDARY_T
@@ -328,6 +350,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         AcdpVerifier.verify_content_hash(json.dumps(full_v["body"]), full_v["body"]["content_hash"])
         AcdpVerifier.verify_receipt(
             json.dumps(receipt_v),
+            json.dumps(full_v["body"]),  # §8 step 3: receipt ↔ served-body bindings
             registry_pub,
             victim_live_ctx,
             full_v["body"]["content_hash"],

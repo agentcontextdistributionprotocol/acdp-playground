@@ -28,6 +28,10 @@ the SDK:
   receipt can't force a weaker check.
 * **Binding cross-check** — a historical receipt whose ``content_hash`` no
   longer matches the body is rejected even though its key still resolves.
+* **Body binding (§8 step 3)** — each receipt attests the body the registry
+  served *at its own time*, so the two receipts get two bodies differing only
+  in ``created_at``. Lifting the historical receipt onto the current receipt's
+  body fails closed on that binding, under a key that resolves fine.
 
 The live half publishes a real ``did:key`` context to the receipts-profile
 registry (registry-a), then resolves the *genuine* registry receipt's signing
@@ -51,7 +55,12 @@ from acdp_client import AcdpClient, AcdpHTTPError
 from acdp_client.identifiers import synthetic_ctx_id, synthetic_lineage_id
 from acdp_client.models import StepEvent
 from playground.config import get_settings
-from playground.scenarios._receipts import did_document, ed25519_jwk_vm, mint_receipt
+from playground.scenarios._receipts import (
+    did_document,
+    ed25519_jwk_vm,
+    mint_receipt,
+    synthesize_retrieval_body,
+)
 from playground.scenarios._sdk_guard import expect_rejection
 from playground.scenarios.models import (
     LineageGraph,
@@ -85,18 +94,23 @@ def _verify_via_did(
     receipt: dict,
     doc: AcdpDidDocument,
     *,
+    body: dict,
     ctx_id: str,
     content_hash: str,
     key_fingerprint: str,
 ) -> str:
     """Resolve the receipt's signing key from the registry DID document and
-    verify the receipt under it.
+    verify the receipt under it, against the body it attests.
 
     Resolution goes through :meth:`AcdpDidDocument.receipt_key_for_algorithm`
     (the §9 lifecycle): a retired-but-retained key resolves with
     ``historical=true``; a removed key raises ``DidResolutionError`` and we
-    fail closed. Returns ``"verified_historical"`` or ``"verified"`` to mirror
-    the control plane's receipt-audit verdicts.
+    fail closed. ``body`` is the object the registry served alongside the
+    receipt — RFC-ACDP-0010 §8 step 3 binds the receipt's ``lineage_id`` /
+    ``origin_registry`` / ``created_at`` to it, so a receipt lifted onto a
+    different body is rejected even under a resolvable key. Returns
+    ``"verified_historical"`` or ``"verified"`` to mirror the control plane's
+    receipt-audit verdicts.
     """
     sig = receipt["signature"]
     try:
@@ -106,7 +120,12 @@ def _verify_via_did(
             f"receipt key {sig['key_id']} unresolvable: {getattr(e, 'reason', '?')}"
         ) from e
     AcdpVerifier.verify_receipt(
-        json.dumps(receipt), resolved["public_key_b64"], ctx_id, content_hash, key_fingerprint
+        json.dumps(receipt),
+        json.dumps(body),
+        resolved["public_key_b64"],
+        ctx_id,
+        content_hash,
+        key_fingerprint,
     )
     return "verified_historical" if resolved["historical"] == "true" else "verified"
 
@@ -131,7 +150,37 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     producer_fp = AcdpVerifier.fingerprint_ed25519_b64(producer.public_key_b64)
     ctx_id = synthetic_ctx_id(authority, f"{spec.run_id}:s27-attested-context")
     lineage_id = synthetic_lineage_id(f"{spec.run_id}:s27-attested-context")
-    content_hash = "sha256:" + hashlib.sha256(spec.run_id.encode()).hexdigest()
+
+    # The body the registry serves for that context. A receipt attests a body,
+    # and RFC-ACDP-0010 §8 step 3 binds the two on lineage_id /
+    # origin_registry / created_at — so each receipt is checked against the
+    # body *as served at its own attestation time*. The two differ in
+    # `created_at` alone (same producer content, same signature, therefore the
+    # same `content_hash`, which is outside registry-assigned coverage per
+    # RFC-ACDP-0001 §5.7). Collapsing them onto one timestamp would delete the
+    # temporal separation across the rotation that this scenario exists to show.
+    attested_request = producer.build_publish_request(
+        title="Long-lived attested record",
+        context_type="data_snapshot",
+        visibility="public",
+        summary="The context two registry receipts attest across a key rotation.",
+        domain="provenance",
+        tags=["receipts", "rotation"],
+    )
+
+    def _served_body(created_at: str) -> dict:
+        return synthesize_retrieval_body(
+            attested_request,
+            ctx_id=ctx_id,
+            lineage_id=lineage_id,
+            origin_registry=authority,
+            created_at=created_at,
+        )
+
+    historical_at, current_at = "2026-01-01T00:00:00.000Z", "2026-06-01T00:00:00.000Z"
+    historical_body = _served_body(historical_at)
+    current_body = _served_body(current_at)
+    content_hash = historical_body["content_hash"]  # identical in both
 
     def _mint(signer: AcdpProducer, key_id: str, created_at: str) -> dict:
         return mint_receipt(
@@ -146,8 +195,8 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             key_fingerprint=producer_fp,
         )
 
-    historical_receipt = _mint(reg_v1, kid_v1, "2026-01-01T00:00:00.000Z")
-    current_receipt = _mint(reg_v2, kid_v2, "2026-06-01T00:00:00.000Z")
+    historical_receipt = _mint(reg_v1, kid_v1, historical_at)
+    current_receipt = _mint(reg_v2, kid_v2, current_at)
 
     vm_v1 = ed25519_jwk_vm(kid_v1, registry_did, reg_v1.public_key_b64)
     vm_v2 = ed25519_jwk_vm(kid_v2, registry_did, reg_v2.public_key_b64)
@@ -162,6 +211,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     historical_status = _verify_via_did(
         historical_receipt,
         doc_rotated,
+        body=historical_body,
         ctx_id=ctx_id,
         content_hash=content_hash,
         key_fingerprint=producer_fp,
@@ -172,6 +222,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     current_status = _verify_via_did(
         current_receipt,
         doc_rotated,
+        body=current_body,
         ctx_id=ctx_id,
         content_hash=content_hash,
         key_fingerprint=producer_fp,
@@ -185,6 +236,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         _verify_via_did(
             historical_receipt,
             doc_removed,
+            body=historical_body,
             ctx_id=ctx_id,
             content_hash=content_hash,
             key_fingerprint=producer_fp,
@@ -205,10 +257,34 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         lambda: _verify_via_did(
             historical_receipt,
             doc_rotated,
+            body=historical_body,
             ctx_id=ctx_id,
             content_hash="sha256:" + "ff" * 32,
             key_fingerprint=producer_fp,
         )
+    )
+
+    # (f) §8 step 3 body binding: each receipt attests the body served at ITS
+    #     own time. Lifting the historical receipt onto the body the registry
+    #     served alongside the *current* receipt is rejected on `created_at` —
+    #     the key resolves, the ctx_id and content_hash still match, and it
+    #     still fails closed. Without the §8 step 3 cross-check this swap would
+    #     go unnoticed.
+    cross_bound_body_rejected, cross_bound_body_why = expect_rejection(
+        lambda: _verify_via_did(
+            historical_receipt,
+            doc_rotated,
+            body=current_body,
+            ctx_id=ctx_id,
+            content_hash=content_hash,
+            key_fingerprint=producer_fp,
+        )
+    )
+    # Be specific: only cross_check_body's own message ("… ≠ body created_at
+    # …") proves step 3 ran. A generic raise could be a malformed identifier,
+    # a resolution error, or an earlier §8 gate.
+    cross_bound_body_rejected = (
+        cross_bound_body_rejected and "body created_at" in cross_bound_body_why
     )
 
     offline_core_ok = (
@@ -217,6 +293,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         and removed_key_fail_closed
         and downgrade_rejected
         and tampered_historical_rejected
+        and cross_bound_body_rejected
     )
 
     await events.put(
@@ -279,6 +356,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             live_receipt_status = _verify_via_did(
                 receipt,
                 live_doc,
+                body=body,
                 ctx_id=ctx_published,
                 content_hash=echoed_hash,
                 key_fingerprint=producer_fp,
@@ -319,6 +397,8 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         "removed_key_fail_closed": removed_key_fail_closed,
         "downgrade_rejected": downgrade_rejected,
         "tampered_historical_rejected": tampered_historical_rejected,
+        "cross_bound_body_rejected": cross_bound_body_rejected,
+        "cross_bound_body_why": cross_bound_body_why[:160],
         "offline_core_ok": offline_core_ok,
         "live_round_trip": live_round_trip,
         "live_receipt_status": live_receipt_status,
