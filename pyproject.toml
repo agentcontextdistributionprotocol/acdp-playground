@@ -44,16 +44,18 @@ dependencies = [
     # clear_anchors=True is the explicit way to drop them — driven by the S33
     # scenario.
     # 0.9.0–0.14.1 is a large release range with a small Python-visible surface:
-    # the `acdp` module is offline-only JSON-over-FFI (eight classes, no
+    # the `acdp` module is offline-only JSON-over-FFI (eight non-exception
+    # classes plus their typed errors, no
     # RegistryClient, no networking), so every client/server crate change in
     # that span is structurally invisible here. Only three things reach a Python
     # caller by breaking or adding surface. (1) AcdpVerifier.verify_receipt gains `body_json` as argument #2
     # (arity 5 → 6) and now runs RegistryReceipt::cross_check_body — RFC-ACDP-0010
     # §8 step 3, binding the receipt's lineage_id / origin_registry / created_at
-    # to the served body's. All seven call sites here pass the served body; S23
-    # and S27 gained synthesized bodies (playground.scenarios._receipts.
-    # synthesize_retrieval_body) and S23 two new tamper cases for the two new
-    # bindings. (2) CtxId::parse replaces the bare CtxId newtype in
+    # to the served body's. All seven call sites here pass the served body:
+    # four pass one they actually retrieved, while S23, S27 and S32's offline
+    # half had no body in existence and synthesize one (playground.scenarios.
+    # _receipts.synthesize_retrieval_body). S23 gained two tamper cases for the
+    # two new bindings. (2) CtxId::parse replaces the bare CtxId newtype in
     # build_publish_request(derived_from=), verify_lineage_head_receipt's
     # expected.head_ctx_id and verify_receipt's expected_ctx_id, so every
     # identifier must be acdp://<lowercase-DNS-authority>/<v4-uuid> with correct

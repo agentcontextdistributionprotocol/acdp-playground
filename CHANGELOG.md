@@ -26,7 +26,8 @@ surface, and one of them is a required-positional-argument break.
   5 → 6) and now runs `RegistryReceipt::cross_check_body` — RFC-ACDP-0010 §8
   step 3: the receipt's `lineage_id` / `origin_registry` / `created_at` MUST
   equal the served body's. All **seven** call sites in this repo migrated.
-  Five had the retrieved body in scope; **S23** and **S27** had no body at all
+  Four pass a genuinely retrieved body; **S23**, **S27** and **S32**'s offline
+  half had no body at all
   and now build one through `synthesize_retrieval_body`, which overlays the
   four registry-assigned fields onto a real signed publish request rather than
   hand-writing a second implementation of the body schema.
@@ -69,11 +70,12 @@ validly-signed body from the same producer. Nothing was performing it.
   substitution apart from a broken identifier.
 - Enforcement is **on by default**, with an explicit, greppable
   `verify_binding=False` opt-out per call on `retrieve_raw` and client-wide on
-  the constructor. Nothing in the repo opts out.
+  the constructor. Nothing in the playground opts out.
 
 ### Scenarios
 
-- **S23 — receipt tamper** grows from six adversarial cases to **eight**. The
+- **S23 — receipt tamper** grows from six adversarial cases to **eight** here,
+  and to nine once the retrieval binding below lands. The
   two new ones are only expressible because the verifier now sees the body:
   a receipt whose `lineage_id`, or whose `origin_registry`, disagrees with the
   body served alongside it. Both receipts are internally consistent, so nothing
@@ -87,7 +89,7 @@ validly-signed body from the same producer. Nothing was performing it.
   fine.
 - **S32 — key revocation** mints its victim receipt and body as a pair for the
   same reason.
-- **S23** gains a ninth case, `substituted_body`: a registry answers a
+- **S23** gains that ninth case, `substituted_body`: a registry answers a
   retrieval with a *different*, entirely valid context. No receipt is involved,
   so none of the §8 gates apply — it drives the real `AcdpClient` and asserts
   the transport refuses it with `reason == "mismatch"`.

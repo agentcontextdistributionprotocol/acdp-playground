@@ -65,7 +65,7 @@ for the endpoint contracts they call.
 |--------|---------|-------|
 | `publish(request_json, idempotency_key=None)` | `POST /contexts` | Forwards `Idempotency-Key` verbatim → `PublishResponse` |
 | `retrieve(ctx_id)` | `GET /contexts/{id}` | → `FullContext` |
-| `retrieve_raw(ctx_id, verify_binding=None)` | `GET /contexts/{id}` | Unparsed dict (preserves registry-assigned fields) |
+| `retrieve_raw(ctx_id, *, verify_binding=None)` | `GET /contexts/{id}` | Unparsed dict (preserves registry-assigned fields) |
 | `retrieve_body(ctx_id)` | `GET /contexts/{id}/body` | → `Body` |
 | `search(...)` | `GET /contexts/search` | Filters: `q`, `context_type`, `domain`, `agent_id`, `tags`, `derived_from`, `visibility`, `limit`, `cursor` → `SearchResponse`; raises `CursorError` |
 | `search_all(...)` | paginated search | Async-yields every `SearchHit`; continues through empty-but-cursored pages |
@@ -104,9 +104,9 @@ which is most of the traffic — nothing else binds "the context I asked for" to
 the same producer under the requested `ctx_id`, and every other consumer check
 still passes. Comparing requested against served is the only binding available
 there. (Where a registry *receipt* is served, RFC-ACDP-0010 §8 adds its own,
-independent bindings — see `docs/scenarios.md` for S22/S23.)
+independent bindings — see [scenarios.md](scenarios.md) for S22/S23.)
 
-**Where it runs.** All six methods that return a served body go through one
+**Where it runs.** All seven methods that return a served body go through one
 chokepoint (`AcdpClient._get_full_context` for the `/contexts/*` routes,
 `_get_lineage` for `/lineages/*`), which delegates the comparison to
 `acdp.AcdpVerifier.verify_ctx_id_binding` — the client implements no part of
