@@ -29,6 +29,7 @@ from acdp_client.models import StepEvent
 from acdp_client.signing import producer_algorithm
 from playground.config import get_settings
 from playground.scenarios._factory import AgentBundle, did_for, key_id_for, producer_for
+from playground.scenarios._sdk_guard import run_guarded
 from playground.scenarios.models import RunResult, RunSpec, ScenarioDef
 
 log = logging.getLogger(__name__)
@@ -101,13 +102,16 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         # Prove the signature is real — verify it against the producer's P-256
         # public key over the exact canonical string, the same check the CP runs
         # against the agent's pinned key.
-        try:
-            sig_ok = AcdpVerifier.verify_signature_p256(
+        # A bad signature raises; a TypeError would mean we called the SDK
+        # wrongly, and must not be reported as a non-conformant declaration.
+        verified, rejection = run_guarded(
+            lambda: AcdpVerifier.verify_signature_p256(
                 producer.public_key_sec1_b64, signature, signing_input
             )
-        except Exception as e:  # noqa: BLE001 — a bad signature raises
-            sig_ok = False
-            log.warning("s21 capability signature self-verify failed: %s", e)
+        )
+        sig_ok = bool(verified)
+        if rejection is not None:
+            log.warning("s21 capability signature self-verify failed: %s", rejection)
 
         conformant = alg_ok and shape_ok and sig_ok
 

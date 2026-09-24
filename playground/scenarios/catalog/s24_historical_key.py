@@ -58,6 +58,7 @@ from acdp_client.signing import verify_signature
 from playground.config import get_settings
 from playground.scenarios._factory import AgentBundle, did_for
 from playground.scenarios._receipts import did_document, ed25519_jwk_vm
+from playground.scenarios._sdk_guard import expect_rejection
 from playground.scenarios.models import (
     LineageGraph,
     LineageNode,
@@ -180,11 +181,9 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
         # Pre-rotation signature verifies under the retained old key, not the new.
         pre_verifies_old = verify_signature("ed25519", key_v1.public_key_b64, sig_v1, ch_v1)
-        new_key_rejects = False
-        try:
-            verify_signature("ed25519", key_v2.public_key_b64, sig_v1, ch_v1)
-        except Exception:  # noqa: BLE001
-            new_key_rejects = True
+        new_key_rejects, _ = expect_rejection(
+            lambda: verify_signature("ed25519", key_v2.public_key_b64, sig_v1, ch_v1)
+        )
 
         # A receipt that binds the publish-time key (fp_v1).
         receipt_v1 = {"key_fingerprint": fp_v1}

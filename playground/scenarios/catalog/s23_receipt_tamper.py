@@ -32,6 +32,7 @@ from acdp import AcdpVerifier
 from acdp_client.models import StepEvent
 from playground.config import get_settings
 from playground.scenarios._factory import producer_for
+from playground.scenarios._sdk_guard import expect_rejection
 from playground.scenarios.models import LineageGraph, RunResult, RunSpec, ScenarioDef
 
 log = logging.getLogger(__name__)
@@ -71,18 +72,24 @@ def _expect_rejected(
     recomputed_hash: str,
     producer_fp: str,
 ) -> tuple[bool, str]:
-    """Run verify_receipt and assert it FAILS closed. Returns (rejected, why)."""
-    try:
-        AcdpVerifier.verify_receipt(
+    """Run verify_receipt and assert it FAILS closed. Returns (rejected, why).
+
+    Only failures the SDK can actually *express* count as a rejection — a
+    ``TypeError`` from calling ``verify_receipt`` wrongly propagates instead of
+    being scored 6/6 fail-closed (see :mod:`playground.scenarios._sdk_guard`).
+    """
+    rejected, why = expect_rejection(
+        lambda: AcdpVerifier.verify_receipt(
             json.dumps(receipt),
             registry_pub,
             expected_ctx,
             recomputed_hash,
             producer_fp,
         )
+    )
+    if not rejected:
         return False, "verify_receipt accepted a tampered receipt"
-    except Exception as e:  # noqa: BLE001 — any raise == correctly fails closed
-        return True, str(e)
+    return True, why
 
 
 async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:

@@ -39,6 +39,7 @@ from acdp_client import AcdpHTTPError, SupersededError
 from acdp_client.models import StepEvent
 from playground.config import get_settings
 from playground.scenarios._factory import AgentBundle, make_langchain_agent
+from playground.scenarios._sdk_guard import run_guarded
 from playground.scenarios.models import RunResult, RunSpec, ScenarioDef
 
 log = logging.getLogger(__name__)
@@ -108,27 +109,40 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             )
 
         # The attacker (different DID) tries to supersede the owner's v1.
+        #
+        # The *build* is guarded narrowly: the SDK refusing to even construct the
+        # supersede request is a genuine block, but a TypeError would be our own
+        # call-convention bug and must never be scored as the ownership check
+        # working. The *publish* keeps its broad arm — a registry that dies
+        # mid-run is a transport failure this scenario absorbs (CLAUDE.md's
+        # degrade-gracefully rule), not an attacker being blocked.
         previous_body = json.dumps(v1_full["body"])
         attacker_blocked = False
         reason = None
-        try:
-            sup_raw = attacker.producer.build_supersede_request(
+        sup_raw, build_rejection = run_guarded(
+            lambda: attacker.producer.build_supersede_request(
                 previous_body_json=previous_body,
                 title=f"{topic} — hijacked",
                 summary="Attacker attempts a lineage takeover.",
                 metadata=json.dumps({"role": "attacker"}),
             )
-            await attacker.client.publish(sup_raw)
-        except SupersededError as e:
+        )
+        if build_rejection is not None:
             attacker_blocked = True
-            reason = e.reason
-        except AcdpHTTPError as e:
-            # 403/401 (not_authorized) is also an acceptable rejection.
-            attacker_blocked = e.status in (401, 403)
-            reason = e.code
-        except Exception as e:  # noqa: BLE001 — SDK refused to even build it
-            attacker_blocked = True
-            reason = f"client:{type(e).__name__}"
+            reason = f"client:{type(build_rejection).__name__}"
+        else:
+            try:
+                await attacker.client.publish(sup_raw)
+            except SupersededError as e:
+                attacker_blocked = True
+                reason = e.reason
+            except AcdpHTTPError as e:
+                # 403/401 (not_authorized) is also an acceptable rejection.
+                attacker_blocked = e.status in (401, 403)
+                reason = e.code
+            except Exception as e:  # noqa: BLE001 — transport down mid-run → absorbed
+                attacker_blocked = True
+                reason = f"client:{type(e).__name__}"
 
         summary.update(
             {

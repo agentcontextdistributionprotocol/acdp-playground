@@ -53,6 +53,7 @@ from acdp_client import AcdpHTTPError
 from acdp_client.models import StepEvent
 from playground.config import get_settings
 from playground.scenarios._factory import AgentBundle
+from playground.scenarios._sdk_guard import expect_rejection
 from playground.scenarios.models import (
     LineageEdge,
     LineageGraph,
@@ -159,11 +160,9 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
             # signature byte-exactly (anc-004), not a side-channel.
             tampered = json.loads(raw_anc001)
             tampered["anchors"][0]["content_hash"] = "sha256:" + "0" * 64
-            tamper_rejected = False
-            try:
-                AcdpVerifier.verify_publish_request_offline(json.dumps(tampered))
-            except Exception:  # noqa: BLE001
-                tamper_rejected = True
+            tamper_rejected, _ = expect_rejection(
+                lambda: AcdpVerifier.verify_publish_request_offline(json.dumps(tampered))
+            )
 
         offline_core_ok = bool(anc001_verified) and bool(anc005_verified) and tamper_rejected
 
