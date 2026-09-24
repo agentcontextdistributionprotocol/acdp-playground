@@ -74,13 +74,16 @@ validly-signed body from the same producer. Nothing was performing it.
 
 ### Scenarios
 
-- **S23 — receipt tamper** grows from six adversarial cases to **eight** here,
-  and to nine once the retrieval binding below lands. The
-  two new ones are only expressible because the verifier now sees the body:
+- **S23 — receipt tamper** grows from six adversarial cases to **nine**. Two
+  are only expressible because the verifier now sees the body:
   a receipt whose `lineage_id`, or whose `origin_registry`, disagrees with the
   body served alongside it. Both receipts are internally consistent, so nothing
   earlier in the §8 sequence catches the substitution. Each asserts on the
-  *named* field, not on a bare raise.
+  *named* field, not on a bare raise. The ninth, `substituted_body`, comes from
+  the retrieval binding above: a registry answers with a *different*, entirely
+  valid context. No receipt is involved, so none of the §8 gates apply — it
+  drives the real `AcdpClient` and asserts the transport refuses it with
+  `reason == "mismatch"`.
 - **S27 — registry receipt-key rotation** now models **two** bodies, one per
   receipt, differing only in `created_at` — because a registry re-attesting
   after a key rotation serves a re-attested body, and §8 step 3 is exactly the
@@ -89,10 +92,6 @@ validly-signed body from the same producer. Nothing was performing it.
   fine.
 - **S32 — key revocation** mints its victim receipt and body as a pair for the
   same reason.
-- **S23** gains that ninth case, `substituted_body`: a registry answers a
-  retrieval with a *different*, entirely valid context. No receipt is involved,
-  so none of the §8 gates apply — it drives the real `AcdpClient` and asserts
-  the transport refuses it with `reason == "mismatch"`.
 - **S34 — embedded content** is new, and covers a hole that predates this bump:
   the playground had only ever published `location`-based data refs, so
   `data_refs[].embedded` had no coverage at all — while 0.14.0 added
@@ -100,7 +99,7 @@ validly-signed body from the same producer. Nothing was performing it.
   that also accepted a root-level `DataRef.content_hash` for embedded content.
   The scenario signs **one digest into two slots** — a foreign digest in
   `DataRef.content_hash` with a correct embedded one is accepted; the same
-  digest in `embedded.content_hash` is rejected — so a implementation that
+  digest in `embedded.content_hash` is rejected — so an implementation that
   conflated the two fields could not pass. It also pins what is invisible from
   Python otherwise: an absent `content_hash` verifies while an explicit `null`
   is rejected, and the `json` and `utf8` preimages differ (JCS form vs raw

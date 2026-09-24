@@ -73,8 +73,8 @@ working, so the break could stay invisible while the check silently stopped
 running. Every other drift tripwire in this repo points at the registry and the
 control plane; this one points at the SDK.
 
-What it pins — six tests, of which these four carry the contract (the other two,
-`test_expected_surface_is_non_empty` and `test_missing_symbol_is_a_failure`,
+What it pins — seven tests, of which these five carry the contract (the other
+two, `test_expected_surface_is_non_empty` and `test_missing_symbol_is_a_failure`,
 guard the guard itself):
 
 | Test | Asserts |
@@ -83,6 +83,16 @@ guard the guard itself):
 | `test_arity_matches_expected` | Each symbol's `(required, total)` arity is unchanged (one parametrized case per symbol, so the failure names the symbol) |
 | `test_unresolvable_arity_is_a_failure_not_a_skip` | A symbol `inspect.signature` can't read **fails**; the guard never silently disables itself |
 | `test_every_sdk_call_in_the_repo_is_registered` | A source sweep for `Acdp<Class>.<member>` across `acdp_client/`, `playground/`, `tests/` and `scripts/` — so the guard's coverage is enforced, not trusted |
+| `test_pinned_attributes_stay_attributes` | Each pinned *attribute* is still non-callable — see below |
+
+The table has a second half. pyo3 **getters** (`producer.agent_did`,
+`public_key_b64`, `key_id`, `public_key_jwk`, `public_key_sec1_b64`) carry no
+`__text_signature__`, so they cannot be pinned by arity at all. They live in
+`EXPECTED_ATTRIBUTES` and are pinned two ways instead: they must still resolve,
+and they must still be **non-callable**. That second assertion is the
+load-bearing one — if a getter ever became a method, `hasattr` would stay true
+while every call site reading it as a value silently started handing around a
+bound method.
 
 Arities count `self` for instance methods (`inspect.signature` on the unbound
 descriptor sees it), so `AcdpProducer.sign_challenge` is `(2, 2)`.
@@ -249,7 +259,9 @@ Each has a `MockTransport` counterpart in `tests/test_conformance_probes.py`
 that serves the *wrong* answer and asserts the probe raises, so none of them can
 decay into a check that passes against any registry at all.
 
-These are **skipped unless `ACDP_LIVE_STACK` is set**. The SSE de-duplication
+The live probes are **skipped unless `ACDP_LIVE_STACK` is set** (their
+`MockTransport` counterparts above are not — those run on every plain
+`pytest`). The SSE de-duplication
 check additionally needs `ACDP_LIVE_SSE=1` (the bug only reproduces on a Redis
 `StreamHub`; the demo stack is memory-backed). CI runs the live suite on manual
 `workflow_dispatch` **and on a weekly schedule** (Mondays 05:17 UTC) — the

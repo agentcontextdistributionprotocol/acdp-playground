@@ -25,7 +25,7 @@ orchestration**; it does **not** reimplement any protocol primitive.
 | `models.py` | Pydantic wire types + error-envelope parsing + error-code tables |
 | `token_manager.py` | Drives the registry's challenge → sign → token flow; caches + refresh telemetry |
 | `signing.py` | Thin `Producer` abstraction + verify helpers over the SDK |
-| `identifiers.py` | Authority + reserved-tenant validation (mirrors the server rule client-side) |
+| `identifiers.py` | Authority + reserved-tenant validation, and the deterministic synthetic-identifier minter |
 | `safe_http.py` | Host-language orchestration for the consumer SSRF guard |
 | `retry_after.py` | RFC 9110 `Retry-After` parsing |
 
@@ -255,7 +255,8 @@ These helpers only pick the right SDK call and normalize the wire encoding.
 
 ## `identifiers.py`
 
-Mirrors server-side validation client-side so a caller fails fast:
+Mirrors server-side validation client-side so a caller fails fast, and mints
+the synthetic identifiers fixtures and scenarios need:
 
 - `is_valid_authority(host)` / `validate_origin_registry(value)` — enforce a bare
   DNS hostname (the context-body rules in
@@ -265,6 +266,19 @@ Mirrors server-side validation client-side so a caller fails fast:
   tenant can never be *asserted* (the registry returns 400, the CP 403); this
   mirrors that rule. See scenario **S20** and the registry's
   [MULTI-TENANCY.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/MULTI-TENANCY.md).
+- `synthetic_ctx_id(authority, seed)` / `synthetic_lineage_id(seed)` — mint a
+  **deterministic** identifier from `sha256(seed)`. The ctx_id is a
+  structurally valid v4 UUID (version nibble `4`, variant in `8..b`) under a
+  validated authority, so it survives the SDK's `CtxId::parse`; the lineage id
+  is the `lin:sha256:<hex>` form. Determinism is the requirement, not a
+  convenience — `RunSpec.agent_seed` makes runs reproducible and several
+  scenarios compare identifiers across steps, so `uuid.uuid4()` would make
+  failures unrepeatable.
+- `is_conformant_ctx_id(value)` — the grammar predicate the repo-wide fixture
+  sweep uses. It is a deliberate, narrow local mirror of the Rust parser, for
+  the one reason given in `docs/testing-and-conformance.md`: the SDK exposes no
+  binding that parses a bare `ctx_id`, at any version, so there is nothing to
+  delegate to. Delete it if that ever changes.
 
 ## `safe_http.py` — consumer SSRF guard (orchestration only)
 

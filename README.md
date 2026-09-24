@@ -365,11 +365,16 @@ make test-live                   # ACDP_LIVE_STACK=1 pytest -m live
 make smoke-live                  # scripts/smoke_test.py --live
 ```
 
-The probes live in `playground/conformance.py` (shared by both entry points) and
-cover the reserved-tenant 400, the `application/acdp+json` error envelope, the
-1 MiB ingest 413, the `GET /events` server-side limit cap, the revocation-feed
-shape, the admin pinned-key reload, and that the capability DTO accepts
-`ecdsa-p256` (CP #51). They are **skipped unless `ACDP_LIVE_STACK` is set**, so a
+The probes live in `playground/conformance.py` (shared by both entry points),
+grouped into registry-core contracts, the 0.3.0 endpoint set, and the control
+plane. They cover the reserved-tenant 400, the `application/acdp+json` error
+envelope, the 1 MiB ingest 413, the media-type gate on `POST /contexts`, the
+served-`ctx_id` binding, the retired interim revocation type, the anchors
+version gate, signed log checkpoints with inclusion and consistency proofs,
+head receipts, lifecycle fail-closed, the `GET /events` server-side limit cap,
+the revocation-feed shape, the admin pinned-key reload, and that the capability
+DTO accepts `ecdsa-p256` (CP #51). `docs/testing-and-conformance.md` lists each
+one and what it asserts. They are **skipped unless `ACDP_LIVE_STACK` is set**, so a
 plain `pytest` stays offline. The SSE de-duplication check additionally needs
 `ACDP_LIVE_SSE=1` (the bug only reproduces on a Redis StreamHub; the demo stack
 is memory-backed). CI runs this suite on manual `workflow_dispatch` and on a
