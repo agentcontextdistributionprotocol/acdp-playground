@@ -15,6 +15,8 @@ from acdp import AcdpDid, AcdpDidDocument, DidResolutionError
 from acdp_client.client import (
     AcdpClient,
     AcdpHTTPError,
+    CtxIdBindingError,
+    CtxIdBindingReason,
     ImmutableFieldError,
     InvalidLifecycleTransitionError,
     InvalidLogProofError,
@@ -83,6 +85,8 @@ __all__ = [
     "Body",
     "CachedToken",
     "ChallengeError",
+    "CtxIdBindingError",
+    "CtxIdBindingReason",
     "CursorError",
     "DataRefHashMismatch",
     "DidResolutionError",

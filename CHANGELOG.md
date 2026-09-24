@@ -38,7 +38,38 @@ surface, and one of them is a required-positional-argument break.
   mints conformant synthetic ids repo-wide.
 - **New — `AcdpVerifier.verify_ctx_id_binding(body_json, expected_ctx_id)`**
   (RFC-ACDP-0006 §4.1 step 7). Pinned in the surface guard here; adopted on the
-  retrieval path separately.
+  retrieval path below.
+
+### Client — every retrieval is now bound to the `ctx_id` it asked for
+
+`ctx_id` is registry-assigned and sits outside both `content_hash` and the
+producer signature (RFC-ACDP-0001 §5.7). On the receipt-less retrieval path —
+most of the playground's traffic — that made the requested-vs-served comparison
+the **only** thing standing between "the context I asked for" and any other
+validly-signed body from the same producer. Nothing was performing it.
+
+- `AcdpClient` gained a single retrieval chokepoint. `retrieve`, `retrieve_raw`,
+  `retrieve_body` and `_lifecycle` were four *parallel* implementations, each
+  with its own send/retry/raise; they now share `_get_full_context`, which
+  performs the §4.1 step 7 binding before returning. `lineage` and `current`
+  share `_get_lineage`, which validates the served id's form (those routes are
+  keyed by `lineage_id`, so there is no requested `ctx_id` to compare against).
+- The shared helper returns **raw JSON**; each caller does its own validation.
+  That is load-bearing, not stylistic: `retrieve_raw` feeds
+  `build_supersede_request`, which needs the registry's exact bytes, and a
+  model round-trip would inject explicit nulls for unset optionals and break
+  every supersession scenario without failing a single binding test.
+  `test_retrieve_raw_returns_byte_identical_json` is the regression guard.
+- New typed `CtxIdBindingError` with `.reason` — `mismatch` (both ids parse and
+  differ), `malformed` (either fails `CtxId::parse`; the SDK parses both sides)
+  or `unverifiable` (a body with no `ctx_id`, which **fails closed**, mirroring
+  the control plane's 502 `CONTEXT_BINDING_UNVERIFIABLE`). The reason matters
+  because `CtxIdBindingError` is a `RuntimeError` and so sits inside
+  `_sdk_guard.SDK_REJECTIONS` next to `ValueError`: a bare raise cannot tell
+  substitution apart from a broken identifier.
+- Enforcement is **on by default**, with an explicit, greppable
+  `verify_binding=False` opt-out per call on `retrieve_raw` and client-wide on
+  the constructor. Nothing in the repo opts out.
 
 ### Scenarios
 
@@ -56,6 +87,10 @@ surface, and one of them is a required-positional-argument break.
   fine.
 - **S32 — key revocation** mints its victim receipt and body as a pair for the
   same reason.
+- **S23** gains a ninth case, `substituted_body`: a registry answers a
+  retrieval with a *different*, entirely valid context. No receipt is involved,
+  so none of the §8 gates apply — it drives the real `AcdpClient` and asserts
+  the transport refuses it with `reason == "mismatch"`.
 
 ### Tests
 
@@ -66,6 +101,12 @@ surface, and one of them is a required-positional-argument break.
 - `test_s23_rejects_body_binding_mismatch` and
   `test_s27_two_receipts_bind_their_own_bodies` — the positive and negative
   halves of §8 step 3 being live.
+- `tests/test_client_ctx_binding.py` — the §4.1 step 7 matrix: every retrieval
+  method bound, the three reasons kept apart, the bare-body route shape, the
+  opt-out, cross-registry reads still accepted, and `retrieve_raw`'s
+  byte-exactness.
+- `probe_served_ctx_id_binding` joins `REGISTRY_PROBES`, with a `MockTransport`
+  drift counterpart that serves a substituted body and asserts the probe fails.
 
 ### Notes
 

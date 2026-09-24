@@ -12,7 +12,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from acdp_client import AcdpClient, AcdpHTTPError
+from acdp_client import AcdpClient, AcdpHTTPError, CtxIdBindingError
+from acdp_client.identifiers import synthetic_ctx_id
 from playground.main import app
 from playground.version import SERVICE_VERSION
 
@@ -116,6 +117,30 @@ def test_context_propagates_registry_error_status(client: TestClient):
         # registry-a.playground.local is a mapped authority (config default).
         r = client.get("/contexts/registry-a.playground.local/abc")
     assert r.status_code == 403
+
+
+def test_context_binding_failure_is_a_502_not_a_500(client: TestClient):
+    """A body that isn't bound to the requested id is the *registry's* fault.
+
+    Phase 5 made `retrieve` raise `CtxIdBindingError` on a substituted body.
+    Without an arm for it this proxy would answer an unhandled 500, which reads
+    as "the playground broke" rather than "the upstream registry served
+    something it should not have". 502 with the reason mirrors the control
+    plane's own choice on its federation proxy, and the body must never be
+    relayed — that would launder the substitution through this host.
+    """
+    authority = "registry-a.playground.local"
+    requested = synthetic_ctx_id(authority, "api-binding-requested")
+    served = synthetic_ctx_id(authority, "api-binding-served")
+    err = CtxIdBindingError("mismatch", requested=requested, served=served)
+    with patch.object(AcdpClient, "retrieve", AsyncMock(side_effect=err)):
+        r = client.get(f"/contexts/{requested.removeprefix('acdp://')}")
+    assert r.status_code == 502
+    detail = r.json()["detail"]
+    assert detail["code"] == "context_binding_failed"
+    assert detail["reason"] == "mismatch"
+    assert detail["requested_ctx_id"] == requested
+    assert detail["served_ctx_id"] == served
 
 
 # ── runs ───────────────────────────────────────────────────────────────────

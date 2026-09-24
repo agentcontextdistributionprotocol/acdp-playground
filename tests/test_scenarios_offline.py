@@ -102,8 +102,8 @@ async def test_s23_receipt_tamper_fails_closed(offline_stack):
     s = res.summary
     assert s["all_failed_closed"] is True
     # Each adversarial class fired (missing, created_at, fingerprint, ctx_id,
-    # content_hash, signature, and the two RFC-ACDP-0010 §8 step 3 served-body
-    # bindings).
+    # content_hash, signature, the two RFC-ACDP-0010 §8 step 3 served-body
+    # bindings, and the receipt-less RFC-ACDP-0006 §4.1 step 7 substitution).
     assert all(c["rejected"] for c in s["checks"].values())
     assert set(s["checks"]) == {
         "missing_receipt",
@@ -114,8 +114,26 @@ async def test_s23_receipt_tamper_fails_closed(offline_stack):
         "forged_signature",
         "rebound_lineage_id",
         "rebound_origin_registry",
+        "substituted_body",
     }
-    assert len(s["checks"]) == 8
+    assert len(s["checks"]) == 9
+
+
+async def test_s23_rejects_receiptless_body_substitution(offline_stack):
+    """§4.1 step 7: the only binding left when no receipt is served.
+
+    The served body is genuinely signed and hashes true — it is simply a
+    *different* context. Nothing but the requested-vs-served ``ctx_id``
+    comparison can see that, and the scenario drives the real client so the
+    proof covers the transport chokepoint every other retrieval uses. The
+    assertion names the reason, because ``CtxIdBindingError`` is a
+    ``RuntimeError`` and a bare raise would also be satisfied by a malformed
+    identifier.
+    """
+    res = await _run("s23_receipt_tamper")
+    substituted = res.summary["checks"]["substituted_body"]
+    assert substituted["rejected"] is True
+    assert "ctx_id binding mismatch" in substituted["why"]
 
 
 async def test_s23_rejects_body_binding_mismatch(offline_stack):

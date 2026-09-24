@@ -21,6 +21,17 @@ The discrepancy classes mirror the control plane's audit flags:
 are only expressible because ``verify_receipt`` takes the served body: the
 receipt is otherwise self-consistent, so nothing else in the §8 sequence sees
 the substitution.
+
+A ninth case closes the loop on the *first* one. ``missing_receipt`` proves a
+receipts-profile registry that serves no receipt is refused — but most of the
+world is receipt-*less* by design, and there the §8 sequence has nothing to
+say. What still binds a served body to the context the consumer asked for is
+RFC-ACDP-0006 §4.1 step 7: ``ctx_id`` is registry-assigned and therefore
+outside both ``content_hash`` and the producer signature (RFC-ACDP-0001 §5.7),
+so without that comparison a registry may serve *any* validly-signed body from
+the same producer under the requested id. ``substituted_body`` drives the real
+:class:`acdp_client.AcdpClient` against a registry doing exactly that and
+asserts the transport refuses it.
 """
 
 from __future__ import annotations
@@ -31,8 +42,10 @@ import json
 import logging
 from datetime import UTC, datetime
 
+import httpx
 from acdp import AcdpVerifier
 
+from acdp_client import AcdpClient, CtxIdBindingError
 from acdp_client.identifiers import synthetic_ctx_id, synthetic_lineage_id
 from acdp_client.models import StepEvent
 from playground.config import get_settings
@@ -102,6 +115,51 @@ def _expect_rejected(
     if not rejected:
         return False, "verify_receipt accepted a tampered receipt"
     return True, why
+
+
+#: The misbehaving registry is modelled in-process — this scenario is offline
+#: and deterministic, and a substitution needs no network to be real.
+_ADVERSARY_URL = "http://s23-substituting-registry.invalid"
+
+
+async def _substituted_body_rejected(served_body: dict, requested_ctx: str) -> dict:
+    """A registry answers ``GET /contexts/{requested}`` with *another* context.
+
+    The served body is a genuine, correctly-signed, content-hash-true body —
+    just not the one that was asked for. Every check a consumer runs on it
+    passes: the signature verifies, ``content_hash`` recomputes, the producer
+    is the expected one. Only the requested-vs-served ``ctx_id`` comparison
+    (RFC-ACDP-0006 §4.1 step 7) can tell, and it lives at the transport
+    chokepoint, so the scenario exercises the same code path every other
+    retrieval in the playground takes.
+
+    Asserts on the **typed** exception and its ``reason``, not on a bare raise:
+    :class:`acdp_client.CtxIdBindingError` derives from ``RuntimeError`` and so
+    sits inside ``_sdk_guard.SDK_REJECTIONS`` alongside ``ValueError``, which
+    means ``expect_rejection`` could not tell "the registry served someone
+    else's body" apart from "the id was malformed". Here the difference is the
+    entire finding.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"body": served_body, "registry_state": {"status": "active"}},
+            request=request,
+        )
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=_ADVERSARY_URL)
+    async with AcdpClient(_ADVERSARY_URL, http=http) as client:
+        try:
+            await client.retrieve(requested_ctx)
+        except CtxIdBindingError as exc:
+            return {
+                "rejected": exc.reason == "mismatch"
+                and exc.requested_ctx_id == requested_ctx
+                and exc.served_ctx_id == served_body["ctx_id"],
+                "why": str(exc)[:200],
+            }
+    return {"rejected": False, "why": "the client accepted a substituted body (fail-open)"}
 
 
 async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
@@ -294,6 +352,14 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         "rejected": rejected and "body origin_registry" in why,
         "why": why[:200],
     }
+
+    # (i) Receipt-less substitution — the registry serves a different, entirely
+    #     valid context under the requested ctx_id. No receipt is involved, so
+    #     none of the §8 gates above apply; RFC-ACDP-0006 §4.1 step 7 at the
+    #     transport is the only thing left that can catch it.
+    checks["substituted_body"] = await _substituted_body_rejected(
+        body, synthetic_ctx_id(authority, "s23-substitution-requested")
+    )
 
     all_failed_closed = all(c["rejected"] for c in checks.values())
 

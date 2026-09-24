@@ -15,11 +15,13 @@ client transparently:
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, Any, Literal, Self
 from urllib.parse import quote
 
 import httpx
+from acdp import AcdpVerifier
 
 from acdp_client.identifiers import reject_reserved_tenant
 from acdp_client.models import (
@@ -138,6 +140,73 @@ class InvalidLogProofError(AcdpHTTPError):
     """
 
 
+#: The three ways RFC-ACDP-0006 §4.1 step 7 can fail, in the order the client
+#: can tell them apart. Surfaced as :attr:`CtxIdBindingError.reason` so an
+#: operator reading a failed run knows *which* — the distinction matters
+#: operationally: ``mismatch`` means the registry served someone else's context
+#: under the requested id (an attack, or a serious routing bug), while
+#: ``malformed``/``unverifiable`` mean it is merely broken.
+CtxIdBindingReason = Literal["mismatch", "malformed", "unverifiable"]
+
+
+class CtxIdBindingError(RuntimeError):
+    """The registry served a body that is not bound to the requested ``ctx_id``.
+
+    RFC-ACDP-0006 §4.1 step 7 (NORMATIVE). ``ctx_id`` is assigned by the
+    registry *after* the producer signs, so it sits outside both
+    ``content_hash`` and the producer signature (RFC-ACDP-0001 §5.7). On the
+    receipt-less retrieval path this comparison is therefore the **only**
+    binding between "the context I asked for" and "the bytes I got back":
+    without it a registry can serve any other validly-signed body from the same
+    producer under the requested id and every other consumer check still
+    passes.
+
+    ``reason`` separates the cases (see :data:`CtxIdBindingReason`):
+
+    * ``"mismatch"`` — both ids parse, and they differ. Context substitution.
+    * ``"malformed"`` — either id fails ``CtxId::parse``. The SDK parses *both*
+      sides before comparing (``acdp-rs/crates/acdp-verify/src/lib.rs:444-454``),
+      so a non-conformant served id is a schema violation, not a mismatch.
+      Note this reason is **broader than an identifier problem**: the binding
+      call strictly deserializes the whole ``Body`` before comparing ids
+      (``acdp-rs/bindings/acdp-py/src/verifier.rs:155``), so a registry that
+      omits any required member also lands here, carrying the SDK's own message
+      in ``detail``. That is deliberate — an unparseable body is not one we can
+      claim is bound — but it means the blast radius is the `Body` schema, not
+      just the id grammar.
+    * ``"unverifiable"`` — a body was served but carries no ``ctx_id`` to bind,
+      so the check cannot run. Fails closed, mirroring the control plane, which
+      answers 502 ``CONTEXT_BINDING_UNVERIFIABLE`` rather than relaying an
+      unbindable body.
+
+    Subclasses :class:`RuntimeError` so it lands inside
+    ``playground.scenarios._sdk_guard.SDK_REJECTIONS`` like every other
+    verification verdict — but scenarios asserting this control must assert on
+    the type *and* ``reason``, since a bare raise cannot tell substitution apart
+    from a malformed identifier.
+    """
+
+    def __init__(
+        self,
+        reason: CtxIdBindingReason,
+        *,
+        requested: str | None,
+        served: str | None,
+        url: str | None = None,
+        detail: str | None = None,
+    ):
+        where = f" from {url}" if url else ""
+        super().__init__(
+            f"ctx_id binding {reason}{where}: requested {requested!r}, "
+            f"registry served {served!r}" + (f" ({detail})" if detail else "")
+        )
+        self.reason: CtxIdBindingReason = reason
+        self.requested_ctx_id = requested
+        self.served_ctx_id = served
+        self.url = url
+        self.detail = detail
+
+
 def _build_http_error(r: httpx.Response) -> AcdpHTTPError:
     code: str | None = None
     message: str | None = None
@@ -172,6 +241,37 @@ def _raise_for_status(r: httpx.Response) -> None:
     raise _build_http_error(r)
 
 
+#: Where the served ``body`` object sits in a 2xx response. The registry serves
+#: three different shapes on the routes this client reads, so the binding step
+#: is *told* which one it is looking at rather than sniffing — a sniffing
+#: extractor would silently read ``/contexts/{id}/body`` (a bare body) as an
+#: envelope with no ``body`` member and skip the check it exists to run.
+#:
+#: * ``"envelope"`` — ``{"body": {...}, "registry_state": ...}``
+#:   (``/contexts/{id}``, the lifecycle routes, ``/lineages/{id}/current``)
+#: * ``"bare"`` — the body object itself (``/contexts/{id}/body``)
+#: * ``"envelope_list"`` — a list of envelopes (``/lineages/{id}``)
+BodyShape = Literal["envelope", "bare", "envelope_list"]
+
+
+def _served_bodies(payload: Any, shape: BodyShape) -> list[Any]:
+    """The served ``body`` objects in ``payload``, per its declared ``shape``.
+
+    Returns ``[]`` when the response legitimately carries no body at all (an
+    envelope without a ``body`` member). A body that is *present* but unusable
+    is returned as-is so the caller can fail closed on it — "absent" and
+    "present but unbindable" are different answers.
+    """
+    if shape == "bare":
+        return [payload]
+    if shape == "envelope_list":
+        items = payload if isinstance(payload, list) else [payload]
+        return [body for item in items for body in _served_bodies(item, "envelope")]
+    if isinstance(payload, dict):
+        return [payload["body"]] if "body" in payload else []
+    return [payload]
+
+
 class AcdpClient:
     """Async httpx client for one ACDP registry.
 
@@ -193,6 +293,7 @@ class AcdpClient:
         token_manager: TokenManager | None = None,
         tenant_id: str | None = None,
         tenant_header_mode: TenantHeaderMode = "fallback",
+        verify_binding: bool = True,
     ):
         self._base = base_url.rstrip("/")
         self._static_bearer = bearer_token
@@ -216,6 +317,12 @@ class AcdpClient:
         reject_reserved_tenant(tenant_id)
         self._tenant_id = tenant_id
         self._tenant_header_mode: TenantHeaderMode = tenant_header_mode
+        # RFC-ACDP-0006 §4.1 step 7 enforcement, on by default for every
+        # retrieval this client performs. Turning it off makes the client
+        # trust whatever body the registry chooses to return under a
+        # requested ctx_id — only ever correct for a scenario that is
+        # *demonstrating* a substitution and needs the raw bytes first.
+        self._verify_binding = verify_binding
 
     # ── lifecycle ────────────────────────────────────────────────────────
 
@@ -338,42 +445,148 @@ class AcdpClient:
         """
         return quote(ctx_id, safe="")
 
-    async def retrieve(self, ctx_id: str) -> FullContext:
-        encoded = self._encode_ctx(ctx_id)
+    def _bind_served_ctx_id(
+        self,
+        payload: Any,
+        *,
+        shape: BodyShape,
+        expected_ctx_id: str | None,
+        url: str,
+        verify_binding: bool | None,
+    ) -> None:
+        """Enforce RFC-ACDP-0006 §4.1 step 7 over every body in ``payload``.
+
+        The single enforcement point for the whole client. ``expected_ctx_id``
+        is what the caller asked for; ``None`` means the request was keyed by
+        something other than a ctx_id (the ``/lineages/*`` routes ask by
+        ``lineage_id``), in which case there is no requested id to compare
+        against and the served id is checked for *form* only — still worth
+        doing, because from acdp 0.14.1 a malformed id blows up later and
+        further away, inside ``build_publish_request(derived_from=…)``.
+
+        Delegates the comparison itself to
+        :meth:`acdp.AcdpVerifier.verify_ctx_id_binding` — the playground
+        implements no part of it (CLAUDE.md delegation boundary). The SDK
+        raises ``ValueError`` when either side fails ``CtxId::parse`` (or the
+        body will not deserialize) and ``RuntimeError`` on a genuine
+        substitution; both are re-raised as :class:`CtxIdBindingError` with the
+        two cases distinguished by ``reason``.
+        """
+        if not (self._verify_binding if verify_binding is None else verify_binding):
+            return
+        for body in _served_bodies(payload, shape):
+            if not isinstance(body, dict):
+                raise CtxIdBindingError(
+                    "unverifiable",
+                    requested=expected_ctx_id,
+                    served=None,
+                    url=url,
+                    detail=f"served body is {type(body).__name__}, not an object",
+                )
+            served = body.get("ctx_id")
+            if not isinstance(served, str):
+                # Fail closed. An unbindable body is not an acceptable body —
+                # the control plane makes the same call, answering 502
+                # CONTEXT_BINDING_UNVERIFIABLE rather than relaying it.
+                raise CtxIdBindingError(
+                    "unverifiable",
+                    requested=expected_ctx_id,
+                    served=None,
+                    url=url,
+                    detail="served body carries no ctx_id",
+                )
+            # `is not None`, not `or`: an empty requested id is a caller bug
+            # that must reach CtxId::parse and be reported as malformed, not
+            # silently downgraded to the form-only check.
+            expected = served if expected_ctx_id is None else expected_ctx_id
+            try:
+                AcdpVerifier.verify_ctx_id_binding(json.dumps(body), expected)
+            except ValueError as exc:
+                raise CtxIdBindingError(
+                    "malformed",
+                    requested=expected_ctx_id,
+                    served=served,
+                    url=url,
+                    detail=str(exc),
+                ) from exc
+            except RuntimeError as exc:
+                raise CtxIdBindingError(
+                    "mismatch",
+                    requested=expected_ctx_id,
+                    served=served,
+                    url=url,
+                    detail=str(exc),
+                ) from exc
+
+    async def _get_full_context(
+        self,
+        ctx_id: str,
+        *,
+        path_suffix: str = "",
+        content: str | None = None,
+        shape: BodyShape = "envelope",
+        verify_binding: bool | None = None,
+    ) -> Any:
+        """The one retrieval chokepoint: send, retry, raise, bind — then return
+        the registry's JSON **verbatim**.
+
+        Every method that reads a context body goes through here so the §4.1
+        step 7 binding cannot be forgotten by the next method added.
+
+        Deliberately returns the *raw* decoded JSON and never a model: callers
+        do their own validation. :meth:`retrieve_raw` hands its result to
+        ``build_supersede_request``, which needs the exact bytes the registry
+        produced — routing it through a Pydantic model here would re-serialize
+        them (injecting explicit nulls for unset optionals) and break every
+        supersession scenario in a way no binding test would catch.
+
+        ``content`` turns the call into a POST of that verbatim string, which
+        is how the lifecycle routes share this path without re-serializing the
+        signed event.
+        """
+        url = f"{self._base}/contexts/{self._encode_ctx(ctx_id)}{path_suffix}"
 
         async def send(h: dict[str, str]) -> httpx.Response:
-            return await self._http.get(f"{self._base}/contexts/{encoded}", headers=h)
+            if content is None:
+                return await self._http.get(url, headers=h)
+            return await self._http.post(url, content=content, headers=h)
 
         r = await self._retrying(send)
         _raise_for_status(r)
-        return FullContext.model_validate(r.json())
+        payload = r.json()
+        self._bind_served_ctx_id(
+            payload,
+            shape=shape,
+            expected_ctx_id=ctx_id,
+            url=url,
+            verify_binding=verify_binding,
+        )
+        return payload
 
-    async def retrieve_raw(self, ctx_id: str) -> dict:
+    async def retrieve(self, ctx_id: str) -> FullContext:
+        return FullContext.model_validate(await self._get_full_context(ctx_id))
+
+    async def retrieve_raw(self, ctx_id: str, *, verify_binding: bool | None = None) -> dict:
         """Return the registry's full-context JSON verbatim (unparsed).
 
         Used when a downstream needs the exact body bytes the registry
         produced — e.g. ``build_supersede_request`` requires the previous
         body with its registry-assigned ``ctx_id``/``created_at`` and
         *without* the explicit nulls a re-serialized model would inject.
+
+        ``verify_binding=False`` opts this one call out of the §4.1 step 7
+        check (the client-wide default is set in the constructor). Only a
+        scenario that is *demonstrating* a substitution has any business
+        using it, and it must say so at the call site.
         """
-        encoded = self._encode_ctx(ctx_id)
-
-        async def send(h: dict[str, str]) -> httpx.Response:
-            return await self._http.get(f"{self._base}/contexts/{encoded}", headers=h)
-
-        r = await self._retrying(send)
-        _raise_for_status(r)
-        return r.json()
+        return await self._get_full_context(ctx_id, verify_binding=verify_binding)
 
     async def retrieve_body(self, ctx_id: str) -> Body:
-        encoded = self._encode_ctx(ctx_id)
-
-        async def send(h: dict[str, str]) -> httpx.Response:
-            return await self._http.get(f"{self._base}/contexts/{encoded}/body", headers=h)
-
-        r = await self._retrying(send)
-        _raise_for_status(r)
-        return Body.model_validate(r.json())
+        # `/contexts/{id}/body` serves the body object directly, with no
+        # envelope around it — hence shape="bare".
+        return Body.model_validate(
+            await self._get_full_context(ctx_id, path_suffix="/body", shape="bare")
+        )
 
     # ── Lifecycle (ACDP 0.3, RFC-ACDP-0013) ──────────────────────────────
 
@@ -389,21 +602,17 @@ class AcdpClient:
         The producer's authentication is the event signature itself (like a
         publish); a bearer token is only consulted for read visibility.
         Returns the post-transition :class:`FullContext` (``registry_state``
-        re-derived, the event appended to ``lifecycle_events``).
+        re-derived, the event appended to ``lifecycle_events``) — and the body
+        it returns is bound to ``ctx_id`` like any other retrieval, since a
+        transition response is a served body too.
         """
-        encoded = self._encode_ctx(ctx_id)
-        request_body = '{"event":' + event_json + "}"
-
-        async def send(h: dict[str, str]) -> httpx.Response:
-            return await self._http.post(
-                f"{self._base}/contexts/{encoded}/{action}",
-                content=request_body,
-                headers=h,
+        return FullContext.model_validate(
+            await self._get_full_context(
+                ctx_id,
+                path_suffix=f"/{action}",
+                content='{"event":' + event_json + "}",
             )
-
-        r = await self._retrying(send)
-        _raise_for_status(r)
-        return FullContext.model_validate(r.json())
+        )
 
     async def retract(self, ctx_id: str, event_json: str) -> FullContext:
         """Retract a context (mark-not-delete, RFC-ACDP-0013 §6).
@@ -611,13 +820,30 @@ class AcdpClient:
 
     # ── Lineage ──────────────────────────────────────────────────────────
 
-    async def lineage(self, lineage_id: str) -> list[FullContext]:
+    async def _get_lineage(self, path: str, *, shape: BodyShape) -> Any:
+        """``GET /lineages/{…}`` through the same send/retry/raise/bind path.
+
+        These routes are keyed by ``lineage_id``, so there is no requested
+        ``ctx_id`` to compare a served body against — ``expected_ctx_id=None``
+        makes the binding step check the served id's *form* only. See
+        :meth:`_bind_served_ctx_id`.
+        """
+        url = f"{self._base}{path}"
+
         async def send(h: dict[str, str]) -> httpx.Response:
-            return await self._http.get(f"{self._base}/lineages/{lineage_id}", headers=h)
+            return await self._http.get(url, headers=h)
 
         r = await self._retrying(send)
         _raise_for_status(r)
-        return [FullContext.model_validate(x) for x in r.json()]
+        payload = r.json()
+        self._bind_served_ctx_id(
+            payload, shape=shape, expected_ctx_id=None, url=url, verify_binding=None
+        )
+        return payload
+
+    async def lineage(self, lineage_id: str) -> list[FullContext]:
+        payload = await self._get_lineage(f"/lineages/{lineage_id}", shape="envelope_list")
+        return [FullContext.model_validate(x) for x in payload]
 
     async def current(self, lineage_id: str) -> FullContext:
         """``GET /lineages/{id}/current`` — the newest non-superseded,
@@ -629,13 +855,9 @@ class AcdpClient:
         :class:`FullContext` as a verbatim dict for
         ``AcdpVerifier.verify_lineage_head_receipt``.
         """
-
-        async def send(h: dict[str, str]) -> httpx.Response:
-            return await self._http.get(f"{self._base}/lineages/{lineage_id}/current", headers=h)
-
-        r = await self._retrying(send)
-        _raise_for_status(r)
-        return FullContext.model_validate(r.json())
+        return FullContext.model_validate(
+            await self._get_lineage(f"/lineages/{lineage_id}/current", shape="envelope")
+        )
 
     # ── Cross-registry routing ───────────────────────────────────────────
 

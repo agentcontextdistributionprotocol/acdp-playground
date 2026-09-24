@@ -129,13 +129,20 @@ class FakeRegistry:
                 return httpx.Response(200, json=self._envelope(ctx_ids[-1]), request=req)
             return httpx.Response(200, json=[self._envelope(c) for c in ctx_ids], request=req)
         if "/contexts/" in path:
-            ctx_id = unquote(path.split("/contexts/", 1)[1]).removesuffix("/body")
+            raw = unquote(path.split("/contexts/", 1)[1])
+            ctx_id = raw.removesuffix("/body")
             if ctx_id not in self.contexts:
                 return httpx.Response(
                     404,
                     json={"error": {"code": "not_found", "message": "no context"}},
                     request=req,
                 )
+            # `/contexts/{id}/body` serves the body object itself — no
+            # envelope. The fake used to answer both routes with the envelope,
+            # which is mock drift on a route the client binds (RFC-ACDP-0006
+            # §4.1 step 7 reads `ctx_id` straight off the served object).
+            if raw.endswith("/body"):
+                return httpx.Response(200, json=self.contexts[ctx_id], request=req)
             return httpx.Response(200, json=self._envelope(ctx_id), request=req)
         return httpx.Response(
             404,

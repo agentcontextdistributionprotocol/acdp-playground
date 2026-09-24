@@ -130,10 +130,23 @@ The probes live in `playground/conformance.py` (shared by both entry points):
 | `probe_reserved_tenant_400` | `X-Tenant-Id: default` → **400** `schema_violation` |
 | `probe_error_envelope_content_type` | A 404 returns `application/acdp+json` with a parseable error code |
 | `probe_ingest_body_limit_413` | A >1 MiB body → **413** before parsing |
+| `probe_served_ctx_id_binding` | A retrieval serves back the **same** `ctx_id` it was asked for, on both `/contexts/{id}` and `/contexts/{id}/body` (RFC-ACDP-0006 §4.1 step 7) |
 | `probe_cp_events_cap` | `GET /events` caps `limit` server-side (CP #51) |
 | `probe_cp_revocations_shape` | `GET /auth/revocations` → `{entries, next_cursor}` |
 | `probe_cp_pinned_keys_reload` | `POST /admin/pinned-keys/reload` accepts the admin bearer |
 | `probe_capability_algorithm_accepted` | The capability DTO accepts `ecdsa-p256` (CP #51) |
+
+`probe_served_ctx_id_binding` is the live half of a check the client now
+enforces on *every* retrieval (see
+[Served-`ctx_id` binding](client-sdk.md#served-ctx_id-binding-rfc-acdp-0006-41-step-7)).
+It publishes a deterministic `did:key` context, reads it back, and asserts the
+served `body.ctx_id` equals the requested one. It passes against a conforming
+registry — which is the point: if the real binary ever stopped honouring the
+binding, every playground run would start failing with `CtxIdBindingError`, and
+this probe is what says which side is at fault. Its offline counterpart in
+`tests/test_conformance_probes.py` serves a *substituted* body through
+`MockTransport` and asserts the probe fails, so the probe cannot quietly become
+a no-op.
 
 These are **skipped unless `ACDP_LIVE_STACK` is set**. The SSE de-duplication
 check additionally needs `ACDP_LIVE_SSE=1` (the bug only reproduces on a Redis

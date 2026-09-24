@@ -38,6 +38,18 @@ async def test_did_key_method_advertised(live_client: httpx.AsyncClient, live_co
     await conformance.probe_did_key_method_advertised(live_client, live_config)
 
 
+async def test_served_ctx_id_binding(live_client: httpx.AsyncClient, live_config: LiveConfig):
+    """RFC-ACDP-0006 §4.1 step 7 against the real binary.
+
+    The client now refuses any retrieval whose served ``body.ctx_id`` differs
+    from the requested one, so a registry that stopped honoring this would turn
+    every playground run into a ``CtxIdBindingError``. This says which side is
+    at fault.
+    """
+    summary = await conformance.probe_served_ctx_id_binding(live_client, live_config)
+    assert "acdp://" in summary
+
+
 # ── 0.3.0 endpoint contracts (RFC-ACDP-0011/0012/0013) ──────────────────────
 
 

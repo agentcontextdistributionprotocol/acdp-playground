@@ -9,7 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
-from acdp_client import AcdpClient, AcdpHTTPError
+from acdp_client import AcdpClient, AcdpHTTPError, CtxIdBindingError
 from playground.config import get_settings
 
 router = APIRouter(prefix="/contexts", tags=["contexts"])
@@ -30,4 +30,22 @@ async def get_context(ctx_id: str) -> JSONResponse:
             ctx = await client.retrieve(ctx_id)
         except AcdpHTTPError as e:
             raise HTTPException(e.status, e.body or "registry error") from None
+        except CtxIdBindingError as e:
+            # RFC-ACDP-0006 §4.1 step 7 failed upstream: the registry answered,
+            # but the body it served is not bound to the id we asked for. This
+            # is a *bad gateway*, not a bad request — the fault is the upstream
+            # registry's, and relaying the body would launder it through the
+            # playground. 502 with the reason mirrors the control plane, which
+            # answers 502 CONTEXT_ID_MISMATCH / CONTEXT_BINDING_UNVERIFIABLE on
+            # its own federation proxy rather than passing the body on.
+            raise HTTPException(
+                502,
+                {
+                    "code": "context_binding_failed",
+                    "reason": e.reason,
+                    "requested_ctx_id": e.requested_ctx_id,
+                    "served_ctx_id": e.served_ctx_id,
+                    "detail": str(e),
+                },
+            ) from None
     return JSONResponse(ctx.model_dump(mode="json"))
