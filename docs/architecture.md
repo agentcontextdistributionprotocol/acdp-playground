@@ -65,6 +65,33 @@ project — see
 [security](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/security.md),
 [bindings](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/bindings.md)).
 
+### Scenario helpers (`playground/scenarios/_receipts.py`)
+
+Some trust scenarios need artifacts a *registry* produces, not a producer — a
+signed receipt, a lifecycle event, a lineage-head receipt, a log checkpoint, or
+the body a retrieval would serve. A live registry only ever emits its current
+state, so paths like "verify a receipt signed under a since-rotated key" are
+unobservable without modelling the registry side offline. That is what these
+helpers do, and the delegation boundary still holds: every signature, digest,
+and canonicalization comes from the SDK, and what the playground authors is
+only the small set of fields a registry itself authors. For a served body that
+set is exactly four — `ctx_id`, `lineage_id`, `origin_registry` and `created_at`.
+Three of them are the difference between the SDK's `Body` and the
+`PublishRequest` a producer signs; `lineage_id` is the exception, present on
+both, because a v2+ supersede request legitimately carries it for the registry
+to verify against. Those four sit outside the `content_hash` preimage
+(RFC-ACDP-0001 §5.7),
+so `synthesize_retrieval_body` overlays them onto a **real** publish request
+built and signed by `AcdpProducer`, leaving the integrity half byte-identical,
+and never hand-builds a body dict — that would be a second implementation of
+the body schema. It refuses a request that already carries one of the three
+registry-only fields (a silent overwrite would mask a schema change), treats
+`lineage_id` as merge-or-verify because a v2+ supersede legitimately carries it
+as a self-verification value, insists on canonical millisecond-precision
+RFC 3339 UTC for `created_at` (`…SS.mmmZ`, the form RFC-ACDP-0010 §8 requires of
+the receipt that will attest the body), and round-trips its own output through
+the SDK's verifier before returning it.
+
 ## The run lifecycle
 
 1. **`POST /runs`** (`api/runs.py`) validates the scenario, generates a UUID
