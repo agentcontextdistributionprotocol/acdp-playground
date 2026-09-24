@@ -50,6 +50,35 @@ async def test_served_ctx_id_binding(live_client: httpx.AsyncClient, live_config
     assert "acdp://" in summary
 
 
+async def test_media_type_gate(live_client: httpx.AsyncClient, live_config: LiveConfig):
+    """RFC-ACDP-0007 §4.1 against the real binary — both directions.
+
+    The accept half is the one that matters here: ``AcdpClient`` labels every
+    request ``application/json``, so a registry that narrowed its accept-set
+    would break every publish at once while a reject-only probe stayed green.
+    """
+    summary = await conformance.probe_media_type_gate(live_client, live_config)
+    assert "415 unsupported_media_type" in summary
+    assert "absent header accepted" in summary
+
+
+async def test_interim_revocation_type_rejected(
+    live_client: httpx.AsyncClient, live_config: LiveConfig
+):
+    """RFC-ACDP-0014 §10: the interim ``acdp:key-revocation`` spelling is
+    retired. S32 publishes the modern form, so only this probe would notice a
+    registry that started accepting the interim one again."""
+    summary = await conformance.probe_interim_revocation_type_rejected(live_client, live_config)
+    assert "400 schema_violation" in summary
+
+
+async def test_anchors_require_0_5_0(live_client: httpx.AsyncClient, live_config: LiveConfig):
+    """RFC-ACDP-0016 §14: anchors under a sub-0.5.0 declared ``acdp_version``
+    are refused. S33 only ever publishes the accepted side."""
+    summary = await conformance.probe_anchors_require_0_5_0(live_client, live_config)
+    assert "400 schema_violation" in summary
+
+
 # ── 0.3.0 endpoint contracts (RFC-ACDP-0011/0012/0013) ──────────────────────
 
 

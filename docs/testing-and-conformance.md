@@ -111,6 +111,33 @@ The catalog's remaining broad `except Exception` handlers guard blocks that
 perform I/O: they absorb transport failure so a run degrades gracefully instead
 of hard-failing, and narrowing them would break the degrade-gracefully contract.
 
+### Synthetic-identifier sweep
+
+`acdp_client.identifiers` mints every synthetic `ctx_id` / `lineage_id` the repo
+uses — `synthetic_ctx_id(authority, seed)` is deterministic and produces a real
+identifier: the `acdp://` scheme, a lowercase DNS authority, and a v4 UUID with
+correct version *and* variant nibbles. `tests/test_identifiers.py` then sweeps
+`playground/`, `tests/`, `scripts/` and `docs/` for scheme-prefixed literals and
+fails on any that the grammar rejects.
+
+**Why a sweep and not just a helper.** The SDK only began *parsing* identifiers
+strictly in 0.14.x. Before that, fixtures shaped like `acdp://r/1` sat green for
+releases — a conformance harness asserting against ids no registry could ever
+assign. The sweep is what stops one growing back.
+
+| Test | Asserts |
+|------|---------|
+| `test_no_nonconformant_ctx_id_literals_in_repo` | Every swept literal is conformant or allowlisted with a stated reason |
+| `test_no_acdp_literals_in_the_scenario_catalog` | The catalog holds **no** scheme literals at all — even a conformant one is a future drift site; scenarios mint ids, they never spell them |
+| `test_intentionally_malformed_allowlist_entries_are_actually_malformed` | The allowlist can't launder a real mistake: every "deliberately malformed" entry must genuinely fail the grammar |
+| `test_not_an_id_input_allowlist_entries_state_a_reason` | Every entry in the second category carries a reason |
+
+The allowlist has exactly two categories and nothing else: `INTENTIONALLY_MALFORMED`
+(negative fixtures a test asserts are *rejected*) and `NOT_AN_ID_INPUT` (strings
+nothing ever parses — signed webhook payload bytes, a documentation ellipsis, a
+`<uuid>` grammar template). Adding a third category, or an entry with no reason,
+is how the guard stops guarding.
+
 ## Live conformance
 
 A mock can drift from the real binary (the reserved-tenant `422 → 400` fix is
@@ -123,18 +150,51 @@ make test-live        # ACDP_LIVE_STACK=1 pytest -m live
 make smoke-live       # scripts/smoke_test.py --live
 ```
 
-The probes live in `playground/conformance.py` (shared by both entry points):
+The probes live in `playground/conformance.py`, in three ordered groups shared
+by both entry points.
+
+**Registry core** (`REGISTRY_PROBES`):
 
 | Probe | Asserts |
 |-------|---------|
 | `probe_reserved_tenant_400` | `X-Tenant-Id: default` → **400** `schema_violation` |
 | `probe_error_envelope_content_type` | A 404 returns `application/acdp+json` with a parseable error code |
 | `probe_ingest_body_limit_413` | A >1 MiB body → **413** before parsing |
+| `probe_receipts_profile_advertised` | `acdp-registry-receipts` is advertised and `acdp_version` is at or above the probe's floor (a *minimum*, not an allowlist — the registry's version legitimately climbs as RFCs land) |
+| `probe_did_key_method_advertised` | `did:key` appears in `supported_did_methods` — the gate the ephemeral-agent scenarios publish through |
 | `probe_served_ctx_id_binding` | A retrieval serves back the **same** `ctx_id` it was asked for, on both `/contexts/{id}` and `/contexts/{id}/body` (RFC-ACDP-0006 §4.1 step 7) |
+| `probe_media_type_gate` | `POST /contexts` gates on `Content-Type` per RFC-ACDP-0007 §4.1 — `text/plain` → **415** `unsupported_media_type`, a `charset` parameter accepted, an absent header accepted *on this route* |
+| `probe_interim_revocation_type_rejected` | A new publish typed `acdp:key-revocation` → **400** `schema_violation` (RFC-ACDP-0014 §10 retirement) |
+| `probe_anchors_require_0_5_0` | A publish carrying `anchors` while declaring `acdp_version` below 0.5.0 → **400** `schema_violation` (RFC-ACDP-0016 §14) |
+
+**0.3.0 endpoint contracts** (`ENDPOINT_0_3_0_PROBES`, RFC-ACDP-0011/0012/0013):
+
+| Probe | Asserts |
+|-------|---------|
+| `probe_log_checkpoint_signed` | `GET /log/checkpoint` returns a signed `acdp-log/1` tree head |
+| `probe_log_proof_inclusion_and_consistency` | `GET /log/proof` serves both proof shapes, including the §9.1 step-4 `tree_size` binding to the embedded checkpoint |
+| `probe_head_receipt_on_current` | `GET /lineages/{id}/current` carries a signed `acdp-lhr/1` `lineage_head_receipt` bound to its lineage |
+| `probe_retract_endpoint_fails_closed` | `POST /contexts/{id}/retract` refuses a stranger's signed retract with the ACDP envelope — never a 2xx, never a bare route miss |
+
+**Control plane** (`CONTROL_PLANE_PROBES`):
+
+| Probe | Asserts |
+|-------|---------|
 | `probe_cp_events_cap` | `GET /events` caps `limit` server-side (CP #51) |
 | `probe_cp_revocations_shape` | `GET /auth/revocations` → `{entries, next_cursor}` |
 | `probe_cp_pinned_keys_reload` | `POST /admin/pinned-keys/reload` accepts the admin bearer |
 | `probe_capability_algorithm_accepted` | The capability DTO accepts `ecdsa-p256` (CP #51) |
+
+### Skip vs. fail
+
+A probe may return a "skipped" summary **only** when the surface it tests is
+genuinely optional for the registry in front of it — an unadvertised profile, or
+a spec line below the one that introduced the rule. Everything else is a
+failure. In particular, a registry that answers **201 where a gate should answer
+400 fails the probe**; "this build doesn't implement it" is the finding, not an
+excuse to skip.
+
+### Served-`ctx_id` binding
 
 `probe_served_ctx_id_binding` is the live half of a check the client now
 enforces on *every* retrieval (see
@@ -147,6 +207,47 @@ this probe is what says which side is at fault. Its offline counterpart in
 `tests/test_conformance_probes.py` serves a *substituted* body through
 `MockTransport` and asserts the probe fails, so the probe cannot quietly become
 a no-op.
+
+### The three registry-contract probes
+
+These pin contracts the siblings enforce today that no scenario would notice
+regressing — each one's *observable* behaviour in the playground is identical
+whether the gate exists or not.
+
+- **`probe_media_type_gate`** is deliberately two-sided. `AcdpClient` labels
+  every request `application/json`, so a registry that narrowed its accept-set
+  to `application/acdp+json` alone would break every publish, retract and
+  republish at once — and a reject-only probe would stay green straight
+  through it. So the probe asserts the rejection (`text/plain` → 415
+  `unsupported_media_type`, checked on the **envelope code**, not the status
+  alone, so a proxy answering 415 can't be mistaken for a conformant registry)
+  *and* both accept cases. The header-less accept is scoped to `POST /contexts`
+  and must not be generalized: that route infers a type for a body with no
+  `Content-Type`, while `/auth/*` rejects one with 415 — a per-route divergence
+  the registry documents and intends. Its two accept-side publishes share one
+  `Idempotency-Key`, so the probe adds at most one context to the registry
+  however often it runs.
+- **`probe_interim_revocation_type_rejected`** pins the RFC-ACDP-0014 §10
+  *retirement* of the interim `acdp:key-revocation` context type. S32 publishes
+  the modern `key-revocation` spelling, so the playground would notice nothing
+  if a registry started accepting the interim form again. The probe publishes a
+  schema-**valid** revocation body under the interim type on purpose: a
+  malformed one answered 400 `schema_violation` long before §10 existed, so a
+  broken body would pass green against a registry with no retirement gate at
+  all. For the same reason it requires the message to name the offending type —
+  `schema_violation` is the generic body-rejection code and can't say which rule
+  fired. Scoped to registries advertising 0.5.0 or above; below that line §10
+  requires the interim form to be treated as an opaque custom type and
+  *accepted*.
+- **`probe_anchors_require_0_5_0`** pins the RFC-ACDP-0016 §14 gate S33 depends
+  on: `anchors` carried under a declared `acdp_version` below 0.5.0 is refused.
+  S33 only ever publishes the accepted side. No version scoping is needed — on
+  an older registry the other half of the same gate (§10, the registry's own
+  advertised version) refuses the publish with the same status and code.
+
+Each has a `MockTransport` counterpart in `tests/test_conformance_probes.py`
+that serves the *wrong* answer and asserts the probe raises, so none of them can
+decay into a check that passes against any registry at all.
 
 These are **skipped unless `ACDP_LIVE_STACK` is set**. The SSE de-duplication
 check additionally needs `ACDP_LIVE_SSE=1` (the bug only reproduces on a Redis

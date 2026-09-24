@@ -98,6 +98,31 @@ _LOG_PROFILE = "acdp-registry-transparency-log"
 # never unboundedly grows the registry's Merkle log or lineage set.
 _PROBE_SEED = hashlib.sha256(b"acdp-playground:conformance:0.3.0-probe").digest()
 
+# One deterministic did:key seed per registry-contract probe below, so a human
+# reading the registry can tell the probe rows apart by producer as well as by
+# title. Only the media-type probe creates a row at all — the other two assert
+# a *rejection*, so a run of them leaves nothing behind.
+_MEDIA_TYPE_SEED = hashlib.sha256(b"acdp-playground:conformance:media-type-gate").digest()
+_INTERIM_REVOCATION_SEED = hashlib.sha256(
+    b"acdp-playground:conformance:interim-revocation"
+).digest()
+_ANCHOR_VERSION_SEED = hashlib.sha256(b"acdp-playground:conformance:anchors-version-gate").digest()
+
+# RFC-ACDP-0003 §6.1 idempotency key for the media-type probe's two accept-side
+# publishes. They send byte-identical bodies, and this registry does **not**
+# dedupe on content_hash alone — two identical publishes are measurably assigned
+# two different ctx_ids — so without an Idempotency-Key the probe would add a
+# row per accepted media type per run. With it, the suite creates one context on
+# its first run and replays that same context for the key's advertised TTL.
+_MEDIA_TYPE_IDEMPOTENCY_KEY = "acdp-playground-conformance-media-type-gate"
+
+# RFC-ACDP-0014 §10 retires the interim `acdp:key-revocation` context_type, and
+# RFC-ACDP-0016 §10/§14 admit `anchors`, only for registries advertising at
+# least this spec line. Below it the interim form is an ordinary opaque custom
+# type that a registry is *required* not to reject, so the retirement probe
+# scopes itself the same way the profile-gated probes do.
+_ANCHORS_AND_RETIREMENT_VERSION = (0, 5, 0)
+
 
 @dataclass(frozen=True)
 class LiveConfig:
@@ -133,13 +158,22 @@ def _encode(ctx_id: str) -> str:
     return quote(ctx_id, safe="")
 
 
-def _envelope_code(resp: httpx.Response) -> str | None:
+def _envelope(resp: httpx.Response) -> tuple[str | None, str]:
+    """``(code, message)`` from an RFC-ACDP-0007 §4 error envelope.
+
+    ``(None, "")`` when the response is not a parseable envelope — the probes
+    treat that as a contract violation in its own right.
+    """
     try:
         # json.JSONDecodeError and parse_error_envelope both raise ValueError.
-        code, _msg, _details = parse_error_envelope(resp.json())
+        code, msg, _details = parse_error_envelope(resp.json())
     except ValueError:
-        return None
-    return code
+        return None, ""
+    return code, msg
+
+
+def _envelope_code(resp: httpx.Response) -> str | None:
+    return _envelope(resp)[0]
 
 
 # ── registry probes ────────────────────────────────────────────────────────
@@ -298,6 +332,238 @@ async def probe_served_ctx_id_binding(client: httpx.AsyncClient, cfg: LiveConfig
         f"ctx-id-binding(/body): requested {ctx_id!r}, registry served {bare.get('ctx_id')!r}"
     )
     return f"served ctx_id bound to the requested one on /contexts/{{id}} and /body ({ctx_id})"
+
+
+def _probe_publish_request(seed: bytes, title: str, **fields: object) -> str:
+    """A minimal, deterministic, validly-signed publish request for a probe.
+
+    Distinctly titled and tagged so a human reading the registry can tell a
+    probe row from a scenario row. Built through the SDK so the signature and
+    ``content_hash`` are genuinely correct: a probe that asserts a *specific*
+    rejection reason is worthless if the body could be refused for a shape
+    defect instead.
+    """
+    producer = AcdpProducer.from_seed_did_key(seed)
+    return producer.build_publish_request(
+        title=title,
+        visibility="public",
+        tags=["conformance", "probe"],
+        **fields,  # type: ignore[arg-type]
+    )
+
+
+async def _advertised_acdp_version(
+    client: httpx.AsyncClient, base_url: str
+) -> tuple[int, int, int]:
+    """The registry's own advertised spec line, parsed. Fails the probe if the
+    capabilities document is missing or its ``acdp_version`` is malformed —
+    RFC-ACDP-0007 §3.5 check 1 makes that a consumer-side MUST NOT-proceed."""
+    r = await client.get(f"{base_url}/.well-known/acdp.json")
+    assert r.status_code == 200, f"capabilities: expected 200, got {r.status_code} ({r.text[:200]})"
+    raw = r.json().get("acdp_version")
+    parsed = _parse_acdp_version(raw)
+    assert parsed is not None, (
+        f"capabilities: acdp_version {raw!r} is not a MAJOR.MINOR.PATCH version"
+    )
+    return parsed
+
+
+async def probe_media_type_gate(client: httpx.AsyncClient, cfg: LiveConfig) -> str:
+    """``POST /contexts`` gates on ``Content-Type`` per RFC-ACDP-0007 §4.1 —
+    and still accepts what this repo actually sends.
+
+    Three assertions, and the two **accept**-side ones are the load-bearing
+    half. ``AcdpClient`` puts ``Content-Type: application/json`` on every
+    request, so a registry that narrowed its accept-set to
+    ``application/acdp+json`` alone would break every publish, retract and
+    republish in the playground at once — and a reject-only probe would stay
+    green straight through it.
+
+    1. Present and unacceptable (``text/plain``) → **415**, the
+       ``application/acdp+json`` envelope, code ``unsupported_media_type``.
+       Asserted on the envelope code and not on the status alone, so a proxy
+       that rewrote the request's ``Content-Type`` (or answered 415 itself)
+       cannot be mistaken for a conformant registry.
+    2. ``application/json; charset=utf-8`` → **accepted**. Media-type
+       parameters are not part of the acceptance decision.
+    3. An **absent** header → **accepted on ``POST /contexts`` specifically**.
+
+    Assertion 3 is scoped to the data plane deliberately and **must not be
+    generalized**. The registry infers a type for a header-less publish
+    because ``POST /contexts`` never required the header and rejecting it
+    would break every publisher that omits it; its ``/auth/*`` routes, which
+    always did reject, still answer 415 for an absent header. That per-route
+    divergence is documented and intentional on the registry side, so a probe
+    asserting "an absent Content-Type is always accepted" would pin a contract
+    that does not exist.
+    """
+    url = f"{cfg.registry_url}/contexts"
+    raw = _probe_publish_request(
+        _MEDIA_TYPE_SEED,
+        "conformance media-type gate probe",
+        context_type="data_snapshot",
+        summary="Published by playground.conformance to exercise the §4.1 media-type gate.",
+    )
+
+    refused = await client.post(url, content=raw, headers={"Content-Type": "text/plain"})
+    assert refused.status_code == 415, (
+        f"media-type: expected 415 for text/plain, got {refused.status_code} ({refused.text[:200]})"
+    )
+    ctype = refused.headers.get("content-type", "")
+    assert _ACDP_CONTENT_TYPE in ctype, (
+        f"media-type: expected the {_ACDP_CONTENT_TYPE} envelope on the 415, got {ctype!r}"
+    )
+    code = _envelope_code(refused)
+    assert code == "unsupported_media_type", (
+        f"media-type: expected code unsupported_media_type, got {code!r} ({refused.text[:200]})"
+    )
+
+    # The two accept cases share one Idempotency-Key so the probe adds at most
+    # one context to the registry, however often the suite runs.
+    idem = {"Idempotency-Key": _MEDIA_TYPE_IDEMPOTENCY_KEY}
+    charset = await client.post(
+        url, content=raw, headers={**idem, "Content-Type": "application/json; charset=utf-8"}
+    )
+    assert charset.status_code in (200, 201), (
+        "media-type: application/json; charset=utf-8 was NOT accepted "
+        f"({charset.status_code} {charset.text[:200]}) — a registry that stopped stripping "
+        "media-type parameters breaks every playground publish"
+    )
+    assert charset.json().get("ctx_id"), (
+        f"media-type: charset publish returned no ctx_id ({charset.text[:200]})"
+    )
+
+    # httpx sends no Content-Type of its own for a raw ``content=`` body, so
+    # this request genuinely reaches the registry without the header.
+    absent = await client.post(url, content=raw, headers=idem)
+    assert "content-type" not in {k.lower() for k in absent.request.headers}, (
+        "media-type: the absent-header case accidentally sent a Content-Type — "
+        "the assertion below would prove nothing"
+    )
+    assert absent.status_code in (200, 201), (
+        "media-type: a publish with no Content-Type was NOT accepted "
+        f"({absent.status_code} {absent.text[:200]}) — POST /contexts infers a type for a "
+        "header-less body by design; /auth/* is the route that rejects one"
+    )
+    assert absent.json().get("ctx_id"), (
+        f"media-type: header-less publish returned no ctx_id ({absent.text[:200]})"
+    )
+    return (
+        "media-type gate: text/plain → 415 unsupported_media_type; "
+        "charset parameter accepted; absent header accepted on POST /contexts"
+    )
+
+
+async def probe_interim_revocation_type_rejected(client: httpx.AsyncClient, cfg: LiveConfig) -> str:
+    """A **new** publish typed ``acdp:key-revocation`` is refused **400
+    ``schema_violation``** (RFC-ACDP-0014 §10).
+
+    §10 retires the interim custom ``acdp:key-revocation`` spelling on any
+    registry advertising ``acdp_version >= 0.5.0``, in favour of the standard
+    ``key-revocation`` context type. S32 already publishes the standard form,
+    so the playground would notice *nothing* if the retirement regressed —
+    which is precisely why it needs a probe rather than a scenario.
+
+    The body carries a schema-valid §4 revocation metadata block on purpose. A
+    *malformed* interim body answered 400 ``schema_violation`` long before §10
+    existed, so a probe that published a deliberately-broken body would pass
+    green against a registry that had never implemented the retirement at all.
+    For the same reason the assertion checks that the message names the
+    offending context type: ``schema_violation`` is the registry's generic
+    body-rejection code, and the code alone cannot say *which* rule fired.
+
+    Scoped to registries at or above 0.5.0: below that line §10 requires a
+    registry to treat the interim form as an ordinary opaque custom type and
+    **accept** it, so a rejection there would be the non-conformant answer.
+    """
+    version = await _advertised_acdp_version(client, cfg.registry_url)
+    if version < _ANCHORS_AND_RETIREMENT_VERSION:
+        return (
+            f"registry advertises {'.'.join(map(str, version))} < 0.5.0 — "
+            "interim key-revocation retirement probe skipped (§10 does not apply)"
+        )
+    raw = _probe_publish_request(
+        _INTERIM_REVOCATION_SEED,
+        "conformance interim key-revocation retirement probe",
+        context_type="acdp:key-revocation",
+        summary="Published by playground.conformance to exercise RFC-ACDP-0014 §10.",
+        metadata=json.dumps(
+            {
+                "revoked_key_fingerprint": "sha256:" + "11" * 32,
+                "compromised_since": "2026-01-01T00:00:00.000Z",
+                "reason": "conformance probe — the interim form must be refused outright",
+            }
+        ),
+    )
+    r = await client.post(
+        f"{cfg.registry_url}/contexts", content=raw, headers={"Content-Type": "application/json"}
+    )
+    assert r.status_code == 400, (
+        "interim-revocation: expected 400 for the retired acdp:key-revocation form, got "
+        f"{r.status_code} ({r.text[:200]}) — a 2xx means this registry never retired it"
+    )
+    ctype = r.headers.get("content-type", "")
+    assert _ACDP_CONTENT_TYPE in ctype, (
+        f"interim-revocation: expected the {_ACDP_CONTENT_TYPE} envelope, got {ctype!r}"
+    )
+    code, message = _envelope(r)
+    assert code == "schema_violation", (
+        f"interim-revocation: expected code schema_violation, got {code!r} ({r.text[:200]})"
+    )
+    assert "acdp:key-revocation" in message, (
+        "interim-revocation: the rejection does not name the retired context type "
+        f"({message[:200]!r}) — it may have been refused for an unrelated schema defect"
+    )
+    return "interim acdp:key-revocation publish → 400 schema_violation (RFC-ACDP-0014 §10)"
+
+
+async def probe_anchors_require_0_5_0(client: httpx.AsyncClient, cfg: LiveConfig) -> str:
+    """A publish carrying ``anchors`` while declaring ``acdp_version`` below
+    0.5.0 is refused **400 ``schema_violation``** (RFC-ACDP-0016 §14).
+
+    ``anchors`` is a 0.5.0 field, and §14 makes the *request's own* declared
+    version the gate: a body that carries anchors while claiming an older spec
+    line is asking a 0.5.0-unaware consumer to ignore a field it cannot
+    reason about. S33 publishes anchored contexts declaring exactly 0.5.0 and
+    so never exercises the refusal — this probe is what says the gate is real
+    rather than incidental.
+
+    Unlike the retirement probe this one needs no version scoping: on a
+    registry below 0.5.0 the *other* half of the same gate (§10, the
+    registry's own advertised version) refuses the publish with the same
+    status and the same code. Either way an anchored sub-0.5.0 publish is a
+    400, which is why the assertion also requires the message to name both
+    ``anchors`` and the 0.5.0 threshold — ``schema_violation`` on its own
+    could be any body defect at all.
+    """
+    raw = _probe_publish_request(
+        _ANCHOR_VERSION_SEED,
+        "conformance anchors version-gate probe",
+        context_type="data_snapshot",
+        summary="Published by playground.conformance to exercise RFC-ACDP-0016 §14.",
+        anchors=json.dumps([{"scheme": "macp.commitment", "content_hash": "sha256:" + "cd" * 32}]),
+        acdp_version="0.4.0",
+    )
+    r = await client.post(
+        f"{cfg.registry_url}/contexts", content=raw, headers={"Content-Type": "application/json"}
+    )
+    assert r.status_code == 400, (
+        "anchors-version: expected 400 for anchors declared under acdp_version 0.4.0, got "
+        f"{r.status_code} ({r.text[:200]}) — a 2xx means this registry has no §14 gate"
+    )
+    ctype = r.headers.get("content-type", "")
+    assert _ACDP_CONTENT_TYPE in ctype, (
+        f"anchors-version: expected the {_ACDP_CONTENT_TYPE} envelope, got {ctype!r}"
+    )
+    code, message = _envelope(r)
+    assert code == "schema_violation", (
+        f"anchors-version: expected code schema_violation, got {code!r} ({r.text[:200]})"
+    )
+    assert "anchors" in message and "0.5.0" in message, (
+        "anchors-version: the rejection names neither anchors nor the 0.5.0 threshold "
+        f"({message[:200]!r}) — it may have been refused for an unrelated schema defect"
+    )
+    return "anchors declared under acdp_version 0.4.0 → 400 schema_violation (RFC-ACDP-0016 §14)"
 
 
 # ── 0.3.0 endpoint probes (RFC-ACDP-0011/0012/0013) ─────────────────────────
@@ -643,6 +909,9 @@ REGISTRY_PROBES = (
     probe_receipts_profile_advertised,
     probe_did_key_method_advertised,
     probe_served_ctx_id_binding,
+    probe_media_type_gate,
+    probe_interim_revocation_type_rejected,
+    probe_anchors_require_0_5_0,
 )
 # RFC-ACDP-0011/0012/0013 endpoint contracts on registry-a. Real probes: they
 # hard-fail on drift wherever the profile is advertised (mock-drift detection).
