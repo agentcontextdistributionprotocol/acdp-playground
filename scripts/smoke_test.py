@@ -27,6 +27,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
+# Imported after the sys.path insert above, deliberately: this script runs as
+# `python scripts/smoke_test.py` from any CWD.
+from acdp_client.identifiers import synthetic_ctx_id, synthetic_lineage_id
+
+_SMOKE_AUTHORITY = "registry-a.playground.local"
+
 
 async def main(live: bool = False) -> int:
     print("== ACDP playground smoke test ==")
@@ -208,8 +214,8 @@ async def _check_agent_publish_path() -> int:
         async def publish(self, request_json: str, *, idempotency_key=None):
             captured["request"] = json.loads(request_json)
             return PublishResponse(
-                ctx_id="acdp://registry-a.playground.local/00000000-0000-4000-8000-000000000001",
-                lineage_id="lin:sha256:abc",
+                ctx_id=synthetic_ctx_id(_SMOKE_AUTHORITY, "smoke-agent-publish"),
+                lineage_id=synthetic_lineage_id("smoke-agent-publish"),
                 version=1,
                 created_at=datetime.now(UTC),
                 status="active",
@@ -501,8 +507,8 @@ async def _check_extended_body_fields() -> int:
         async def publish(self, request_json: str, *, idempotency_key=None):
             captured["request"] = json.loads(request_json)
             return PublishResponse(
-                ctx_id="acdp://registry-a.playground.local/00000000-0000-4000-8000-000000000002",
-                lineage_id="lin:sha256:abc",
+                ctx_id=synthetic_ctx_id(_SMOKE_AUTHORITY, "smoke-extended-body-fields"),
+                lineage_id=synthetic_lineage_id("smoke-extended-body-fields"),
                 version=1,
                 created_at=datetime.now(UTC),
                 status="active",
@@ -665,7 +671,7 @@ async def _check_idempotent_replay() -> int:
         seen.append(key)
         ctx = by_key.get(key) if key else None
         if ctx is None:
-            ctx = f"acdp://reg.test/{next(counter)}"
+            ctx = synthetic_ctx_id("reg.test", f"idempotency-{next(counter)}")
             if key:
                 by_key[key] = ctx
         return httpx.Response(

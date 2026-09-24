@@ -29,6 +29,7 @@ from datetime import UTC, datetime
 
 from acdp import AcdpVerifier
 
+from acdp_client.identifiers import synthetic_ctx_id, synthetic_lineage_id
 from acdp_client.models import StepEvent
 from playground.config import get_settings
 from playground.scenarios._factory import producer_for
@@ -115,7 +116,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     producer = producer_for(spec, "tamper-victim", authority)
     producer_fp = AcdpVerifier.fingerprint_ed25519_b64(producer.public_key_b64)
 
-    ctx_id = f"acdp://{authority}/11111111-1111-1111-1111-111111111111"
+    ctx_id = synthetic_ctx_id(authority, "s23-tamper-victim")
     body_hash = "sha256:" + "ab" * 32
 
     # A structurally-valid receipt skeleton (all 8 RFC-ACDP-0010 fields). Its
@@ -125,7 +126,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     base = {
         "registry_did": f"did:web:{authority}",
         "ctx_id": ctx_id,
-        "lineage_id": f"acdp://{authority}/22222222-2222-2222-2222-222222222222",
+        "lineage_id": synthetic_lineage_id("s23-tamper-victim"),
         "origin_registry": authority,
         "created_at": "2026-06-12T00:00:00.000Z",
         "content_hash": body_hash,
@@ -174,7 +175,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
     # (d) Re-bound ctx_id — receipt points at a different context.
     bad = copy.deepcopy(base)
-    bad["ctx_id"] = f"acdp://{authority}/99999999-9999-9999-9999-999999999999"
+    bad["ctx_id"] = synthetic_ctx_id(authority, "s23-tamper-other-context")
     rejected, why = _expect_rejected(
         "ctx_id",
         bad,

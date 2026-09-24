@@ -21,24 +21,19 @@ from unittest.mock import patch
 import httpx
 import pytest
 
+from tests._bodies import MOCK_BODIES
+
 os.environ["LLM_PROVIDER"] = "mock"
 
+#: The restricted context this registry serves — a real signed body whose
+#: ctx_id the handler also hands back from ``POST /contexts``.
+_BODY = MOCK_BODIES["test_s6_restricted.retrieve"]
+S6_CTX_ID = _BODY["ctx_id"]
 
-def _retrieve_body(ctx_id: str, visibility: str = "restricted") -> dict[str, Any]:
+
+def _retrieve_body() -> dict[str, Any]:
     return {
-        "body": {
-            "ctx_id": ctx_id,
-            "lineage_id": "lin:sha256:s6",
-            "origin_registry": "registry-a.playground.local",
-            "created_at": datetime.now(UTC).isoformat(),
-            "content_hash": "sha256:s6",
-            "signature": {"algorithm": "ed25519", "key_id": "k", "value": "v"},
-            "version": 1,
-            "agent_id": "did:web:registry-a.playground.local:agents:confidant-producer",
-            "title": "Confidential — internal margin analysis",
-            "type": "analysis",
-            "visibility": visibility,
-        },
+        "body": _BODY,
         "registry_state": {"status": "active"},
         "registry_receipt": None,
     }
@@ -94,14 +89,14 @@ def _build_handler():
             import json as _json
 
             req = _json.loads(request.read())
-            ctx_id = "acdp://registry-a.playground.local/s6-context"
+            ctx_id = S6_CTX_ID
             state["ctx_id"] = ctx_id
             state["audience"] = req.get("audience") or []
             return httpx.Response(
                 201,
                 json={
                     "ctx_id": ctx_id,
-                    "lineage_id": "lin:sha256:s6",
+                    "lineage_id": _BODY["lineage_id"],
                     "version": 1,
                     "created_at": datetime.now(UTC).isoformat(),
                     "status": "active",
@@ -118,7 +113,7 @@ def _build_handler():
             caller = state["tokens"].get(token)
             if caller not in state["audience"]:
                 return httpx.Response(403, text="not in audience", request=request)
-            return httpx.Response(200, json=_retrieve_body(state["ctx_id"]), request=request)
+            return httpx.Response(200, json=_retrieve_body(), request=request)
 
         return httpx.Response(404, request=request)
 

@@ -20,6 +20,7 @@ from acdp_client import (
     NotAuthorizedError,
     SupersededError,
 )
+from acdp_client.identifiers import synthetic_ctx_id
 from playground.scenarios import get_scenario, list_scenarios
 from playground.scenarios.models import RunSpec
 
@@ -110,7 +111,7 @@ async def test_not_authorized_403_is_typed():
 
     client = _client(handler)
     with pytest.raises(NotAuthorizedError) as ei:
-        await client.retrieve("acdp://reg.test/abc")
+        await client.retrieve(synthetic_ctx_id("reg.test", "round3-not-authorized"))
     assert ei.value.status == 403
     assert ei.value.code == "not_authorized"
     # NotAuthorizedError is an AcdpHTTPError, so generic handlers still catch it.

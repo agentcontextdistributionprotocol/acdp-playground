@@ -9,9 +9,19 @@ import json
 
 from fastapi.testclient import TestClient
 
+from acdp_client.identifiers import synthetic_ctx_id, synthetic_lineage_id
 from playground.config import get_settings
 from playground.events import create_queue, drop_queue
 from playground.main import app
+
+# Webhook deliveries carry the ids a registry would have assigned, so the
+# fixtures mint conformant ones rather than the ``/c1`` placeholders they
+# used to hand-write.
+_CTX_A = synthetic_ctx_id("registry-a.playground.local", "webhook-publish")
+_CTX_A2 = synthetic_ctx_id("registry-a.playground.local", "webhook-search")
+_CTX_C = synthetic_ctx_id("registry-c.playground.local", "webhook-receipt")
+_CTX_A_LIFECYCLE = synthetic_ctx_id("registry-a.playground.local", "webhook-lifecycle")
+_LINEAGE_A_LIFECYCLE = synthetic_lineage_id("webhook-lifecycle")
 
 
 def _sign(secret: str, body: bytes) -> str:
@@ -28,7 +38,7 @@ def test_webhook_lifts_tenant_and_event_id_to_sse():
             {
                 "type": "context_published",
                 "agent_id": "did:web:registry-a.playground.local:agents:x",
-                "ctx_id": "acdp://registry-a.playground.local/c1",
+                "ctx_id": _CTX_A,
                 "run_id": run_id,
             }
         ).encode()
@@ -67,10 +77,10 @@ def test_webhook_lifts_receipt_trust_signals_to_sse():
             {
                 "type": "context_published",
                 "agent_id": "did:key:z6Mkxyz",
-                "ctx_id": "acdp://registry-c.playground.local/c9",
+                "ctx_id": _CTX_C,
                 "run_id": run_id,
                 "key_fingerprint": fp,
-                "registry_receipt": {"ctx_id": "acdp://registry-c.playground.local/c9"},
+                "registry_receipt": {"ctx_id": _CTX_C},
             }
         ).encode()
         with TestClient(app) as client:
@@ -102,7 +112,7 @@ def test_webhook_retrieve_leaves_receipt_present_unset():
         body = json.dumps(
             {
                 "type": "context_retrieved",
-                "ctx_id": "acdp://registry-c.playground.local/c9",
+                "ctx_id": _CTX_C,
                 "run_id": run_id,
                 "key_fingerprint": "sha256:" + "cd" * 32,
             }
@@ -134,7 +144,7 @@ def test_webhook_run_id_from_header_when_absent_in_body():
         body = json.dumps(
             {
                 "type": "search_executed",
-                "ctx_id": "acdp://registry-a.playground.local/c2",
+                "ctx_id": _CTX_A2,
             }
         ).encode()
         with TestClient(app) as client:
@@ -170,8 +180,8 @@ _RETRACTED = {
     "schema_version": "1.0",
     "type": "context_retracted",
     "registry_authority": "registry-a.playground.local",
-    "ctx_id": "acdp://registry-a.playground.local/c9",
-    "lineage_id": "lin:sha256:9f2b",
+    "ctx_id": _CTX_A_LIFECYCLE,
+    "lineage_id": _LINEAGE_A_LIFECYCLE,
     "actor": "did:web:registry-a.playground.local:agents:producer",
     "lifecycle_event_id": "0195a1c2-0000-7000-8000-000000000001",
     "reason": "superseded by a newer context",
@@ -184,8 +194,8 @@ _REPUBLISHED = {
     "schema_version": "1.0",
     "type": "context_republished",
     "registry_authority": "registry-a.playground.local",
-    "ctx_id": "acdp://registry-a.playground.local/c9",
-    "lineage_id": "lin:sha256:9f2b",
+    "ctx_id": _CTX_A_LIFECYCLE,
+    "lineage_id": _LINEAGE_A_LIFECYCLE,
     "actor": "did:web:registry-a.playground.local:agents:producer",
     "lifecycle_event_id": "0195a1c3-0000-7000-8000-000000000002",
     "at": "2026-06-10T12:04:00Z",

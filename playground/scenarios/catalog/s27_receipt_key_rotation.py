@@ -48,6 +48,7 @@ from datetime import UTC, datetime
 from acdp import AcdpDidDocument, AcdpProducer, AcdpVerifier, DidResolutionError
 
 from acdp_client import AcdpClient, AcdpHTTPError
+from acdp_client.identifiers import synthetic_ctx_id, synthetic_lineage_id
 from acdp_client.models import StepEvent
 from playground.config import get_settings
 from playground.scenarios._receipts import did_document, ed25519_jwk_vm, mint_receipt
@@ -128,8 +129,8 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     # fingerprint is what the registry records).
     producer = AcdpProducer.from_seed_did_key(spec.agent_seed("attested-producer"))
     producer_fp = AcdpVerifier.fingerprint_ed25519_b64(producer.public_key_b64)
-    ctx_id = f"acdp://{authority}/{spec.run_id[:8]}-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-    lineage_id = f"acdp://{authority}/{spec.run_id[:8]}-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    ctx_id = synthetic_ctx_id(authority, f"{spec.run_id}:s27-attested-context")
+    lineage_id = synthetic_lineage_id(f"{spec.run_id}:s27-attested-context")
     content_hash = "sha256:" + hashlib.sha256(spec.run_id.encode()).hexdigest()
 
     def _mint(signer: AcdpProducer, key_id: str, created_at: str) -> dict:

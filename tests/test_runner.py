@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 
+from acdp_client.identifiers import synthetic_ctx_id
 from playground.scenarios.models import LineageGraph, RunResult, RunSpec, ScenarioDef
 from playground.scenarios.runner import execute, get_result
 
@@ -34,7 +35,7 @@ async def test_execute_success_emits_started_then_complete_and_persists():
             run_id=spec.run_id,
             scenario_id=spec.scenario_id,
             status="complete",
-            contexts=["acdp://reg/1"],
+            contexts=[synthetic_ctx_id("reg", "runner-ok")],
             lineage_graph=LineageGraph(),
         )
 

@@ -40,6 +40,7 @@ from datetime import UTC, datetime
 from acdp import AcdpProducer, AcdpVerifier
 
 from acdp_client import AcdpClient, AcdpHTTPError
+from acdp_client.identifiers import synthetic_ctx_id, synthetic_lineage_id
 from acdp_client.models import StepEvent
 from playground.config import get_settings
 from playground.scenarios._receipts import (
@@ -99,9 +100,9 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         registry_did, current=[ed25519_jwk_vm(kid, registry_did, reg.public_key_b64)]
     )
 
-    lineage_id = "lin:sha256:" + hashlib.sha256(spec.run_id.encode()).hexdigest()
-    ctx_a = f"acdp://{authority}/00000030-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    ctx_b = f"acdp://{authority}/00000030-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    lineage_id = synthetic_lineage_id(spec.run_id)
+    ctx_a = synthetic_ctx_id(authority, "s30-head-v1")
+    ctx_b = synthetic_ctx_id(authority, "s30-head-v2")
 
     def _mint(head_ctx_id: str, head_version: int, as_of: str) -> dict:
         return mint_lineage_head_receipt(

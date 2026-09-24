@@ -39,6 +39,7 @@ from datetime import UTC, datetime
 from acdp import AcdpMerkle, AcdpProducer, AcdpVerifier
 
 from acdp_client import AcdpClient, AcdpHTTPError
+from acdp_client.identifiers import synthetic_ctx_id, synthetic_lineage_id
 from acdp_client.models import StepEvent
 from playground.config import get_settings
 from playground.scenarios._receipts import (
@@ -96,14 +97,14 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
     producer = AcdpProducer.from_seed_did_key(spec.agent_seed("logged-producer"))
     producer_fp = AcdpVerifier.fingerprint_ed25519_b64(producer.public_key_b64)
-    lineage_id = "lin:sha256:" + hashlib.sha256(spec.run_id.encode()).hexdigest()
+    lineage_id = synthetic_lineage_id(spec.run_id)
 
     def _receipt(n: int, created_at: str) -> dict:
         return mint_receipt(
             reg,
             kid,
             registry_did=registry_did,
-            ctx_id=f"acdp://{authority}/0000000{n}-0000-4000-8000-000000000000",
+            ctx_id=synthetic_ctx_id(authority, f"s29-logged-context-{n}"),
             lineage_id=lineage_id,
             origin_registry=authority,
             created_at=created_at,

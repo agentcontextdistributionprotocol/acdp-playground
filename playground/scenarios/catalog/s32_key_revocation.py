@@ -56,6 +56,7 @@ from datetime import UTC, datetime, timedelta
 from acdp import AcdpProducer, AcdpVerifier
 
 from acdp_client import AcdpClient, AcdpHTTPError
+from acdp_client.identifiers import synthetic_ctx_id, synthetic_lineage_id
 from acdp_client.models import StepEvent
 from acdp_client.signing import verify_signature
 from playground.config import get_settings
@@ -131,7 +132,7 @@ def _build_revocation_body(
         ),
     )
     body = json.loads(raw)
-    lineage_id = "lin:sha256:" + hashlib.sha256(ctx_id.encode()).hexdigest()
+    lineage_id = synthetic_lineage_id(ctx_id)
     body.update(
         {
             "ctx_id": ctx_id,
@@ -159,7 +160,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     rotation_distinct = key_k1.public_key_b64 != key_k2.public_key_b64 and fp_k1 != fp_k2
 
     # The victim context, signed by the (soon-compromised) K1.
-    victim_ctx_id = f"acdp://{authority}/00000032-1111-4111-8111-111111111111"
+    victim_ctx_id = synthetic_ctx_id(authority, "s32-victim-context")
     raw_victim = key_k1.build_publish_request(
         title=f"{topic} — signed by key-1",
         context_type="analysis",
@@ -172,7 +173,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     ch_victim = req_victim["content_hash"]
 
     # The revocation context, signed by the CURRENT key K2, revoking K1.
-    rev_ctx_id = f"acdp://{authority}/00000032-2222-4222-8222-222222222222"
+    rev_ctx_id = synthetic_ctx_id(authority, "s32-revocation-context")
     rev_body = _build_revocation_body(
         key_k2,
         revoked_fingerprint=fp_k1,
@@ -208,7 +209,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         registry_did,
         reg_kid,
     )
-    victim_lineage = "lin:sha256:" + hashlib.sha256(victim_ctx_id.encode()).hexdigest()
+    victim_lineage = synthetic_lineage_id(victim_ctx_id)
 
     def _receipt(created_at: str) -> dict:
         return mint_receipt(
@@ -260,7 +261,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         revoked_fingerprint=fp_k1,
         compromised_since=BOUNDARY_T,
         reason="self-signed revocation — proves only possession of the compromised key",
-        ctx_id=f"acdp://{authority}/00000032-3333-4333-8333-333333333333",
+        ctx_id=synthetic_ctx_id(authority, "s32-self-signed-revocation-context"),
         authority=authority,
     )
     self_signed_rejected = False
