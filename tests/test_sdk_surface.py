@@ -43,7 +43,7 @@ SOURCE_ROOTS = ("acdp_client", "playground", "tests", "scripts")
 SWEEP_EXCLUDE = frozenset({Path(__file__).name})
 
 #: ``"Class.method" -> (required_args, total_args)`` for every `acdp` callable
-#: this repo invokes. Verified against `acdp==0.8.3`.
+#: this repo invokes. Verified against `acdp==0.14.1`.
 EXPECTED_SURFACE: dict[str, tuple[int, int]] = {
     # JCS canonicalization + content hashing (RFC-ACDP-0001 §5).
     "AcdpCanonicalizer.canonicalize": (1, 1),
@@ -93,10 +93,13 @@ EXPECTED_SURFACE: dict[str, tuple[int, int]] = {
     "AcdpVerifier.verify_log_consistency": (3, 3),
     "AcdpVerifier.verify_log_inclusion": (3, 3),
     "AcdpVerifier.verify_publish_request_offline": (1, 1),
-    # The canary. 0.8.3 takes five positionals; 0.14.1 inserts `body_json` as
+    # RFC-ACDP-0006 §4.1 step 7 — the receipt-less retrieval path's
+    # context-identity binding. New in the 0.9.0–0.14.1 range.
+    "AcdpVerifier.verify_ctx_id_binding": (2, 2),
+    # The canary. 0.8.3 took five positionals; 0.14.1 inserts `body_json` as
     # argument #2 (RFC-ACDP-0010 §8 step 3 cross-checks the served body), and
-    # every positional call site in this repo breaks.
-    "AcdpVerifier.verify_receipt": (5, 5),
+    # every positional call site in this repo broke. All seven now pass six.
+    "AcdpVerifier.verify_receipt": (6, 6),
     "AcdpVerifier.verify_signature": (3, 3),
     "AcdpVerifier.verify_signature_p256": (3, 3),
     "AcdpVerifier.verify_witness_cosignature": (3, 5),

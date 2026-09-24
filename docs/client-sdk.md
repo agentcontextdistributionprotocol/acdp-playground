@@ -47,6 +47,7 @@ client = AcdpClient(
     token_manager=None,
     tenant_id=None,
     tenant_header_mode="fallback",
+    verify_binding=True,     # RFC-ACDP-0006 §4.1 step 7 — see below
 )
 ```
 
@@ -64,7 +65,7 @@ for the endpoint contracts they call.
 |--------|---------|-------|
 | `publish(request_json, idempotency_key=None)` | `POST /contexts` | Forwards `Idempotency-Key` verbatim → `PublishResponse` |
 | `retrieve(ctx_id)` | `GET /contexts/{id}` | → `FullContext` |
-| `retrieve_raw(ctx_id)` | `GET /contexts/{id}` | Unparsed dict (preserves registry-assigned fields) |
+| `retrieve_raw(ctx_id, *, verify_binding=None)` | `GET /contexts/{id}` | Unparsed dict (preserves registry-assigned fields) |
 | `retrieve_body(ctx_id)` | `GET /contexts/{id}/body` | → `Body` |
 | `search(...)` | `GET /contexts/search` | Filters: `q`, `context_type`, `domain`, `agent_id`, `tags`, `derived_from`, `visibility`, `limit`, `cursor` → `SearchResponse`; raises `CursorError` |
 | `search_all(...)` | paginated search | Async-yields every `SearchHit`; continues through empty-but-cursored pages |
@@ -85,6 +86,71 @@ verifiers hash the wire JSON *as received*, so the client never re-serializes
 what the registry signed. Signing a lifecycle event stays with the producer —
 see `playground/scenarios/_receipts.py::mint_lifecycle_event` for the
 RFC-ACDP-0013 §5 construction over SDK primitives.
+
+### Served-`ctx_id` binding (RFC-ACDP-0006 §4.1 step 7)
+
+Every retrieval by `ctx_id` checks that the body the registry served is the
+body that was asked for. This is on by default and runs at the transport layer,
+so no scenario has to remember it. The lineage routes (`lineage()`,
+`current()`) are the one qualification: they are keyed by `lineage_id`, so
+there is no requested `ctx_id` to compare against and they get a *form-only*
+check instead, as the "Where it runs" table below records.
+
+**Why it is needed.** `ctx_id` is assigned by the *registry*, after the
+producer has signed. It is therefore covered by neither `content_hash` nor the
+producer signature (RFC-ACDP-0001 §5.7). On the receipt-less retrieval path —
+which is most of the traffic — nothing else binds "the context I asked for" to
+"the bytes I got back": a registry can serve any other validly-signed body from
+the same producer under the requested `ctx_id`, and every other consumer check
+still passes. Comparing requested against served is the only binding available
+there. (Where a registry *receipt* is served, RFC-ACDP-0010 §8 adds its own,
+independent bindings — see [scenarios.md](scenarios.md) for S22/S23.)
+
+**Where it runs.** All seven methods that return a served body go through one
+chokepoint (`AcdpClient._get_full_context` for the `/contexts/*` routes,
+`_get_lineage` for `/lineages/*`), which delegates the comparison to
+`acdp.AcdpVerifier.verify_ctx_id_binding` — the client implements no part of
+it:
+
+| Method | Requested identity | Checked |
+|--------|--------------------|---------|
+| `retrieve` / `retrieve_raw` / `retrieve_body` | a `ctx_id` | served `ctx_id` **equals** the requested one |
+| `retract` / `republish` | a `ctx_id` | same — a transition response is a served body too |
+| `lineage` / `current` | a `lineage_id` | there is no requested `ctx_id` to compare, so the served id is checked for **form** only |
+
+The comparison is requested-vs-served, never authority-vs-configuration: a
+cross-registry read legitimately returns an id on another authority, and that
+is fine as long as it is the id that was asked for.
+
+**The exception.** A failure raises `CtxIdBindingError` (a `RuntimeError`)
+carrying `.reason`, `.requested_ctx_id`, `.served_ctx_id`, `.url` and
+`.detail`. `.reason` tells an operator whether the registry lied or is merely
+broken:
+
+| `.reason` | Meaning |
+|-----------|---------|
+| `mismatch` | Both ids parse and they differ — context substitution |
+| `malformed` | Either id fails the SDK's `CtxId::parse` (which parses *both* sides before comparing), or the served body will not deserialize |
+| `unverifiable` | A body was served but carries no `ctx_id`, so the check cannot run |
+
+`unverifiable` **fails closed** — an unbindable body is not an acceptable body.
+The control plane makes the same call, answering `502
+CONTEXT_BINDING_UNVERIFIABLE` rather than relaying one.
+
+Because `CtxIdBindingError` subclasses `RuntimeError`, it sits inside
+`playground/scenarios/_sdk_guard.py`'s `SDK_REJECTIONS` alongside `ValueError`.
+A scenario asserting this control must therefore assert on the **type and
+`.reason`**, not on a bare raise — otherwise a malformed identifier would score
+as a detected substitution.
+
+**Opting out.** `verify_binding=False` skips the check, per call on
+`retrieve_raw(...)` or client-wide via the constructor. It is legitimate only
+for code that is *demonstrating* a substitution and needs the unchecked bytes
+first; anything else that turns it off is trusting the registry to tell the
+truth about which context it just served. Every opt-out site should say at the
+call site why it is one. Nothing in the playground currently opts out — S23's
+substitution case wants the exception, so it leaves enforcement on and asserts
+the reason.
 
 ### What the client adds on top of the registry
 
@@ -120,6 +186,11 @@ All except `CursorError` subclass `AcdpHTTPError`, which exposes `.status`,
 | `ImmutableFieldError` | **400** `immutable_field` — a lifecycle request touched immutable body content (RFC-ACDP-0013) |
 | `InvalidLifecycleTransitionError` | **409** `invalid_lifecycle_transition` — retract of an already-retracted / republish of a never-retracted context |
 | `InvalidLogProofError` | **502** `invalid_log_proof` — a transparency-log artifact failed verification on a federation/consumer path (RFC-ACDP-0012) |
+
+`CtxIdBindingError` is the one exception in `client.py` that is **not** an
+`AcdpHTTPError`: it is raised on a perfectly successful 2xx whose *content*
+fails the RFC-ACDP-0006 §4.1 step 7 binding, so there is no status, envelope or
+wire code to carry. See [Served-`ctx_id` binding](#served-ctx_id-binding-rfc-acdp-0006-41-step-7).
 
 `models.py` also defines the code tables (`ERROR_CODES`,
 `SIGNATURE_ERROR_CODES`, `LIFECYCLE_ERROR_CODES`) and

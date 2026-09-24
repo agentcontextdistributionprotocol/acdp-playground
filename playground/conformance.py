@@ -246,6 +246,60 @@ async def probe_ingest_body_limit_413(client: httpx.AsyncClient, cfg: LiveConfig
     return f"oversized publish ({len(oversized)} bytes) → 413"
 
 
+async def probe_served_ctx_id_binding(client: httpx.AsyncClient, cfg: LiveConfig) -> str:
+    """A retrieval serves back the **same** ``ctx_id`` it was asked for
+    (RFC-ACDP-0006 §4.1 step 7).
+
+    ``ctx_id`` is assigned by the registry after the producer signs, so it is
+    covered by neither ``content_hash`` nor the producer signature
+    (RFC-ACDP-0001 §5.7). On the receipt-less path that makes this comparison
+    the *only* binding between the context a consumer asked for and the bytes
+    it got back — the client now enforces it on every retrieval
+    (``AcdpClient._bind_served_ctx_id``), and this probe is what says the real
+    binary honors it rather than only the mocks.
+
+    Both retrieval shapes are checked, because the client binds both: the
+    ``/contexts/{id}`` envelope and the bare body at ``/contexts/{id}/body``. A
+    registry that started echoing a canonicalized-but-different id, or serving
+    a lineage head regardless of the id asked for, fails here instead of
+    turning every playground run into an unexplained ``CtxIdBindingError``.
+    """
+    # Reuses the deterministic publish helper defined with the 0.3.0 probes
+    # below (fixed seed → idempotent replay, so re-running never grows the
+    # registry). registry-a is also the receipts registry, but this contract is
+    # registry-core, so it publishes where it is about to read.
+    ctx_id, _ = await _publish_probe_context(client, cfg, base_url=cfg.registry_url)
+    encoded = _encode(ctx_id)
+
+    r = await client.get(f"{cfg.registry_url}/contexts/{encoded}")
+    assert r.status_code == 200, (
+        f"ctx-id-binding: expected 200 for a just-published context, "
+        f"got {r.status_code} ({r.text[:200]})"
+    )
+    body = r.json().get("body")
+    assert isinstance(body, dict), (
+        f"ctx-id-binding: retrieval served no body object ({r.text[:200]})"
+    )
+    served = body.get("ctx_id")
+    assert served == ctx_id, (
+        f"ctx-id-binding: requested {ctx_id!r}, registry served {served!r} — "
+        "context substitution on the receipt-less path"
+    )
+
+    rb = await client.get(f"{cfg.registry_url}/contexts/{encoded}/body")
+    assert rb.status_code == 200, (
+        f"ctx-id-binding(/body): expected 200, got {rb.status_code} ({rb.text[:200]})"
+    )
+    bare = rb.json()
+    assert isinstance(bare, dict), (
+        f"ctx-id-binding(/body): expected a body object ({rb.text[:200]})"
+    )
+    assert bare.get("ctx_id") == ctx_id, (
+        f"ctx-id-binding(/body): requested {ctx_id!r}, registry served {bare.get('ctx_id')!r}"
+    )
+    return f"served ctx_id bound to the requested one on /contexts/{{id}} and /body ({ctx_id})"
+
+
 # ── 0.3.0 endpoint probes (RFC-ACDP-0011/0012/0013) ─────────────────────────
 #
 # These drive the REAL 0.3.0 contracts on registry-a (the receipts/lifecycle/
@@ -272,9 +326,11 @@ async def _advertises(client: httpx.AsyncClient, base_url: str, profile: str) ->
     return profile in profiles
 
 
-async def _publish_probe_context(client: httpx.AsyncClient, cfg: LiveConfig) -> tuple[str, str]:
+async def _publish_probe_context(
+    client: httpx.AsyncClient, cfg: LiveConfig, *, base_url: str | None = None
+) -> tuple[str, str]:
     """Publish the deterministic did:key probe context to the receipts registry
-    and return ``(ctx_id, lineage_id)``.
+    (or ``base_url``) and return ``(ctx_id, lineage_id)``.
 
     The seed is fixed so the content_hash is stable: a re-run idempotently
     replays the same context (RFC-ACDP-0003) rather than growing the log
@@ -291,7 +347,7 @@ async def _publish_probe_context(client: httpx.AsyncClient, cfg: LiveConfig) -> 
         tags=["conformance", "probe"],
     )
     r = await client.post(
-        f"{cfg.receipts_registry_url}/contexts",
+        f"{base_url or cfg.receipts_registry_url}/contexts",
         content=raw,
         headers={"Content-Type": "application/json"},
     )
@@ -586,6 +642,7 @@ REGISTRY_PROBES = (
     probe_ingest_body_limit_413,
     probe_receipts_profile_advertised,
     probe_did_key_method_advertised,
+    probe_served_ctx_id_binding,
 )
 # RFC-ACDP-0011/0012/0013 endpoint contracts on registry-a. Real probes: they
 # hard-fail on drift wherever the profile is advertised (mock-drift detection).

@@ -16,7 +16,7 @@ The playground exposes a small FastAPI surface. The base URL is
 | `POST` | `/runs` | 202 / 404 | Start a scenario run (404: unknown scenario) |
 | `GET` | `/runs/{id}` | 200 / 404 | Poll run status + result |
 | `GET` | `/runs/{id}/events` | 200 | SSE stream of run events |
-| `GET` | `/contexts/{ctx_id}` | 200 / 404 | Retrieve a context from the right registry |
+| `GET` | `/contexts/{ctx_id}` | 200 / 404 / 502 | Retrieve a context from the right registry (502: the registry served a body not bound to the requested id) |
 | `POST` | `/webhooks/acdp` | 204 / 400 / 401 | Registry → playground webhook ingestion (400: bad JSON; 401: missing/invalid signature) |
 
 ## Health
@@ -155,6 +155,29 @@ Behavior:
 parameter. The playground extracts the authority, routes to the matching
 registry, and proxies the retrieval. **404** if no registry is configured for
 that authority. Registry errors are forwarded as HTTP exceptions.
+
+**502** if the retrieval succeeds but the body the registry served is not bound
+to the `ctx_id` that was asked for (RFC-ACDP-0006 §4.1 step 7). The body is
+never relayed in that case — passing it on would launder the substitution
+through this host — and the detail names which way it failed:
+
+```json
+{
+  "detail": {
+    "code": "context_binding_failed",
+    "reason": "mismatch",
+    "requested_ctx_id": "acdp://registry-a.playground.local/642fac39-91a6-479e-8fec-bf3d933ba7cf",
+    "served_ctx_id": "acdp://registry-a.playground.local/a0dc1071-0be3-4238-972d-9cb69e054c06",
+    "detail": "..."
+  }
+}
+```
+
+`reason` is `mismatch` (both ids parse and differ — context substitution),
+`malformed` (either id fails the SDK's `CtxId::parse`, or the served body does
+not deserialize), or `unverifiable` (a body was served carrying no `ctx_id`, so
+the check cannot run). It is a **502**, not a 4xx: the fault is the upstream
+registry's.
 
 ## Webhooks
 

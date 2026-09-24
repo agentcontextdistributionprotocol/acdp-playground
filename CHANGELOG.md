@@ -4,6 +4,129 @@ Notable changes to the ACDP stack as observed from the playground.
 Tracks cross-repo work — playground, control plane, registry, SDK —
 so operators reading any one repo can see the system-wide picture.
 
+## 2026-09-24 — `acdp` 0.14.1: receipts now bind the served body (RFC-ACDP-0010 §8 step 3)
+
+Catches the playground up to `acdp` **0.14.1**, the version both sibling
+binaries already build against (`acdp-registry-rs` `Cargo.toml`,
+`acdp-control-plane` `package.json`). The playground was the last repo in the
+family still coding against 0.8.3. Pin moved `acdp>=0.8.3` → `acdp>=0.14.1`;
+`uv.lock` resolves 0.14.1 and nothing else moved. abi3 wheels cover every
+platform CI runs on, so this is a re-lock, not a rebuild — no Rust toolchain,
+no `make build-sdk`.
+
+The version jump is large and the Python-visible delta is small: the `acdp`
+module is offline-only JSON-over-FFI with no `RegistryClient` and no
+networking, so every `feat(client)!` / `feat(server)!` change in the range is
+structurally invisible to a Python caller. Exactly three things break or add
+surface, and one of them is a required-positional-argument break.
+
+### SDK
+
+- **`AcdpVerifier.verify_receipt` gained `body_json` as argument #2** (arity
+  5 → 6) and now runs `RegistryReceipt::cross_check_body` — RFC-ACDP-0010 §8
+  step 3: the receipt's `lineage_id` / `origin_registry` / `created_at` MUST
+  equal the served body's. All **seven** call sites in this repo migrated.
+  Four pass a genuinely retrieved body; **S23**, **S27** and **S32**'s offline
+  half had no body at all
+  and now build one through `synthesize_retrieval_body`, which overlays the
+  four registry-assigned fields onto a real signed publish request rather than
+  hand-writing a second implementation of the body schema.
+- **`CtxId::parse` replaced the bare `CtxId` newtype** in
+  `build_publish_request(derived_from=)`, `verify_lineage_head_receipt`'s
+  `expected.head_ctx_id` and `verify_receipt`'s `expected_ctx_id`, so every
+  identifier must be `acdp://<lowercase-DNS-authority>/<v4-uuid>` with correct
+  version and variant nibbles. Already satisfied: `acdp_client.identifiers`
+  mints conformant synthetic ids repo-wide.
+- **New — `AcdpVerifier.verify_ctx_id_binding(body_json, expected_ctx_id)`**
+  (RFC-ACDP-0006 §4.1 step 7). Pinned in the surface guard here; adopted on the
+  retrieval path below.
+
+### Client — every retrieval is now bound to the `ctx_id` it asked for
+
+`ctx_id` is registry-assigned and sits outside both `content_hash` and the
+producer signature (RFC-ACDP-0001 §5.7). On the receipt-less retrieval path —
+most of the playground's traffic — that made the requested-vs-served comparison
+the **only** thing standing between "the context I asked for" and any other
+validly-signed body from the same producer. Nothing was performing it.
+
+- `AcdpClient` gained a single retrieval chokepoint. `retrieve`, `retrieve_raw`,
+  `retrieve_body` and `_lifecycle` were four *parallel* implementations, each
+  with its own send/retry/raise; they now share `_get_full_context`, which
+  performs the §4.1 step 7 binding before returning. `lineage` and `current`
+  share `_get_lineage`, which validates the served id's form (those routes are
+  keyed by `lineage_id`, so there is no requested `ctx_id` to compare against).
+- The shared helper returns **raw JSON**; each caller does its own validation.
+  That is load-bearing, not stylistic: `retrieve_raw` feeds
+  `build_supersede_request`, which needs the registry's exact bytes, and a
+  model round-trip would inject explicit nulls for unset optionals and break
+  every supersession scenario without failing a single binding test.
+  `test_retrieve_raw_returns_byte_identical_json` is the regression guard.
+- New typed `CtxIdBindingError` with `.reason` — `mismatch` (both ids parse and
+  differ), `malformed` (either fails `CtxId::parse`; the SDK parses both sides)
+  or `unverifiable` (a body with no `ctx_id`, which **fails closed**, mirroring
+  the control plane's 502 `CONTEXT_BINDING_UNVERIFIABLE`). The reason matters
+  because `CtxIdBindingError` is a `RuntimeError` and so sits inside
+  `_sdk_guard.SDK_REJECTIONS` next to `ValueError`: a bare raise cannot tell
+  substitution apart from a broken identifier.
+- Enforcement is **on by default**, with an explicit, greppable
+  `verify_binding=False` opt-out per call on `retrieve_raw` and client-wide on
+  the constructor. Nothing in the playground opts out.
+
+### Scenarios
+
+- **S23 — receipt tamper** grows from six adversarial cases to **eight** here,
+  and to nine once the retrieval binding below lands. The
+  two new ones are only expressible because the verifier now sees the body:
+  a receipt whose `lineage_id`, or whose `origin_registry`, disagrees with the
+  body served alongside it. Both receipts are internally consistent, so nothing
+  earlier in the §8 sequence catches the substitution. Each asserts on the
+  *named* field, not on a bare raise.
+- **S27 — registry receipt-key rotation** now models **two** bodies, one per
+  receipt, differing only in `created_at` — because a registry re-attesting
+  after a key rotation serves a re-attested body, and §8 step 3 is exactly the
+  check that binds the two. A new case lifts the historical receipt onto the
+  current receipt's body and proves it fails closed under a key that resolves
+  fine.
+- **S32 — key revocation** mints its victim receipt and body as a pair for the
+  same reason.
+- **S23** gains that ninth case, `substituted_body`: a registry answers a
+  retrieval with a *different*, entirely valid context. No receipt is involved,
+  so none of the §8 gates apply — it drives the real `AcdpClient` and asserts
+  the transport refuses it with `reason == "mismatch"`.
+
+### Tests
+
+- `tests/test_sdk_surface.py` pins `verify_receipt` at `(6, 6)` and registers
+  `verify_ctx_id_binding` at `(2, 2)`. This is the guard that made the break
+  loud: before it, five of S23's six checks recorded a `TypeError` from the
+  arity change and scored it as the receipt correctly failing closed.
+- `test_s23_rejects_body_binding_mismatch` and
+  `test_s27_two_receipts_bind_their_own_bodies` — the positive and negative
+  halves of §8 step 3 being live.
+- `tests/test_client_ctx_binding.py` — the §4.1 step 7 matrix: every retrieval
+  method bound, the three reasons kept apart, the bare-body route shape, the
+  opt-out, cross-registry reads still accepted, and `retrieve_raw`'s
+  byte-exactness.
+- `probe_served_ctx_id_binding` joins `REGISTRY_PROBES`, with a `MockTransport`
+  drift counterpart that serves a substituted body and asserts the probe fails.
+
+### Notes
+
+- **No wheel-ABI change.** It is tempting to assume a six-minor-version jump
+  dragged pyo3 along with it. It did not: `pyo3 0.29` with `abi3-py39` first
+  shipped in `acdp` **0.8.2**, one release *before* the pin this bump replaces.
+  Settled at the binary level rather than from a manifest — `strings` on the
+  published wheels reports `pyo3-0.22.6` for 0.8.1 and `pyo3-0.29.2` for 0.8.2,
+  0.8.3 and 0.14.1 alike. So the old pin already carried the current pyo3, this
+  bump carries no supply-chain argument of its own, and none should be claimed
+  for it.
+- Three items are the whole breaking-or-new Python surface, but two additive
+  semantic deltas also reach a caller without being able to break one:
+  `EmbeddedContent` gained an optional `content_hash`, so `data_refs` JSON that
+  0.8.3 rejected is now accepted; and a malformed `derived_from` identifier now
+  raises `ValueError` where 0.8.3 raised `RuntimeError` (both are inside
+  `_sdk_guard.SDK_REJECTIONS`, so no assertion changes meaning).
+
 ## 2026-06-10 — Documentation set for the playground (`docs/`)
 
 Adds a structured `docs/` tree that the website sync publishes as the

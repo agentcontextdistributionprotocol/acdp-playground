@@ -15,8 +15,10 @@ import json
 import httpx
 import pytest
 
+from acdp_client.identifiers import synthetic_ctx_id
 from playground import conformance
 from playground.conformance import LiveConfig
+from tests._bodies import mock_body
 
 _BASE = "http://registry-c.test"
 
@@ -286,3 +288,72 @@ async def test_retract_probe_passes_on_conformant_envelope():
     async with _client(handler) as client:
         summary = await conformance.probe_retract_endpoint_fails_closed(client, _CFG)
     assert "not_found" in summary
+
+
+# ── served ctx_id binding (RFC-ACDP-0006 §4.1 step 7) ───────────────────────
+
+_BOUND_CTX = synthetic_ctx_id("registry-c.test", "conformance:ctx-binding:bound")
+_BOUND_BODY = mock_body(
+    authority="registry-c.test", seed="conformance:ctx-binding:bound", ctx_id=_BOUND_CTX
+)
+_OTHER_CTX = synthetic_ctx_id("registry-c.test", "conformance:ctx-binding:other")
+_OTHER_BODY = mock_body(
+    authority="registry-c.test", seed="conformance:ctx-binding:other", ctx_id=_OTHER_CTX
+)
+
+
+def _ctx_binding_registry(served_envelope_body: dict, served_bare_body: dict):
+    """A registry that assigns ``_BOUND_CTX`` on publish and then serves
+    whatever bodies the test tells it to under that id."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(
+                201,
+                json={
+                    "ctx_id": _BOUND_CTX,
+                    "lineage_id": _BOUND_BODY["lineage_id"],
+                    "version": 1,
+                    "created_at": _BOUND_BODY["created_at"],
+                    "status": "active",
+                },
+            )
+        if request.url.path.endswith("/body"):
+            return httpx.Response(200, json=served_bare_body)
+        return httpx.Response(
+            200, json={"body": served_envelope_body, "registry_state": {"status": "active"}}
+        )
+
+    return handler
+
+
+async def test_ctx_id_binding_probe_passes_on_bound_body():
+    async with _client(_ctx_binding_registry(_BOUND_BODY, _BOUND_BODY)) as client:
+        summary = await conformance.probe_served_ctx_id_binding(client, _CFG)
+    assert _BOUND_CTX in summary
+
+
+async def test_ctx_id_binding_probe_detects_drift():
+    """A registry serving another valid context under the requested id must
+    make the probe fail.
+
+    This is the mock-drift counterpart of the client-side enforcement: the
+    substituted body is correctly signed and hashes true, so nothing *except*
+    the requested-vs-served ``ctx_id`` comparison can tell. If the probe passed
+    here it would be asserting nothing.
+    """
+    async with _client(_ctx_binding_registry(_OTHER_BODY, _BOUND_BODY)) as client:
+        with pytest.raises(AssertionError, match="context substitution"):
+            await conformance.probe_served_ctx_id_binding(client, _CFG)
+
+
+async def test_ctx_id_binding_probe_checks_the_bare_body_route_too():
+    """The envelope may be honest while ``/contexts/{id}/body`` is not — the
+    client binds both shapes, so the probe must too."""
+    async with _client(_ctx_binding_registry(_BOUND_BODY, _OTHER_BODY)) as client:
+        with pytest.raises(AssertionError, match=r"/body"):
+            await conformance.probe_served_ctx_id_binding(client, _CFG)
+
+
+def test_ctx_id_binding_probe_registered():
+    assert conformance.probe_served_ctx_id_binding in conformance.REGISTRY_PROBES
