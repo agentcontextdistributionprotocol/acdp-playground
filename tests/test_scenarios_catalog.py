@@ -50,6 +50,8 @@ EXPECTED = {
     "s32_key_revocation",
     # ACDP 0.5.0 (RFC-ACDP-0016): external anchors.
     "s33_anchors",
+    # RFC-ACDP-0002 §6.3/§6.6: embedded data-ref content integrity.
+    "s34_embedded_content",
 }
 
 

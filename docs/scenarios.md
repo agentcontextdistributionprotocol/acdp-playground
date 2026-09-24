@@ -42,6 +42,7 @@ an async `run(spec, events)` coroutine, and is auto-discovered at import time by
 | `s31_witness_cosigning` | Transparency-Log Witness Cosigning | An independent did:key witness discharges the §7 obligation (checkpoint signature + consistency) then cosigns the checkpoint; the consumer verifies the cosignature and an N-witnessed quorum; a cosignature over a tampered root fails `invalid_witness_cosignature` (RFC-ACDP-0015) | degrades |
 | `s32_key_revocation` | Producer Key-Revocation Signal | A producer rotates K1→K2 and publishes a signed `key-revocation` context (`revoked_key_fingerprint`=K1, `compromised_since`=T). A consumer (`parse_key_revocation` + `classify_under_revocation`) verifies a K1-signed context with a receipt-attested `created_at` before T as historically authorized (pre-compromise); at/after T or with no verified receipt it fails closed; a K1-signed revocation of K1 is rejected (not self-signed) (RFC-ACDP-0014) | degrades |
 | `s33_anchors` | External Anchors | A well-formed `anchors` entry is accepted and signed byte-exactly like any other field (anc-001); a scheme-unaware verifier still produces a valid verdict while structurally never dereferencing `anchors[].uri` (anc-005); a tampered anchor fails closed; supersede exercises the anchors carry-forward / `clear_anchors` fix (RFC-ACDP-0016) | degrades |
+| `s34_embedded_content` | Embedded Content Integrity | `data_refs[].embedded.content_hash` (Check 8) is verified over the **decoded** bytes — JCS form for `json`, raw UTF-8 for `utf8`, decoded bytes for `base64` — and is independent of the DataRef-root `content_hash`: one foreign digest is accepted in the root slot and rejected in the embedded slot. Absent is legal, explicit `null` is a deserialization failure, and tampered content fails closed at both the body and data-ref layers (RFC-ACDP-0002 §6.3/§6.6) | degrades |
 
 ## Scenario waves
 
@@ -138,10 +139,35 @@ sibling repos:
   run inside a DNS trap that fails the run if anything ever resolves the
   anchor's host. The deterministic core runs with no registry; the live half
   publishes an anchored context to registry-a and supersedes it twice to
-  exercise the 0.8.3 `Producer::new_version_from` fix — omitting `anchors` on
-  supersede now correctly carries the previous version's anchors forward, and
-  `clear_anchors=True` is the explicit way to drop them — degrading
-  gracefully.
+  exercise the `Producer::new_version_from` fix that shipped back in SDK 0.8.3
+  (the pin has since moved on) — omitting `anchors` on supersede now correctly
+  carries the previous version's anchors forward, and `clear_anchors=True` is
+  the explicit way to drop them — degrading gracefully.
+- **Embedded data-ref content (S34)** — the `data_refs[].embedded` branch
+  (RFC-ACDP-0002 §6.3/§6.6), which every earlier scenario skips by publishing
+  only `location`-form refs. **Check 8** scopes the publish-time integrity
+  obligation to `embedded.content_hash` and nothing else: when present it MUST
+  equal the SHA-256 of the **decoded** `embedded.content` bytes, and the decoded
+  form is encoding-specific — `json` hashes the JCS canonical bytes, `utf8` the
+  raw UTF-8 bytes of the string, `base64` the base64-decoded bytes. S34 builds
+  one ref per encoding and verifies them twice, as a wire `PublishRequest` and
+  as the `body` a registry serves back; declaring a `utf8` payload's *JCS*
+  digest — a different preimage over the same visible text — fails closed. It
+  then separates `embedded.content_hash` (§6.3) from the DataRef-root
+  `content_hash` (§6.1) with one digest in two slots: foreign in the root slot
+  it is **accepted** (§6.6 makes the root check a registry MAY, and SDK 0.14.1
+  reverted the undocumented 0.14.0 fallback that had briefly enforced it),
+  foreign in the embedded slot it is **rejected**. Absent is legal (the field is
+  optional) while an explicit `null` is a *deserialization* failure —
+  `EmbeddedContent` is `deny_unknown_fields` with a `de_present` deserializer on
+  that member — and the run asserts the SDK's own wording so the two are never
+  conflated. Tampering with one byte of signed embedded content fails closed at
+  both layers: the body-level `content_hash` on the publish-request path, and
+  the data-ref-level `embedded.content_hash mismatch` on the retrieval path,
+  where `validate_body` runs Check 8 before the signature. The live half
+  publishes the embedded refs to registry-a, re-verifies the served body and
+  supersedes to confirm the payloads and their hashes carry forward
+  byte-exactly, degrading gracefully.
 
 ## Graceful degradation
 

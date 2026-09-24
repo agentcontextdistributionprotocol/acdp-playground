@@ -110,6 +110,63 @@ validly-signed body from the same producer. Nothing was performing it.
 - `probe_served_ctx_id_binding` joins `REGISTRY_PROBES`, with a `MockTransport`
   drift counterpart that serves a substituted body and asserts the probe fails.
 
+### Conformance probes — three registry contracts nothing was asserting
+
+The investigation behind this bump surfaced three externally-observable
+contracts the siblings enforce today that **no scenario would notice
+regressing**: in each case the playground's own behaviour is identical whether
+the gate exists or not. All three join `REGISTRY_PROBES`, each with a
+`MockTransport` counterpart that serves the wrong answer and asserts the probe
+raises.
+
+- **`probe_media_type_gate`** — RFC-ACDP-0007 §4.1 on `POST /contexts`, both
+  directions. `text/plain` → **415** `unsupported_media_type`, asserted on the
+  envelope code rather than the status alone so a proxy answering 415 cannot
+  pass for a conformant registry; `application/json; charset=utf-8` accepted
+  (parameters are not part of the decision); and a request with **no**
+  `Content-Type` accepted **on this route specifically**. The accept half is
+  the load-bearing one: `AcdpClient` labels every request `application/json`,
+  so a registry narrowing its accept-set to `application/acdp+json` would break
+  every publish, retract and republish at once, and a reject-only probe would
+  stay green through it. The header-less assertion is scoped to the data plane
+  on purpose — `/auth/*` rejects an absent header with 415, a documented
+  per-route divergence — so "absent is always accepted" is a contract that does
+  not exist and is not pinned. Its two accept-side publishes share one
+  `Idempotency-Key`, so the probe adds at most one context to the registry
+  however often it runs.
+- **`probe_interim_revocation_type_rejected`** — RFC-ACDP-0014 §10: a new
+  publish typed `acdp:key-revocation` → **400** `schema_violation`. S32 already
+  publishes the modern `key-revocation` spelling, so the retirement regressing
+  is invisible from inside the playground. The probe publishes a schema-*valid*
+  revocation body under the interim type, because a malformed one answered 400
+  `schema_violation` long before §10 existed and would pass green against a
+  registry with no retirement gate at all; for the same reason the rejection
+  must name the offending type. Scoped to registries advertising ≥ 0.5.0 —
+  below that line §10 requires the interim form to be accepted as an opaque
+  custom type.
+- **`probe_anchors_require_0_5_0`** — RFC-ACDP-0016 §14: `anchors` carried
+  under a declared `acdp_version` below 0.5.0 → **400** `schema_violation`. S33
+  publishes only the accepted side, so this is the gate it silently depends on.
+
+A registry that answers **201 where a gate should answer 400 fails the probe**.
+Only genuinely optional surface — an unadvertised profile, or a spec line below
+the one that introduced the rule — is allowed to report a skip.
+
+### Docs
+
+- `docs/testing-and-conformance.md` — the probe table is now complete (all
+  three groups: registry core, the 0.3.0 endpoint contracts, the control
+  plane), documents the three new probes and the skip-vs-fail rule, and gains a
+  **Synthetic-identifier sweep** section for `tests/test_identifiers.py`: the
+  repo-wide guard that keeps ids like `acdp://r/1` — shapes no registry could
+  assign, which sat green for releases because the SDK only began parsing
+  strictly in 0.14.x — from growing back.
+- Four prose sites that cited a version as if it were current now name it as
+  historical: the `Producer::new_version_from` fix (SDK 0.8.3) in `README.md`
+  and `docs/scenarios.md`, and the SSRF-policy and JCS-canonicalizer
+  delegations (acdp-py 0.2.0) in `README.md`. The delegations are unchanged —
+  only the phrasing, which read as though 0.2.0 were the pin.
+
 ### Notes
 
 - **No wheel-ABI change.** It is tempting to assume a six-minor-version jump

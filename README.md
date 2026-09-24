@@ -15,7 +15,7 @@ section of [agentcontextdistributionprotocol.io](https://agentcontextdistributio
 |-----|--------|
 | [Getting started](docs/getting-started.md) | Install, smoke-test, run the stack, first run |
 | [Architecture](docs/architecture.md) | Components, request flow, the run lifecycle, the SSE bus |
-| [Scenarios](docs/scenarios.md) | The S1–S33 catalog and how to author one |
+| [Scenarios](docs/scenarios.md) | The S1–S34 catalog and how to author one |
 | [HTTP API](docs/http-api.md) | Every route on the playground service |
 | [Client library](docs/client-sdk.md) | `acdp_client` — the async wrapper the playground drives the SDK through |
 | [Agents](docs/agents.md) | `BasePlaygroundAgent` + LangChain / CrewAI / LangGraph |
@@ -40,7 +40,7 @@ acdp_client/                  # async httpx + Pydantic aliases over the acdp-py 
 playground/
   agents/                     # BasePlaygroundAgent + LangChain/CrewAI/LangGraph
   scenarios/
-    catalog/                  # S1–S33 — auto-discovered, runnable end-to-end
+    catalog/                  # S1–S34 — auto-discovered, runnable end-to-end
   api/                        # FastAPI routers: scenarios, runs, contexts, webhooks
   config.py                   # pydantic-settings (.env)
   events.py                   # in-process SSE bus
@@ -117,6 +117,7 @@ curl -N localhost:8000/runs/RUN_ID/events
 | `s31_witness_cosigning` | Transparency-Log Witness Cosigning | Independent witness cosigns a checkpoint; consumer verifies quorum |
 | `s32_key_revocation` | Producer Key-Revocation Signal | Time-scoped key-compromise signal; pre/post-compromise classification |
 | `s33_anchors` | External Anchors | Well-formed anchor accepted & signed byte-exactly; scheme-unaware verifier never dereferences `anchors[].uri`; tamper fails closed; supersede carries anchors forward / `clear_anchors` drops them |
+| `s34_embedded_content` | Embedded Content Integrity | `embedded.content_hash` verified over the decoded bytes (JCS for `json`, raw UTF-8 for `utf8`, decoded for `base64`); independent of the DataRef-root `content_hash`; absent legal, explicit `null` rejected; tampered content fails closed at both layers |
 
 > **V2 scenarios (S9–S15)** exercise the features that landed across the
 > sibling repos — P-256 signing, multi-tenancy, token revocation,
@@ -189,10 +190,28 @@ curl -N localhost:8000/runs/RUN_ID/events
 > fully valid verdict while `anchors[].uri` is never dereferenced by
 > ACDP-level verification per §6 (**anc-005**), proven inside a DNS trap
 > rather than merely asserted; a tampered anchor fails closed like any other
-> field. The live half exercises the 0.8.3 `Producer::new_version_from` fix —
-> omitting `anchors` on supersede now carries the previous version's anchors
-> forward, and `clear_anchors=True` explicitly drops them — degrading
-> gracefully without a registry.
+> field. The live half exercises the `Producer::new_version_from` fix that
+> shipped back in SDK 0.8.3 (the pin has since moved on) — omitting `anchors`
+> on supersede now carries the previous version's anchors forward, and
+> `clear_anchors=True` explicitly drops them — degrading gracefully without a
+> registry.
+>
+> **S34** proves **embedded data-ref content integrity** (RFC-ACDP-0002
+> §6.3/§6.6): `embedded.content_hash` is verified over the **decoded** bytes,
+> and the decoded form is encoding-specific — JCS canonical bytes for `json`,
+> raw UTF-8 for `utf8`, base64-decoded bytes for `base64` — so declaring a
+> `utf8` payload's JCS digest fails closed even though the visible text is
+> identical. **Check 8** is scoped to that field alone and not to the
+> DataRef-root `content_hash` (§6.1); S34 proves the independence with one
+> foreign digest in two slots, **accepted** in the root slot (the root check is
+> a registry MAY, and SDK 0.14.1 reverted the undocumented 0.14.0 fallback that
+> had briefly enforced it) and **rejected** in the embedded slot. Absent is
+> legal, an explicit `null` is a *deserialization* failure (`de_present` on a
+> `deny_unknown_fields` struct), and one flipped byte of signed embedded
+> content fails closed at both layers — body-level `content_hash` on the
+> publish path, data-ref-level `embedded.content_hash mismatch` on the
+> retrieval path. The live half round-trips the refs through registry-a and
+> supersedes them, degrading gracefully without a registry.
 
 ## V2 protocol features
 
@@ -230,20 +249,21 @@ the siblings just after the V2 sync.
   **same-authority** (scheme+host+effective-port) redirects only, and
   size/timeout caps. `AcdpClient.fetch_data_ref(...)` also verifies the
   `content_hash`. The per-address/URL **classification is delegated to the
-  Rust SDK** (`acdp.AcdpSsrfPolicy`, acdp-py 0.2.0) — the playground keeps
-  only the host-language orchestration (DNS, the mixed-answer loop, the
-  `httpx` fetch) because its client never goes through the Rust
-  `RegistryClient`. Validated against the RFC's `*-ssrf-*` fixtures; demoed
-  offline by **S16**.
+  Rust SDK** (`acdp.AcdpSsrfPolicy`, delegated since acdp-py 0.2.0) — the
+  playground keeps only the host-language orchestration (DNS, the
+  mixed-answer loop, the `httpx` fetch) because its client never goes through
+  the Rust `RegistryClient`. Validated against the RFC's `*-ssrf-*` fixtures;
+  demoed offline by **S16**.
 - **Error wire envelope.** `AcdpHTTPError` parses the RFC-ACDP-0007 §4
   `application/acdp+json` envelope (`code`/`message`/`details`); a denied
   or non-owner supersession surfaces as `SupersededError` with a `.reason`
   (`not_found`, `cross_registry_supersession_unsupported`, …).
-- **JCS canonicalization.** `acdp.AcdpCanonicalizer` (the Rust SDK, acdp-py
-  0.2.0) produces the RFC 8785 §3.2.2.3 canonical form (negative-zero → `0`,
-  exponential bands, integer exactness) — the wire form producers must hit.
-  The playground drives it through the binding and gates it on the RFC's
-  `can-011` vectors instead of shipping a second pure-Python implementation.
+- **JCS canonicalization.** `acdp.AcdpCanonicalizer` (the Rust SDK, delegated
+  since acdp-py 0.2.0) produces the RFC 8785 §3.2.2.3 canonical form
+  (negative-zero → `0`, exponential bands, integer exactness) — the wire form
+  producers must hit. The playground drives it through the binding and gates
+  it on the RFC's `can-011` vectors instead of shipping a second pure-Python
+  implementation.
 - **Cooperative token throttling.** `TokenManager` honours a `429 +
   Retry-After` (RFC 9110) on `/auth/challenge` and `/auth/token` with one
   capped retry — matching the registry's per-agent challenge throttle.
