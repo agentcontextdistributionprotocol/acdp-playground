@@ -93,6 +93,18 @@ validly-signed body from the same producer. Nothing was performing it.
   retrieval with a *different*, entirely valid context. No receipt is involved,
   so none of the §8 gates apply — it drives the real `AcdpClient` and asserts
   the transport refuses it with `reason == "mismatch"`.
+- **S34 — embedded content** is new, and covers a hole that predates this bump:
+  the playground had only ever published `location`-based data refs, so
+  `data_refs[].embedded` had no coverage at all — while 0.14.0 added
+  `EmbeddedContent.content_hash` and 0.14.1 removed an undocumented fallback
+  that also accepted a root-level `DataRef.content_hash` for embedded content.
+  The scenario signs **one digest into two slots** — a foreign digest in
+  `DataRef.content_hash` with a correct embedded one is accepted; the same
+  digest in `embedded.content_hash` is rejected — so a implementation that
+  conflated the two fields could not pass. It also pins what is invisible from
+  Python otherwise: an absent `content_hash` verifies while an explicit `null`
+  is rejected, and the `json` and `utf8` preimages differ (JCS form vs raw
+  bytes), demonstrated from two real digests rather than asserted.
 
 ### Tests
 

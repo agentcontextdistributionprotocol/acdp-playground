@@ -93,10 +93,17 @@ _LIFECYCLE_PROFILE = "acdp-registry-lifecycle"
 _HEAD_RECEIPTS_PROFILE = "acdp-registry-head-receipts"
 _LOG_PROFILE = "acdp-registry-transparency-log"
 
-# Deterministic did:key producer for the stateful 0.3.0 probes. A fixed seed →
-# a fixed content_hash → an idempotent republish, so re-running the probe suite
-# never unboundedly grows the registry's Merkle log or lineage set.
+# Deterministic did:key producer for the stateful 0.3.0 probes. The fixed seed
+# gives a stable content_hash, which makes runs comparable — but it does *not*
+# make the publish idempotent on its own: this registry does not dedupe on
+# content_hash. `_PROBE_IDEMPOTENCY_KEY` below is what actually stops a repeated
+# probe suite growing the Merkle log or the lineage set.
 _PROBE_SEED = hashlib.sha256(b"acdp-playground:conformance:0.3.0-probe").digest()
+
+# RFC-ACDP-0003 §6.1 key for `_publish_probe_context`. Measured, not assumed:
+# without it, two byte-identical probe publishes are assigned two different
+# ctx_ids and the tree grew by three rows across a single `make smoke-live`.
+_PROBE_IDEMPOTENCY_KEY = "acdp-playground-conformance-probe-context"
 
 # One deterministic did:key seed per registry-contract probe below, so a human
 # reading the registry can tell the probe rows apart by producer as well as by
@@ -299,8 +306,8 @@ async def probe_served_ctx_id_binding(client: httpx.AsyncClient, cfg: LiveConfig
     turning every playground run into an unexplained ``CtxIdBindingError``.
     """
     # Reuses the deterministic publish helper defined with the 0.3.0 probes
-    # below (fixed seed → idempotent replay, so re-running never grows the
-    # registry). registry-a is also the receipts registry, but this contract is
+    # below, which sends an Idempotency-Key so re-running never grows the
+    # registry. registry-a is also the receipts registry, but this contract is
     # registry-core, so it publishes where it is about to read.
     ctx_id, _ = await _publish_probe_context(client, cfg, base_url=cfg.registry_url)
     encoded = _encode(ctx_id)
@@ -598,9 +605,11 @@ async def _publish_probe_context(
     """Publish the deterministic did:key probe context to the receipts registry
     (or ``base_url``) and return ``(ctx_id, lineage_id)``.
 
-    The seed is fixed so the content_hash is stable: a re-run idempotently
-    replays the same context (RFC-ACDP-0003) rather than growing the log
-    unboundedly. Anonymous publish (registry-a admits did:key producers — see
+    The seed is fixed so the content_hash is stable, and an RFC-ACDP-0003 §6.1
+    ``Idempotency-Key`` is sent so a re-run genuinely replays the same context
+    rather than growing the log. The key is doing the work here, not the seed —
+    this registry does not dedupe on ``content_hash``. Anonymous publish
+    (registry-a admits did:key producers — see
     ``probe_did_key_method_advertised``).
     """
     producer = AcdpProducer.from_seed_did_key(_PROBE_SEED)
@@ -615,7 +624,16 @@ async def _publish_probe_context(
     r = await client.post(
         f"{base_url or cfg.receipts_registry_url}/contexts",
         content=raw,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            # A fixed seed alone does NOT make this idempotent: the registry
+            # does not dedupe on content_hash, and two byte-identical publishes
+            # are measurably assigned two different ctx_ids. Only the
+            # RFC-ACDP-0003 §6.1 key makes the replay real, and it is what keeps
+            # a repeated live run from growing the Merkle log a row at a time.
+            # Keyed per base_url, since a replay is scoped to one registry.
+            "Idempotency-Key": f"{_PROBE_IDEMPOTENCY_KEY}:{base_url or cfg.receipts_registry_url}",
+        },
     )
     assert r.status_code in (200, 201), (
         f"probe publish: expected 200/201, got {r.status_code} ({r.text[:200]})"
