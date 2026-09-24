@@ -48,9 +48,11 @@ from datetime import UTC, datetime
 from acdp import AcdpDidDocument, AcdpProducer, AcdpVerifier, DidResolutionError
 
 from acdp_client import AcdpClient, AcdpHTTPError
+from acdp_client.identifiers import synthetic_ctx_id, synthetic_lineage_id
 from acdp_client.models import StepEvent
 from playground.config import get_settings
 from playground.scenarios._receipts import did_document, ed25519_jwk_vm, mint_receipt
+from playground.scenarios._sdk_guard import expect_rejection
 from playground.scenarios.models import (
     LineageGraph,
     LineageNode,
@@ -127,8 +129,8 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     # fingerprint is what the registry records).
     producer = AcdpProducer.from_seed_did_key(spec.agent_seed("attested-producer"))
     producer_fp = AcdpVerifier.fingerprint_ed25519_b64(producer.public_key_b64)
-    ctx_id = f"acdp://{authority}/{spec.run_id[:8]}-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-    lineage_id = f"acdp://{authority}/{spec.run_id[:8]}-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    ctx_id = synthetic_ctx_id(authority, f"{spec.run_id}:s27-attested-context")
+    lineage_id = synthetic_lineage_id(f"{spec.run_id}:s27-attested-context")
     content_hash = "sha256:" + hashlib.sha256(spec.run_id.encode()).hexdigest()
 
     def _mint(signer: AcdpProducer, key_id: str, created_at: str) -> dict:
@@ -199,17 +201,15 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
     # (e) Binding cross-check: a historical receipt whose body no longer
     #     matches is rejected even though its key still resolves.
-    tampered_historical_rejected = False
-    try:
-        _verify_via_did(
+    tampered_historical_rejected, _ = expect_rejection(
+        lambda: _verify_via_did(
             historical_receipt,
             doc_rotated,
             ctx_id=ctx_id,
             content_hash="sha256:" + "ff" * 32,
             key_fingerprint=producer_fp,
         )
-    except Exception:  # noqa: BLE001 — verify_receipt raises on the binding mismatch
-        tampered_historical_rejected = True
+    )
 
     offline_core_ok = (
         historical_receipt_verified

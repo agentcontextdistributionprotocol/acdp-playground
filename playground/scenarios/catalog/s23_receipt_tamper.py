@@ -29,9 +29,11 @@ from datetime import UTC, datetime
 
 from acdp import AcdpVerifier
 
+from acdp_client.identifiers import synthetic_ctx_id, synthetic_lineage_id
 from acdp_client.models import StepEvent
 from playground.config import get_settings
 from playground.scenarios._factory import producer_for
+from playground.scenarios._sdk_guard import expect_rejection
 from playground.scenarios.models import LineageGraph, RunResult, RunSpec, ScenarioDef
 
 log = logging.getLogger(__name__)
@@ -71,18 +73,24 @@ def _expect_rejected(
     recomputed_hash: str,
     producer_fp: str,
 ) -> tuple[bool, str]:
-    """Run verify_receipt and assert it FAILS closed. Returns (rejected, why)."""
-    try:
-        AcdpVerifier.verify_receipt(
+    """Run verify_receipt and assert it FAILS closed. Returns (rejected, why).
+
+    Only failures the SDK can actually *express* count as a rejection — a
+    ``TypeError`` from calling ``verify_receipt`` wrongly propagates instead of
+    being scored 6/6 fail-closed (see :mod:`playground.scenarios._sdk_guard`).
+    """
+    rejected, why = expect_rejection(
+        lambda: AcdpVerifier.verify_receipt(
             json.dumps(receipt),
             registry_pub,
             expected_ctx,
             recomputed_hash,
             producer_fp,
         )
+    )
+    if not rejected:
         return False, "verify_receipt accepted a tampered receipt"
-    except Exception as e:  # noqa: BLE001 — any raise == correctly fails closed
-        return True, str(e)
+    return True, why
 
 
 async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
@@ -108,7 +116,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     producer = producer_for(spec, "tamper-victim", authority)
     producer_fp = AcdpVerifier.fingerprint_ed25519_b64(producer.public_key_b64)
 
-    ctx_id = f"acdp://{authority}/11111111-1111-1111-1111-111111111111"
+    ctx_id = synthetic_ctx_id(authority, "s23-tamper-victim")
     body_hash = "sha256:" + "ab" * 32
 
     # A structurally-valid receipt skeleton (all 8 RFC-ACDP-0010 fields). Its
@@ -118,7 +126,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     base = {
         "registry_did": f"did:web:{authority}",
         "ctx_id": ctx_id,
-        "lineage_id": f"acdp://{authority}/22222222-2222-2222-2222-222222222222",
+        "lineage_id": synthetic_lineage_id("s23-tamper-victim"),
         "origin_registry": authority,
         "created_at": "2026-06-12T00:00:00.000Z",
         "content_hash": body_hash,
@@ -167,7 +175,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
     # (d) Re-bound ctx_id — receipt points at a different context.
     bad = copy.deepcopy(base)
-    bad["ctx_id"] = f"acdp://{authority}/99999999-9999-9999-9999-999999999999"
+    bad["ctx_id"] = synthetic_ctx_id(authority, "s23-tamper-other-context")
     rejected, why = _expect_rejected(
         "ctx_id",
         bad,

@@ -34,6 +34,7 @@ from acdp_client import AcdpHTTPError
 from acdp_client.models import StepEvent
 from playground.config import get_settings
 from playground.scenarios._factory import AgentBundle
+from playground.scenarios._sdk_guard import expect_rejection
 from playground.scenarios.models import (
     LineageGraph,
     LineageNode,
@@ -94,11 +95,9 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         _, sample = requests[0]
         tampered = json.loads(sample)
         tampered["title"] = tampered["title"] + " (tampered)"
-        tamper_rejected = False
-        try:
-            AcdpVerifier.verify_publish_request_offline(json.dumps(tampered))
-        except Exception:  # noqa: BLE001
-            tamper_rejected = True
+        tamper_rejected, _ = expect_rejection(
+            lambda: AcdpVerifier.verify_publish_request_offline(json.dumps(tampered))
+        )
 
         # Rotation = new identity: a fresh seed yields a different did:key.
         original = requests[0][0]

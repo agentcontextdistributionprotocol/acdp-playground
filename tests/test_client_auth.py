@@ -9,6 +9,12 @@ import pytest
 from acdp import AcdpProducer
 
 from acdp_client import AcdpClient, AcdpHTTPError, TokenManager
+from tests._bodies import MOCK_BODIES
+
+#: The restricted context this stub serves — a real signed body, so the
+#: fixture survives an SDK that parses what it is handed.
+_BODY = MOCK_BODIES["test_client_auth.restricted_retrieve"]
+CTX = _BODY["ctx_id"]
 
 
 def _producer() -> AcdpProducer:
@@ -65,19 +71,7 @@ def _auth_handler_with_retrieve(
             return httpx.Response(
                 200,
                 json={
-                    "body": {
-                        "ctx_id": "acdp://r/1",
-                        "lineage_id": "lin:sha256:x",
-                        "origin_registry": "r",
-                        "created_at": "2026-01-01T00:00:00Z",
-                        "content_hash": "sha256:abc",
-                        "signature": {"algorithm": "ed25519", "key_id": "k", "value": "v"},
-                        "version": 1,
-                        "agent_id": "did:web:r",
-                        "title": "t",
-                        "type": "data_snapshot",
-                        "visibility": "restricted",
-                    },
+                    "body": _BODY,
                     "registry_state": {"status": "active"},
                     "registry_receipt": None,
                 },
@@ -100,7 +94,7 @@ async def test_client_injects_bearer_token_when_producer_supplied():
         token_manager=tm,
     )
 
-    await client.retrieve("acdp://r/1")
+    await client.retrieve(CTX)
     assert state["tokens_seen"] == ["Bearer jwt-1"]
     assert state["tokens"] == 1
 
@@ -119,7 +113,7 @@ async def test_client_retries_once_on_401_with_refreshed_token():
         token_manager=tm,
     )
 
-    await client.retrieve("acdp://r/1")
+    await client.retrieve(CTX)
     # First call used jwt-1, retry minted jwt-2.
     assert state["tokens_seen"] == ["Bearer jwt-1", "Bearer jwt-2"]
     assert state["tokens"] == 2
@@ -140,7 +134,7 @@ async def test_client_surfaces_repeated_401_without_loop():
     )
 
     with pytest.raises(AcdpHTTPError) as exc:
-        await client.retrieve("acdp://r/1")
+        await client.retrieve(CTX)
     assert exc.value.status == 401
     # Exactly two attempts — original + one retry.
     assert state["retrieves"] == 2
@@ -151,6 +145,6 @@ async def test_anonymous_client_sends_no_authorization_header():
     handler, state = _auth_handler_with_retrieve()
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     client = AcdpClient("http://registry.test", http=http)
-    await client.retrieve("acdp://r/1")
+    await client.retrieve(CTX)
     assert state["tokens_seen"] == [""]
     assert state["tokens"] == 0

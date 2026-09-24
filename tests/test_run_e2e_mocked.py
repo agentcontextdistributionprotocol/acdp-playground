@@ -6,9 +6,9 @@ real registry. Patches LLM_PROVIDER=mock so no API key is needed.
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
-import uuid
 from datetime import UTC, datetime
 from unittest.mock import patch
 
@@ -16,14 +16,27 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from acdp_client.identifiers import synthetic_ctx_id, synthetic_lineage_id
+from tests._bodies import MOCK_BODIES, PLAYGROUND_AUTHORITY
+
 os.environ["LLM_PROVIDER"] = "mock"
 os.environ["WEBHOOK_SECRET"] = ""  # disable signature requirement for this test
 
+#: A real signed body, not a hand-written stub — the previous one omitted
+#: three fields the SDK's ``Body`` requires.
+_RETRIEVE_BODY = MOCK_BODIES["test_run_e2e_mocked.retrieve"]
 
-def _publish_response(authority: str = "registry-a.playground.local") -> dict:
+
+def _publish_response(counter, authority: str = PLAYGROUND_AUTHORITY) -> dict:
+    """A registry-shaped publish response with deterministic ids.
+
+    Seeded rather than ``uuid4()``: a fixture that changes every run makes a
+    failure unrepeatable, and the ids still have to satisfy the RFC grammar.
+    """
+    seed = f"e2e-mocked-publish-{next(counter)}"
     return {
-        "ctx_id": f"acdp://{authority}/{uuid.uuid4()}",
-        "lineage_id": f"lin:sha256:{uuid.uuid4().hex}",
+        "ctx_id": synthetic_ctx_id(authority, seed),
+        "lineage_id": synthetic_lineage_id(seed),
         "version": 1,
         "created_at": datetime.now(UTC).isoformat(),
         "status": "active",
@@ -31,8 +44,10 @@ def _publish_response(authority: str = "registry-a.playground.local") -> dict:
 
 
 def _fake_post_factory():
+    counter = itertools.count(1)
+
     async def fake_post(self, url, content=None, headers=None, **kw):
-        payload = _publish_response()
+        payload = _publish_response(counter)
         req = httpx.Request("POST", url)
         return httpx.Response(201, json=payload, request=req)
 
@@ -45,19 +60,7 @@ def _fake_get_factory():
         if "healthz" in url:
             return httpx.Response(200, json={"ok": True}, request=httpx.Request("GET", url))
         # context retrieve
-        body = {
-            "ctx_id": "acdp://registry-a.playground.local/x",
-            "lineage_id": "lin:sha256:x",
-            "origin_registry": "registry-a.playground.local",
-            "created_at": datetime.now(UTC).isoformat(),
-            "content_hash": "sha256:abc",
-            "signature": {"algorithm": "ed25519", "key_id": "k", "value": "v"},
-            "version": 1,
-            "agent_id": "did:web:x",
-            "title": "stub",
-            "type": "data_snapshot",
-            "visibility": "public",
-        }
+        body = _RETRIEVE_BODY
         return httpx.Response(
             200,
             json={"body": body, "registry_state": {"status": "active"}, "registry_receipt": None},

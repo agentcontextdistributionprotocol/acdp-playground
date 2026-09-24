@@ -24,6 +24,7 @@ from acdp_client.models import StepEvent
 from playground.agents.base import AgentTask
 from playground.config import get_settings
 from playground.scenarios._factory import AgentBundle, make_langchain_agent
+from playground.scenarios._sdk_guard import expect_rejection
 from playground.scenarios.models import (
     LineageEdge,
     LineageGraph,
@@ -61,15 +62,13 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
 
         # The SDK forbids a lineage guard on a v1 publish — confirm that
         # contract so a regression surfaces here rather than in production.
-        v1_guard_rejected = False
-        try:
-            agent.producer.build_publish_request(
+        v1_guard_rejected, _ = expect_rejection(
+            lambda: agent.producer.build_publish_request(
                 title="probe",
                 context_type="data_snapshot",
                 expected_lineage_id="lin:sha256:" + "0" * 64,
             )
-        except Exception:  # noqa: BLE001 — expected rejection
-            v1_guard_rejected = True
+        )
 
         # v1 — plain publish. Build raw so we can feed the body to supersede.
         v1_raw = agent.producer.build_publish_request(

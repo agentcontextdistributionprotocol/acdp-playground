@@ -46,6 +46,7 @@ from acdp_client import (
     AcdpHTTPError,
     InvalidLifecycleTransitionError,
 )
+from acdp_client.identifiers import synthetic_ctx_id
 from acdp_client.models import StepEvent
 from playground.config import get_settings
 from playground.scenarios._receipts import mint_lifecycle_event
@@ -108,7 +109,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     producer = AcdpProducer.from_seed_did_key(spec.agent_seed("lifecycle-producer"))
 
     # ── Deterministic offline core: mint + verify lifecycle events. ──────
-    offline_ctx = f"acdp://{authority}/00000028-cccc-4ccc-8ccc-cccccccccccc"
+    offline_ctx = synthetic_ctx_id(authority, "s28-retractable-context")
 
     def _mint(event_type: str, reason: str | None = None) -> dict:
         return mint_lifecycle_event(
@@ -127,7 +128,7 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
     event_verified = _verify_event(retract_event, offline_ctx).get("valid") is True
 
     # (b) Replay binding: the SAME signed event against another ctx_id fails.
-    other_ctx = f"acdp://{authority}/00000028-dddd-4ddd-8ddd-dddddddddddd"
+    other_ctx = synthetic_ctx_id(authority, "s28-replay-target-context")
     replay_rejected = _verify_event(retract_event, other_ctx).get("valid") is False
 
     # (c) Tampered reason breaks the signature; an unsigned event fails closed

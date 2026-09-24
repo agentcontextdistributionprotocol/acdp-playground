@@ -16,8 +16,8 @@ stay the job of the live conformance suite (`make test-live`).
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
-import uuid
 from datetime import UTC, datetime
 from unittest.mock import patch
 from urllib.parse import unquote
@@ -25,9 +25,24 @@ from urllib.parse import unquote
 import httpx
 import pytest
 
+from acdp_client.identifiers import (
+    is_conformant_ctx_id,
+    synthetic_ctx_id,
+    synthetic_lineage_id,
+)
 from playground.config import get_settings
 from playground.scenarios import get_scenario
 from playground.scenarios.models import RunSpec
+
+
+def assert_minted_by(ctx_id: str, authority: str) -> None:
+    """The id is RFC-conformant *and* carries the expected authority.
+
+    Stronger than the ``startswith`` it replaced, which passed for any
+    trailing junk — including the non-v4 shapes this fake used to mint.
+    """
+    assert is_conformant_ctx_id(ctx_id), ctx_id
+    assert ctx_id.removeprefix("acdp://").split("/", 1)[0] == authority
 
 
 class FakeRegistry:
@@ -39,6 +54,7 @@ class FakeRegistry:
 
     def __init__(self, settings):
         self._settings = settings
+        self._counter = itertools.count(1)
         self.contexts: dict[str, dict] = {}
         self.lineages: dict[str, list[str]] = {}
 
@@ -53,8 +69,9 @@ class FakeRegistry:
     def publish(self, url: str, content) -> httpx.Response:
         req = json.loads(content)
         authority = self._authority_for(url)
-        ctx_id = f"acdp://{authority}/{uuid.uuid4()}"
-        lineage_id = req.get("lineage_id") or f"lin:sha256:{uuid.uuid4().hex}"
+        n = next(self._counter)
+        ctx_id = synthetic_ctx_id(authority, f"fake-registry:{authority}:{n}")
+        lineage_id = req.get("lineage_id") or synthetic_lineage_id(f"fake-registry:{n}")
         version = req.get("version") or len(self.lineages.get(lineage_id, [])) + 1
         created_at = datetime.now(UTC).isoformat()
 
@@ -193,8 +210,8 @@ async def test_s5_cross_registry(fake_registry):
     settings = get_settings()
     # The source landed on registry-a, the derivative on registry-b, and the
     # derivative's grounding retrieve was routed by authority.
-    assert res.contexts[0].startswith(f"acdp://{settings.registry_a_authority}/")
-    assert res.contexts[1].startswith(f"acdp://{settings.registry_b_authority}/")
+    assert_minted_by(res.contexts[0], settings.registry_a_authority)
+    assert_minted_by(res.contexts[1], settings.registry_b_authority)
     assert res.summary["cross_registry_edge"] is True
 
 
@@ -209,7 +226,7 @@ async def test_s8_cross_org(fake_registry):
     res = await _run("s8_cross_org")
     assert res.status == "complete"
     settings = get_settings()
-    assert res.contexts[0].startswith(f"acdp://{settings.registry_a_authority}/")
-    assert res.contexts[1].startswith(f"acdp://{settings.registry_b_authority}/")
+    assert_minted_by(res.contexts[0], settings.registry_a_authority)
+    assert_minted_by(res.contexts[1], settings.registry_b_authority)
     assert res.summary["isolated_orgs"] is True
     assert res.lineage_graph.edges == []

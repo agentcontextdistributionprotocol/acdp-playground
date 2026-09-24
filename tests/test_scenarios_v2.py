@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from acdp import AcdpProducer
 
+from acdp_client.identifiers import synthetic_ctx_id
 from acdp_client.models import PublishResponse
 from playground.agents.base import AgentTask, BasePlaygroundAgent
 
@@ -24,7 +25,7 @@ class _CapturingClient:
         self.requests.append(req)
         self._version += 1
         return PublishResponse(
-            ctx_id=f"acdp://reg/ctx-{self._version}",
+            ctx_id=synthetic_ctx_id("reg", f"capturing-client-ctx-{self._version}"),
             lineage_id="lin:sha256:" + "a" * 64,
             version=req.get("version", self._version),
             created_at=datetime.now(UTC),
@@ -82,7 +83,7 @@ async def test_supersede_carries_lineage_and_bumps_version():
     guard = "lin:sha256:" + "b" * 64
     previous_body = {
         **v1,
-        "ctx_id": "acdp://reg/00000000-0000-4000-8000-000000000001",
+        "ctx_id": synthetic_ctx_id("reg", "supersede-previous-body"),
         "lineage_id": "lin:sha256:" + "a" * 64,
         "origin_registry": "reg",
         "created_at": "2026-06-01T00:00:00.000Z",

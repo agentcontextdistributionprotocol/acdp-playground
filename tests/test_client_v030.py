@@ -25,22 +25,10 @@ from acdp_client import (
     InvalidLogProofError,
 )
 from acdp_client.models import FullContext, RegistryState
+from tests._bodies import MOCK_BODIES
 
-CTX = "acdp://reg.test/12345678-1234-4321-8123-123456781234"
-
-_BODY = {
-    "ctx_id": CTX,
-    "lineage_id": "lin:sha256:" + "ab" * 32,
-    "origin_registry": "reg.test",
-    "created_at": "2026-07-05T09:00:00.000Z",
-    "content_hash": "sha256:" + "cd" * 32,
-    "signature": {"algorithm": "ed25519", "key_id": "did:key:z6Mk#z6Mk", "value": "AA=="},
-    "version": 1,
-    "agent_id": "did:key:z6Mk",
-    "title": "t",
-    "type": "data_snapshot",
-    "visibility": "public",
-}
+_BODY = MOCK_BODIES["test_client_v030.lifecycle_body"]
+CTX = _BODY["ctx_id"]
 
 _EVENT = {
     "event_id": "018f6d0a-7b2e-4c4d-9e1f-3a5b7c9d1e2f",

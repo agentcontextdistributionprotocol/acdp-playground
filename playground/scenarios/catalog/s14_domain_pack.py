@@ -24,6 +24,7 @@ from typing import Any
 
 import httpx
 
+from acdp_client.identifiers import synthetic_ctx_id
 from acdp_client.models import StepEvent
 from playground.config import get_settings
 from playground.scenarios.models import RunResult, RunSpec, ScenarioDef
@@ -43,6 +44,10 @@ SCENARIO = ScenarioDef(
 )
 
 
+_PROBE_AUTHORITY = "registry-a.playground.local"
+_PROBE_CTX_ID = synthetic_ctx_id(_PROBE_AUTHORITY, "s14-domain-pack-probe")
+
+
 def _sign(secret: str, body: bytes) -> str:
     return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
@@ -50,13 +55,13 @@ def _sign(secret: str, body: bytes) -> str:
 def _event(ctx_type: str) -> bytes:
     payload = {
         "type": "context_published",
-        "ctx_id": "acdp://registry-a.playground.local/s14-probe",
-        "agent_id": "did:web:registry-a.playground.local:agents:probe",
+        "ctx_id": _PROBE_CTX_ID,
+        "agent_id": f"did:web:{_PROBE_AUTHORITY}:agents:probe",
         "context_type": ctx_type,
         "visibility": "public",
         "version": 1,
         "derived_from": [],
-        "registry_authority": "registry-a.playground.local",
+        "registry_authority": _PROBE_AUTHORITY,
         "created_at": datetime.now(UTC).isoformat(),
     }
     return json.dumps(payload).encode()

@@ -55,6 +55,62 @@ the optional crewai/langgraph adapters are omitted) and CI fails under **80%**.
 Live-only paths — the `playground/conformance.py` probe bodies — are expected
 to stay uncovered offline; they're exercised by the live job.
 
+### SDK surface guard
+
+`tests/test_sdk_surface.py` pins the `acdp` SDK surface this repo calls. It is
+the local equivalent of the SDK's own `bindings/interop/expected_surface.json`:
+a declarative `EXPECTED_SURFACE` table mapping `"Class.method"` to the
+`(required_args, total_args)` the repo was written against, asserted through
+`inspect.signature` on the installed wheel.
+
+**Why it exists.** `acdp` is a maturin/pyo3 extension and the playground's only
+hard dependency. Python has no compile step, so a renamed method or a new
+*required* positional argument doesn't fail a build — it raises `TypeError` at
+the call site, at runtime, inside whichever scenario happens to run it. Worse,
+scenarios that assert a *negative* ("the SDK must reject this tampered receipt")
+used to catch bare `Exception` and score that `TypeError` as the rejection
+working, so the break could stay invisible while the check silently stopped
+running. Every other drift tripwire in this repo points at the registry and the
+control plane; this one points at the SDK.
+
+What it pins — six tests, of which these four carry the contract (the other two,
+`test_expected_surface_is_non_empty` and `test_missing_symbol_is_a_failure`,
+guard the guard itself):
+
+| Test | Asserts |
+|------|---------|
+| `test_every_called_symbol_exists` | Every pinned symbol still resolves on the installed wheel |
+| `test_arity_matches_expected` | Each symbol's `(required, total)` arity is unchanged (one parametrized case per symbol, so the failure names the symbol) |
+| `test_unresolvable_arity_is_a_failure_not_a_skip` | A symbol `inspect.signature` can't read **fails**; the guard never silently disables itself |
+| `test_every_sdk_call_in_the_repo_is_registered` | A source sweep for `Acdp<Class>.<member>` across `acdp_client/`, `playground/`, `tests/` and `scripts/` — so the guard's coverage is enforced, not trusted |
+
+Arities count `self` for instance methods (`inspect.signature` on the unbound
+descriptor sees it), so `AcdpProducer.sign_challenge` is `(2, 2)`.
+
+**Updating it on an SDK bump.** Raise the `acdp>=` pin in `pyproject.toml`,
+`uv lock`, then run `uv run pytest tests/test_sdk_surface.py`. A red entry is a
+work item, not a number to edit: read the new signature, fix the call sites, and
+move the entry last. Editing `EXPECTED_SURFACE` without touching the callers
+re-hides exactly the break the guard exists to surface. A new SDK call added to
+the repo needs a new entry — `test_every_sdk_call_in_the_repo_is_registered`
+will tell you so by name.
+
+### Narrow rejection guard
+
+`playground/scenarios/_sdk_guard.py` is the runtime half of the same problem.
+Scenarios that assert the SDK refuses something route through
+`expect_rejection(fn)` / `run_guarded(fn)`, which accept only the failures the
+bindings can actually express — `RuntimeError`, `ValueError`, and the four typed
+exceptions (`InvalidLogProof`, `ImmutableField`, `InvalidLifecycleTransition`,
+`InvalidWitnessCosignature`). `TypeError` propagates, so a call-convention break
+surfaces as a loud run error instead of a false "failed closed". Its contract is
+pinned by `tests/test_sdk_guard.py`.
+
+This applies **only** to handlers that turn a raise into a *positive* assertion.
+The catalog's remaining broad `except Exception` handlers guard blocks that
+perform I/O: they absorb transport failure so a run degrades gracefully instead
+of hard-failing, and narrowing them would break the degrade-gracefully contract.
+
 ## Live conformance
 
 A mock can drift from the real binary (the reserved-tenant `422 → 400` fix is

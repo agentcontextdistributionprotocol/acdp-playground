@@ -18,6 +18,7 @@ import itertools
 import httpx
 
 from acdp_client import AcdpClient
+from acdp_client.identifiers import synthetic_ctx_id, synthetic_lineage_id
 
 
 def _idempotent_registry(captured: list[str | None]):
@@ -36,14 +37,15 @@ def _idempotent_registry(captured: list[str | None]):
         if key is not None and key in by_key:
             ctx_id = by_key[key]  # replay
         else:
-            ctx_id = f"acdp://reg.test/{next(counter)}"
+            n = next(counter)
+            ctx_id = synthetic_ctx_id("reg.test", f"idempotency-{n}")
             if key is not None:
                 by_key[key] = ctx_id
         return httpx.Response(
             200,
             json={
                 "ctx_id": ctx_id,
-                "lineage_id": "lin-1",
+                "lineage_id": synthetic_lineage_id("idempotency"),
                 "version": 1,
                 "created_at": "2026-06-03T00:00:00Z",
                 "status": "active",

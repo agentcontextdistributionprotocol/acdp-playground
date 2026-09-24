@@ -16,6 +16,18 @@ receipts (RFC-ACDP-0011 §5) and transparency-log checkpoints (RFC-ACDP-0012
 over the JCS form of the object minus ``signature``, signed as the ASCII
 ``"sha256:<hex>"`` string. The mint helpers below share :func:`_signed` so
 that construction exists exactly once here too.
+
+:func:`synthesize_retrieval_body` extends the same position to the *served*
+half of a retrieval. A receipt attests a body, so a scenario that mints one
+needs the body it attests — and a registry assigns exactly four fields on it:
+``ctx_id``, ``lineage_id``, ``origin_registry`` and ``created_at``. Only three
+of those are *absent* from a `PublishRequest`; ``lineage_id`` exists on both,
+because a v2+ supersede request legitimately carries it for the registry to
+verify against (``acdp-rs/crates/acdp-types/src/publish.rs:72-78``), which is
+why the helper merges-or-verifies that one rather than refusing it. It overlays
+those onto a **real** SDK-built publish request and never fabricates the signed
+half, so the producer signature and ``content_hash`` stay the SDK's, and the
+body schema still has exactly one implementation — the Rust one.
 """
 
 from __future__ import annotations
@@ -23,8 +35,30 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
+from typing import Any
 
-from acdp import AcdpCanonicalizer, AcdpProducer
+from acdp import AcdpCanonicalizer, AcdpProducer, AcdpVerifier
+
+#: Canonical millisecond-precision RFC 3339 UTC — exactly three fractional
+#: digits and a literal ``Z`` (RFC-ACDP-0010 §8 step 6). ``RegistryReceipt``
+#: serializes ``created_at`` through ``ms_rfc3339``
+#: (``acdp-rs/crates/acdp-types/src/receipt.rs:177``), so any other byte form
+#: — ``+00:00``, microseconds, a bare local time — changes the receipt
+#: preimage even though ``Body``'s own deserializer accepts it permissively.
+_MS_RFC3339 = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z")
+
+#: The three ``Body`` fields a ``PublishRequest`` can never legitimately carry
+#: (``acdp-rs/crates/acdp-types/src/body.rs:20-41`` minus ``publish.rs:26-64``).
+#: ``lineage_id`` is the deliberate fourth — see :func:`synthesize_retrieval_body`.
+_REGISTRY_ONLY_FIELDS = ("ctx_id", "origin_registry", "created_at")
+
+#: ``AcdpError::KeyResolution``'s Display prefix
+#: (``acdp-rs/crates/acdp-primitives/src/error.rs:237``). ``verify_body_offline``
+#: raises it for any non-``did:key`` producer
+#: (``crates/acdp-verify/src/lib.rs:294-300``) — a limitation of offline
+#: verification, not a defect in the body.
+_OFFLINE_KEY_RESOLUTION = "key resolution failed:"
 
 
 def ed25519_jwk_vm(key_id: str, controller: str, public_key_b64: str) -> dict:
@@ -86,6 +120,102 @@ def _signed(obj: dict, signer: AcdpProducer, key_id: str) -> dict:
             "value": signer.sign_challenge(preimage),
         },
     }
+
+
+def synthesize_retrieval_body(
+    publish_request_json: str,
+    *,
+    ctx_id: str,
+    lineage_id: str,
+    origin_registry: str,
+    created_at: str,
+) -> dict[str, Any]:
+    """Model the ``body`` a registry would serve for ``publish_request_json``.
+
+    ``publish_request_json`` is the wire JSON a producer built —
+    :meth:`AcdpProducer.build_publish_request` or
+    :meth:`~AcdpProducer.build_supersede_request` — and the result is the
+    object a retrieval returns as ``full["body"]``: the same producer content,
+    the same ``content_hash``, the same signature, plus the identity a registry
+    assigns on acceptance. Those registry-assigned fields sit outside the
+    ``content_hash`` preimage (RFC-ACDP-0001 §5.7), so splicing them on leaves
+    the producer's integrity half untouched — which is why this is an overlay
+    and never a hand-built dict.
+
+    ``ctx_id``, ``origin_registry`` and ``created_at`` are overlaid
+    unconditionally, and a request that already carries one raises
+    :class:`ValueError`: a ``PublishRequest`` has no such field
+    (``acdp-rs/crates/acdp-types/src/publish.rs:26-64``), so its appearance
+    means the schema moved and a silent overwrite would hide that.
+
+    ``lineage_id`` is **merge-or-verify**, because it is the one field on both
+    types: ``PublishRequest.lineage_id`` is the optional supersession
+    self-verification value (``publish.rs:72-78`` — v1 publications MUST NOT
+    include it, v2+ MAY). Absent, it is set; present, it must *equal*
+    ``lineage_id`` — a conflict means the caller is splicing a supersede into
+    the wrong lineage, which is an authoring bug, not a field to silently pick
+    a winner for.
+
+    ``created_at`` must be canonical millisecond-precision RFC 3339 UTC
+    (``…SS.mmmZ``). ``Body``'s deserializer accepts ``+00:00`` and microsecond
+    precision, but a receipt minted against such a body fails RFC-ACDP-0010 §8
+    step 6 on byte form alone, so the check happens here where the error can
+    still name the authoring mistake.
+
+    Before returning, the result round-trips through the SDK, so a caller can
+    never receive a body the SDK would reject:
+    :meth:`AcdpVerifier.verify_body_offline` deserializes into ``Body`` proper
+    (``acdp-rs/bindings/acdp-py/src/verifier.rs:236``) and therefore fails on a
+    missing or malformed required field, and
+    :meth:`~AcdpVerifier.verify_content_hash` recomputes the digest over the
+    overlaid object — a true invariant, not a tautology, since hash coverage
+    excludes all four overlaid fields. For a ``did:web`` producer
+    ``verify_body_offline`` can only get as far as key resolution
+    (``crates/acdp-verify/src/lib.rs:294-300``); that one ``RuntimeError`` is
+    tolerated, every other SDK rejection propagates.
+    """
+    if not _MS_RFC3339.fullmatch(created_at):
+        raise ValueError(
+            "created_at must be canonical millisecond-precision RFC 3339 UTC "
+            f"(YYYY-MM-DDTHH:MM:SS.mmmZ, exactly three fractional digits and a "
+            f"literal 'Z'): {created_at!r}"
+        )
+
+    request: dict[str, Any] = json.loads(publish_request_json)
+
+    collisions = [field for field in _REGISTRY_ONLY_FIELDS if field in request]
+    if collisions:
+        raise ValueError(
+            f"publish request already carries registry-assigned field(s) "
+            f"{collisions} — a PublishRequest has none of them, so overlaying "
+            f"would mask a schema change rather than model a registry"
+        )
+
+    declared = request.get("lineage_id")
+    if declared is not None and declared != lineage_id:
+        raise ValueError(
+            f"publish request declares lineage_id {declared!r} but the caller "
+            f"passed {lineage_id!r}; a v2+ supersede's self-verification value "
+            f"must equal the lineage it is served under"
+        )
+
+    body = {
+        **request,
+        "ctx_id": ctx_id,
+        "lineage_id": lineage_id,
+        "origin_registry": origin_registry,
+        "created_at": created_at,
+    }
+
+    body_json = json.dumps(body)
+    try:
+        AcdpVerifier.verify_body_offline(body_json)
+    except RuntimeError as exc:
+        did_key = str(request.get("agent_id", "")).startswith("did:key:")
+        if did_key or _OFFLINE_KEY_RESOLUTION not in str(exc):
+            raise
+    AcdpVerifier.verify_content_hash(body_json, body["content_hash"])
+    return body
 
 
 def mint_receipt(
@@ -205,4 +335,5 @@ __all__ = [
     "mint_lineage_head_receipt",
     "mint_log_checkpoint",
     "mint_receipt",
+    "synthesize_retrieval_body",
 ]
