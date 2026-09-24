@@ -365,6 +365,52 @@ async def test_s33_anchors_core(offline_stack):
     assert s.get("degraded") is True  # live publish/supersede needs a registry
 
 
+# ── RFC-ACDP-0002 §6.3/§6.6 embedded-content deterministic core ──────────
+
+
+async def test_s34_embedded_content_offline_core(offline_stack):
+    res = await _run("s34_embedded_content")
+    assert res.status == "complete"
+    s = res.summary
+    assert s["offline_core_ok"] is True
+    # Check 8 over the decoded bytes, one ref per encoding — verified both as
+    # a wire PublishRequest and as the body a registry would serve back.
+    assert s["encodings_verified"] == ["json", "utf8", "base64"]
+    assert s["embedded_refs_verified"] is True
+    assert s["served_body_verified"] is True
+    # json hashes the JCS form, utf8 the raw decoded bytes: the same text has
+    # two different preimages, and declaring the wrong one fails closed.
+    assert s["encoding_preimages_distinct"] is True
+    assert s["utf8_wrong_preimage_rejected"] is True
+    # §6.1 root vs §6.3 embedded are independent fields. One foreign digest,
+    # two slots, opposite verdicts — the 0.14.1 revert of the root fallback.
+    assert s["foreign_root_hash_accepted"] is True
+    assert s["foreign_embedded_hash_rejected"] is True
+    assert s["root_embedded_independent"] is True
+    # A ref MAY carry both over the same decoded bytes.
+    assert s["both_hashes_verified"] is True
+    # Optional means absent verifies; `de_present` means explicit null does not.
+    assert s["absent_content_hash_verified"] is True
+    assert s["explicit_null_rejected"] is True
+    assert s.get("degraded") is True  # live publish/supersede needs a registry
+
+
+async def test_s34_tampered_embedded_content_fails_closed(offline_stack):
+    """One flipped byte of signed embedded content is refused at both layers.
+
+    The publish-request path catches it as the body-level ``content_hash``
+    mismatch; the retrieval path runs Check 8 *before* the signature, so the
+    verdict there names ``embedded.content_hash`` instead. Both wordings are
+    asserted inside the scenario, so these two booleans are claims about
+    *which* check ran, not merely that something raised.
+    """
+    res = await _run("s34_embedded_content")
+    assert res.status == "complete"
+    s = res.summary
+    assert s["request_tamper_rejected"] is True
+    assert s["served_body_tamper_rejected"] is True
+
+
 # ── graceful degradation contract (complete + degraded: true) ────────────
 
 

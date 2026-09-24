@@ -180,6 +180,27 @@ def test_every_called_symbol_exists():
         _resolve(dotted)
 
 
+@pytest.mark.parametrize("dotted", sorted(EXPECTED_ATTRIBUTES))
+def test_pinned_attributes_stay_attributes(dotted: str):
+    """An attribute that becomes a method is drift the existence check misses.
+
+    `EXPECTED_ATTRIBUTES` exists because pyo3 getters carry no signature, so
+    they cannot be pinned by arity like everything in `EXPECTED_SURFACE`. That
+    leaves one gap an existence check alone would not see: if the SDK ever
+    turned `producer.agent_did` into `producer.agent_did()`, `hasattr` would
+    still be true and every call site in this repo would start handing a bound
+    method where it expects a string. Asserting the descriptor is *not* callable
+    closes it — and the failure would say so, rather than surfacing as a
+    baffling `did:key:<built-in method...>` somewhere in a scenario.
+    """
+    descriptor = _resolve(dotted)
+    assert not callable(descriptor), (
+        f"acdp.{dotted} used to be an attribute and is now callable — "
+        f"every call site reading it as a value is silently broken. "
+        f"Move it to EXPECTED_SURFACE with its arity and fix the callers."
+    )
+
+
 @pytest.mark.parametrize("dotted", sorted(EXPECTED_SURFACE))
 def test_arity_matches_expected(dotted: str):
     expected = EXPECTED_SURFACE[dotted]

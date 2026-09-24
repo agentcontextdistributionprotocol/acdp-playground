@@ -76,7 +76,7 @@ install stays light.
 
 > **Catalog usage.** `LangChainAgent` via `_factory.make_langchain_agent` is
 > the only adapter any scenario uses, and only a subset of the catalog uses
-> it: 15 of the 33 scenarios (S1–S11, S15, S17, S18, S26) drive an LLM agent
+> it: 15 of the 34 scenarios (S1–S11, S15, S17, S18, S26) drive an LLM agent
 > that way. The rest are deterministic protocol-conformance scenarios that
 > need no LLM — most drive producers directly through `_factory`'s
 > `producer_for` / `AgentBundle` helpers or a raw `AcdpProducer` (as S33

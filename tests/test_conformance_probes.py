@@ -1,4 +1,4 @@
-"""Offline coverage for the live 0.3.0-endpoint conformance probes.
+"""Offline coverage for the live conformance probes.
 
 The probes' *purpose* is mock-drift detection against the real binaries, so they
 are normally gated behind ``ACDP_LIVE_STACK``. These tests exercise the probe
@@ -15,7 +15,7 @@ import json
 import httpx
 import pytest
 
-from acdp_client.identifiers import synthetic_ctx_id
+from acdp_client.identifiers import synthetic_ctx_id, synthetic_lineage_id
 from playground import conformance
 from playground.conformance import LiveConfig
 from tests._bodies import mock_body
@@ -357,3 +357,219 @@ async def test_ctx_id_binding_probe_checks_the_bare_body_route_too():
 
 def test_ctx_id_binding_probe_registered():
     assert conformance.probe_served_ctx_id_binding in conformance.REGISTRY_PROBES
+
+
+# ── registry-contract probes: media type, interim revocation, anchors ───────
+#
+# Three externally-observable registry contracts the playground depends on and
+# previously asserted nowhere. Each probe gets a drift counterpart here: a mock
+# serving the *wrong* answer must make the probe raise, so the probe cannot
+# quietly degrade into something that passes against any registry at all.
+
+_PUBLISH_CTX = synthetic_ctx_id("registry-c.test", "conformance:probe-publish")
+_ACCEPTED_PUBLISH = {
+    "ctx_id": _PUBLISH_CTX,
+    "lineage_id": synthetic_lineage_id(_PUBLISH_CTX),
+    "version": 1,
+    "created_at": "2026-07-05T08:40:00.000Z",
+    "status": "active",
+}
+
+
+def _accepted() -> httpx.Response:
+    return httpx.Response(
+        200,
+        headers={"content-type": conformance._ACDP_CONTENT_TYPE},
+        content=json.dumps(_ACCEPTED_PUBLISH),
+    )
+
+
+def _envelope_response(status: int, code: str, message: str) -> httpx.Response:
+    return httpx.Response(
+        status,
+        headers={"content-type": conformance._ACDP_CONTENT_TYPE},
+        content=json.dumps({"error": {"code": code, "message": message}}),
+    )
+
+
+_UNSUPPORTED_MESSAGE = "Expected request with `Content-Type: application/json`"
+
+
+def _media_type_registry(*, text_plain=None, present_json=None, absent=None):
+    """A registry whose ``POST /contexts`` answer is chosen by the request's
+    ``Content-Type``. Each arm defaults to the conformant answer."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        ctype = request.headers.get("content-type")
+        if ctype is None:
+            arm = absent
+        elif ctype.split(";")[0].strip() == "application/json":
+            arm = present_json
+        else:
+            arm = text_plain
+        if arm is not None:
+            return arm()
+        if ctype is not None and ctype.split(";")[0].strip() != "application/json":
+            return _envelope_response(415, "unsupported_media_type", _UNSUPPORTED_MESSAGE)
+        return _accepted()
+
+    return handler
+
+
+async def test_media_type_probe_passes_on_conformant_mock():
+    async with _client(_media_type_registry()) as client:
+        summary = await conformance.probe_media_type_gate(client, _CFG)
+    assert "415 unsupported_media_type" in summary
+    assert "absent header accepted" in summary
+
+
+async def test_media_type_probe_detects_rejection_drift():
+    """The narrowing this probe exists for: a registry that stops accepting
+    ``application/json`` (or stops stripping its parameters) breaks every
+    publish, retract and republish the playground makes."""
+    async with _client(
+        _media_type_registry(
+            present_json=lambda: _envelope_response(
+                415, "unsupported_media_type", _UNSUPPORTED_MESSAGE
+            )
+        )
+    ) as client:
+        with pytest.raises(AssertionError, match="was NOT accepted"):
+            await conformance.probe_media_type_gate(client, _CFG)
+
+
+async def test_media_type_probe_detects_acceptance_drift():
+    """A registry that accepts a body labelled ``text/plain`` has no §4.1 gate
+    at all."""
+    async with _client(_media_type_registry(text_plain=_accepted)) as client:
+        with pytest.raises(AssertionError, match="expected 415"):
+            await conformance.probe_media_type_gate(client, _CFG)
+
+
+async def test_media_type_probe_detects_absent_header_rejection():
+    """The data-plane-scoped assertion, pinned in its own right: ``POST
+    /contexts`` infers a type for a header-less body. (``/auth/*`` rejects one,
+    which is why this probe never generalizes the claim.)"""
+    async with _client(
+        _media_type_registry(
+            absent=lambda: _envelope_response(415, "unsupported_media_type", _UNSUPPORTED_MESSAGE)
+        )
+    ) as client:
+        with pytest.raises(AssertionError, match="no Content-Type was NOT accepted"):
+            await conformance.probe_media_type_gate(client, _CFG)
+
+
+async def test_media_type_probe_checks_the_envelope_code_not_just_the_status():
+    """A 415 carrying the wrong wire code is still drift — a proxy answering
+    415 on its own would otherwise be mistaken for a conformant registry."""
+    async with _client(
+        _media_type_registry(text_plain=lambda: _envelope_response(415, "schema_violation", "nope"))
+    ) as client:
+        with pytest.raises(AssertionError, match="expected code unsupported_media_type"):
+            await conformance.probe_media_type_gate(client, _CFG)
+
+
+_INTERIM_MESSAGE = (
+    "schema violation: context_type 'acdp:key-revocation' (the interim key-revocation form) "
+    "is retired for registries advertising acdp_version >= 0.5.0 (RFC-ACDP-0014 §10)"
+)
+
+
+def _interim_registry(*, publish=None, acdp_version="0.5.0"):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/.well-known/acdp.json":
+            return httpx.Response(200, json=dict(_WELL_KNOWN, acdp_version=acdp_version))
+        if publish is not None:
+            return publish()
+        return _envelope_response(400, "schema_violation", _INTERIM_MESSAGE)
+
+    return handler
+
+
+async def test_interim_revocation_probe_passes_on_conformant_mock():
+    async with _client(_interim_registry()) as client:
+        summary = await conformance.probe_interim_revocation_type_rejected(client, _CFG)
+    assert "400 schema_violation" in summary
+
+
+async def test_interim_revocation_probe_detects_acceptance():
+    """A registry that still accepts the retired interim form must fail the
+    probe, not skip it — S32 publishes the modern spelling and would never
+    notice the regression on its own."""
+    async with _client(_interim_registry(publish=_accepted)) as client:
+        with pytest.raises(AssertionError, match="never retired it"):
+            await conformance.probe_interim_revocation_type_rejected(client, _CFG)
+
+
+async def test_interim_revocation_probe_rejects_an_unrelated_schema_violation():
+    """``schema_violation`` is the registry's generic body-rejection code. A
+    400 that does not name the retired type could be any defect at all, and
+    would let the probe pass against a registry with no §10 gate."""
+    async with _client(
+        _interim_registry(
+            publish=lambda: _envelope_response(
+                400, "schema_violation", "schema violation: content_hash mismatch"
+            )
+        )
+    ) as client:
+        with pytest.raises(AssertionError, match="does not name the retired context type"):
+            await conformance.probe_interim_revocation_type_rejected(client, _CFG)
+
+
+async def test_interim_revocation_probe_skips_below_0_5_0():
+    """Below 0.5.0 §10 requires a registry to treat the interim form as an
+    ordinary opaque custom type and accept it, so a rejection there would be
+    the non-conformant answer. Documented skip, and the publish never happens."""
+    async with _client(_interim_registry(publish=_accepted, acdp_version="0.4.0")) as client:
+        summary = await conformance.probe_interim_revocation_type_rejected(client, _CFG)
+    assert "skipped" in summary
+
+
+_ANCHORS_MESSAGE = (
+    "schema violation: anchors requires the publish request to declare acdp_version >= 0.5.0 "
+    "(RFC-ACDP-0016 §14); this request declared '0.4.0'"
+)
+
+
+def _anchors_registry(publish=None):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if publish is not None:
+            return publish()
+        return _envelope_response(400, "schema_violation", _ANCHORS_MESSAGE)
+
+    return handler
+
+
+async def test_anchors_version_gate_probe_passes_on_conformant_mock():
+    async with _client(_anchors_registry()) as client:
+        summary = await conformance.probe_anchors_require_0_5_0(client, _CFG)
+    assert "400 schema_violation" in summary
+
+
+async def test_anchors_version_gate_probe_detects_drift():
+    """S33 depends on this gate being real; a registry that admits anchors
+    under a sub-0.5.0 declared version must fail the probe."""
+    async with _client(_anchors_registry(publish=_accepted)) as client:
+        with pytest.raises(AssertionError, match="no §14 gate"):
+            await conformance.probe_anchors_require_0_5_0(client, _CFG)
+
+
+async def test_anchors_version_gate_probe_rejects_an_unrelated_schema_violation():
+    async with _client(
+        _anchors_registry(
+            publish=lambda: _envelope_response(
+                400, "schema_violation", "schema violation: content_hash mismatch"
+            )
+        )
+    ) as client:
+        with pytest.raises(AssertionError, match="names neither anchors"):
+            await conformance.probe_anchors_require_0_5_0(client, _CFG)
+
+
+def test_registry_contract_probes_registered():
+    for probe in (
+        conformance.probe_media_type_gate,
+        conformance.probe_interim_revocation_type_rejected,
+        conformance.probe_anchors_require_0_5_0,
+    ):
+        assert probe in conformance.REGISTRY_PROBES, probe.__name__
