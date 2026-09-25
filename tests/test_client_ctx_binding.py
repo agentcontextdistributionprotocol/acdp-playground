@@ -356,17 +356,47 @@ async def test_lineage_routes_accept_conformant_ids():
     """Positive control: a lineage of well-formed contexts passes.
 
     Two *different* ctx_ids in one lineage is the normal case — the lineage
-    routes must never compare them to each other.
+    routes must never compare them to each other. Both still carry the
+    requested ``lineage_id`` — that *is* compared (see
+    ``test_lineage_routes_reject_a_foreign_lineage`` below).
     """
+    same_lineage_other_ctx = dict(SUBSTITUTED_BODY, lineage_id=LINEAGE)
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/current"):
-            return httpx.Response(200, json=_envelope(SUBSTITUTED_BODY))
-        return httpx.Response(200, json=[_envelope(BODY), _envelope(SUBSTITUTED_BODY)])
+            return httpx.Response(200, json=_envelope(same_lineage_other_ctx))
+        return httpx.Response(200, json=[_envelope(BODY), _envelope(same_lineage_other_ctx)])
 
     client = _client(handler)
     assert (await client.current(LINEAGE)).body.ctx_id == OTHER_CTX
     assert [c.body.ctx_id for c in await client.lineage(LINEAGE)] == [CTX, OTHER_CTX]
+
+
+async def test_lineage_routes_reject_a_foreign_lineage():
+    """The one thing the caller actually asked for — ``lineage_id`` — is
+    checked, even though the served ``ctx_id`` need not match anything.
+
+    A registry that answers a request for ``LINEAGE`` with a body from a
+    wholly different (but internally honest — correctly signed, ctx_id-bound)
+    lineage must be rejected. Without this, only the served id's *form* is
+    checked on these routes, not its identity.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = (
+            _envelope(SUBSTITUTED_BODY)
+            if request.url.path.endswith("/current")
+            else [_envelope(SUBSTITUTED_BODY)]
+        )
+        return httpx.Response(200, json=payload)
+
+    client = _client(handler)
+    for drive in (lambda c: c.current(LINEAGE), lambda c: c.lineage(LINEAGE)):
+        with pytest.raises(CtxIdBindingError) as exc:
+            await drive(client)
+        assert exc.value.reason == "mismatch"
+        assert exc.value.requested_ctx_id == LINEAGE
+        assert exc.value.served_ctx_id == SUBSTITUTED_BODY["lineage_id"]
 
 
 # ── cross-registry ────────────────────────────────────────────────────────

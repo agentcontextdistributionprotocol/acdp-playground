@@ -820,13 +820,20 @@ class AcdpClient:
 
     # ── Lineage ──────────────────────────────────────────────────────────
 
-    async def _get_lineage(self, path: str, *, shape: BodyShape) -> Any:
+    async def _get_lineage(self, path: str, *, lineage_id: str, shape: BodyShape) -> Any:
         """``GET /lineages/{…}`` through the same send/retry/raise/bind path.
 
         These routes are keyed by ``lineage_id``, so there is no requested
         ``ctx_id`` to compare a served body against — ``expected_ctx_id=None``
         makes the binding step check the served id's *form* only. See
         :meth:`_bind_served_ctx_id`.
+
+        That leaves the ``lineage_id`` itself as the one thing the caller
+        actually asked for and never checks: without this, a registry that
+        answers a request for lineage L1 with a wholly different (but
+        internally consistent — correctly signed, ctx_id-bound) lineage L2
+        would pass every other check. Every served body's own ``lineage_id``
+        member must equal what was requested.
         """
         url = f"{self._base}{path}"
 
@@ -839,10 +846,24 @@ class AcdpClient:
         self._bind_served_ctx_id(
             payload, shape=shape, expected_ctx_id=None, url=url, verify_binding=None
         )
+        for body in _served_bodies(payload, shape):
+            if not isinstance(body, dict):
+                continue
+            served_lineage = body.get("lineage_id")
+            if served_lineage != lineage_id:
+                raise CtxIdBindingError(
+                    "mismatch",
+                    requested=lineage_id,
+                    served=served_lineage,
+                    url=url,
+                    detail="served body's lineage_id does not match the requested lineage_id",
+                )
         return payload
 
     async def lineage(self, lineage_id: str) -> list[FullContext]:
-        payload = await self._get_lineage(f"/lineages/{lineage_id}", shape="envelope_list")
+        payload = await self._get_lineage(
+            f"/lineages/{lineage_id}", lineage_id=lineage_id, shape="envelope_list"
+        )
         return [FullContext.model_validate(x) for x in payload]
 
     async def current(self, lineage_id: str) -> FullContext:
@@ -856,7 +877,9 @@ class AcdpClient:
         ``AcdpVerifier.verify_lineage_head_receipt``.
         """
         return FullContext.model_validate(
-            await self._get_lineage(f"/lineages/{lineage_id}/current", shape="envelope")
+            await self._get_lineage(
+                f"/lineages/{lineage_id}/current", lineage_id=lineage_id, shape="envelope"
+            )
         )
 
     # ── Cross-registry routing ───────────────────────────────────────────

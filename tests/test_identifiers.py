@@ -27,6 +27,7 @@ from acdp_client.identifiers import (
     synthetic_lineage_id,
     validate_origin_registry,
 )
+from tests._bodies import PLAYGROUND_AUTHORITY, mock_producer
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -254,6 +255,51 @@ def test_is_conformant_ctx_id_rejects_the_malformed_fixtures(value):
 def test_is_conformant_ctx_id_rejects_non_strings():
     for value in (None, 12345, b"a-bytes-identifier", ["a", "list"]):
         assert is_conformant_ctx_id(value) is False  # type: ignore[arg-type]
+
+
+def test_is_conformant_ctx_id_agrees_with_the_real_sdk_parser():
+    """Cross-check the local mirror against the real ``CtxId::parse``.
+
+    ``is_conformant_ctx_id`` is an admitted local re-implementation (its own
+    docstring: "kept honest by staying a strict mirror of the Rust parser"),
+    and nothing else in the suite verifies that claim — it is only ever
+    checked against its own expectations, so it could silently drift from
+    the parser it claims to mirror.
+
+    0.14.1 exposes no bare-id parser to bind against directly, but
+    ``build_publish_request(derived_from=[...])`` runs every entry through
+    ``CtxId::parse`` before it will build
+    (``acdp-rs/bindings/acdp-py/src/producer.rs:100-102``) — the same path
+    ``test_derived_from_accepts_mock_minted_ctx_ids`` uses. Every id the
+    mirror claims is conformant must actually build, and every
+    ``INTENTIONALLY_MALFORMED`` id must actually raise.
+    """
+    producer = mock_producer(PLAYGROUND_AUTHORITY, "mirror-cross-check")
+
+    def sdk_accepts(ctx_id: str) -> bool:
+        try:
+            producer.build_publish_request(
+                title="mirror cross-check",
+                context_type="analysis",
+                visibility="public",
+                derived_from=[ctx_id],
+            )
+        except (ValueError, TypeError):
+            return False
+        return True
+
+    accepted = [
+        "acdp://registry-a.playground.local/00000000-0000-4000-8000-000000000000",
+        "acdp://reg/12345678-1234-4321-8123-123456781234",
+        "acdp://a.b.c.example/ffffffff-ffff-4fff-bfff-ffffffffffff",
+    ]
+    for ctx_id in accepted:
+        assert is_conformant_ctx_id(ctx_id) is True
+        assert sdk_accepts(ctx_id) is True, f"mirror accepts but the SDK rejects: {ctx_id!r}"
+
+    for ctx_id in sorted(INTENTIONALLY_MALFORMED):
+        assert is_conformant_ctx_id(ctx_id) is False
+        assert sdk_accepts(ctx_id) is False, f"mirror rejects but the SDK accepts: {ctx_id!r}"
 
 
 # ── the repo sweep ───────────────────────────────────────────────────────────

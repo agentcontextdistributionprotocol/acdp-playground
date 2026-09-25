@@ -35,6 +35,8 @@ import json
 import logging
 from datetime import UTC, datetime
 
+import httpx
+
 from acdp_client import AcdpHTTPError, SupersededError
 from acdp_client.models import StepEvent
 from playground.config import get_settings
@@ -113,9 +115,11 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         # The *build* is guarded narrowly: the SDK refusing to even construct the
         # supersede request is a genuine block, but a TypeError would be our own
         # call-convention bug and must never be scored as the ownership check
-        # working. The *publish* keeps its broad arm — a registry that dies
-        # mid-run is a transport failure this scenario absorbs (CLAUDE.md's
-        # degrade-gracefully rule), not an attacker being blocked.
+        # working. The *publish* narrows the same way: only a recognized
+        # rejection (SupersededError, or a 401/403 AcdpHTTPError) counts as
+        # attacker_blocked. A transport failure (registry down mid-run) is a
+        # distinct outcome this scenario absorbs (CLAUDE.md's degrade-gracefully
+        # rule) and must not be misreported as the ownership check working.
         previous_body = json.dumps(v1_full["body"])
         attacker_blocked = False
         reason = None
@@ -140,9 +144,21 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
                 # 403/401 (not_authorized) is also an acceptable rejection.
                 attacker_blocked = e.status in (401, 403)
                 reason = e.code
-            except Exception as e:  # noqa: BLE001 — transport down mid-run → absorbed
-                attacker_blocked = True
-                reason = f"client:{type(e).__name__}"
+            except httpx.HTTPError as e:
+                # Registry genuinely unreachable/timed-out mid-run — a
+                # transport failure absorbed per CLAUDE.md's degrade-gracefully
+                # rule, not proof the ownership check fired.
+                log.warning("S17 attacker publish failed (registry down?): %s", e)
+                summary["degraded"] = True
+                await note("degraded", f"registry unavailable mid-run: {type(e).__name__}")
+                return RunResult(
+                    run_id=spec.run_id,
+                    scenario_id=SCENARIO.id,
+                    status="complete",
+                    contexts=[v1.ctx_id],
+                    summary=summary,
+                    error=None,
+                )
 
         summary.update(
             {
