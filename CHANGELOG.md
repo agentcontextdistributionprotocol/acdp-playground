@@ -4,6 +4,110 @@ Notable changes to the ACDP stack as observed from the playground.
 Tracks cross-repo work — playground, control plane, registry, SDK —
 so operators reading any one repo can see the system-wide picture.
 
+## 2026-09-25 — Every service now answers "which build is running?" on `GET /healthz`
+
+Until this month nothing in the stack could answer that over HTTP. No service's
+health endpoint carried any build identity, so the console's **SDK Matrix** —
+the one page whose whole job is to show what is running — had no live source
+at all and could only render a static reference table, every row of it marked
+unconfirmed in live mode. One console issue (`acdp-ui-console` #64) fanned into
+three service issues within the same minute on 2026-08-31; all three are now
+closed, and as of today the console reads the field.
+
+This is the combined record those three earned, written once rather than per
+repo as each piece landed, because the fact worth keeping is not that a
+service gained a field — it is what the three agreed on and what they
+deliberately did not. (Tracked here as #67; #73 confirmed the trigger fired.)
+
+### The contract
+
+One top-level **`version`** string, on the `/healthz` body each service
+already served. That is the entirety of what converged; the envelope around it
+and the way the value is obtained still differ per service, on purpose:
+
+| Service | `/healthz` body | Where the string comes from |
+|---|---|---|
+| `acdp-registry-rs` | `{status, storage, version}` | `env!("CARGO_PKG_VERSION")`, plus `+g<sha>` on CI-built images |
+| `acdp-control-plane` | `{ok, service, version}` | `require('../../package.json').version`, read at startup |
+| `acdp-playground` | `{ok, service, version}` | `importlib.metadata.version("acdp-playground")`, at import |
+
+Each strategy was picked so the value cannot drift from the artifact actually
+running: the registry's is compiled into the binary; the other two read the
+*installed* package's own metadata rather than a literal in the handler or an
+operator-settable env var, either of which can claim something the running
+code does not.
+
+**The string is opaque.** `acdp-registry-rs` says so normatively in its
+`docs/HTTP-API.md` — a consumer MUST treat it as display-or-equality and never
+parse it. That is not pedantry: the registry's may carry SemVer build metadata
+(`+g<shortsha>`), and the fallbacks are not versions at all. The registry has
+none (a compile-time constant is always there); the control plane serves
+`"0.0.0"` if the `require` throws; the playground serves `"unknown"` from an
+uninstalled source tree. Anything comparing these as SemVer breaks on the
+first unhealthy deployment it meets.
+
+### What each service shipped
+
+- **`acdp-registry-rs`** PR #159 (`acdp-registry-rs` #117) — the field on both
+  the `200` and the `503`/degraded arm, because build identity matters most
+  when the service is unhealthy, on an endpoint that stays unauthenticated.
+  The same PR added a bearer-gated `build` group to `GET /admin/status`: that
+  version string, an opaque `storage_impl`, and a `commit` that is *omitted
+  entirely* when no build SHA was injected — the absence is the signal. Five
+  days later PR #239 split liveness back out of readiness, adding a `/livez`
+  that carries the same field and settling the cache posture — `/healthz`'s
+  own `Cache-Control: no-store` had landed hours earlier, in PR #219.
+  That split is why the registry's `/healthz` is the readiness probe of the
+  three.
+- **`acdp-control-plane`** PR #134 (`acdp-control-plane` #130) — reused the
+  `clientVersion` that already fed the Swagger document's version rather than
+  introducing a second version source to drift. A follow-up, PR #138, then
+  bumped the package `0.1.0` → `0.1.4` on the reasoning that a stale version
+  defeats the point of exposing one.
+- **`acdp-playground`** PR #63 (#59) — the field resolved once in
+  `playground/version.py` and reused for `FastAPI(version=…)`, which removed a
+  second hardcoded `"0.1.0"` from `main.py`; `GET /` and `GET /healthz` can no
+  longer disagree. Shape documented in `docs/http-api.md`.
+
+### The consumer
+
+`acdp-ui-console` PR #80 threads it through: `pingHealth` reads the one common
+key and tolerates both envelopes, and the result carries it documented as
+opaque. An SDK Matrix row claims a live version **only** when a real,
+reachable `/healthz` actually returned one — a service that is down, still
+loading, or running a deployment predating the field falls back to the static
+reference label, explicitly marked unconfirmed rather than silently
+substituted. Two display questions stay open there: `acdp-ui-console` #69
+(demo mode still renders reference data as if live-confirmed) and the
+residual point of `acdp-ui-console` #73 — whose thread-through title is the
+work PR #80 just landed, leaving only the degraded/503 path — which is
+sequenced behind #69.
+
+### Notes
+
+- **The field converged; the health semantics did not.** The playground's
+  `/healthz` is liveness-only (readiness is `/readyz`); the registry's is
+  readiness and answers `503` when storage is down, with `/livez` for
+  liveness; the control plane's pings Postgres and reports `ok: false` while
+  still answering `200`. A consumer that now treats the three as the same
+  probe is wrong — and the newly shared field is exactly what makes that
+  mistake easy to make.
+- **`+g<sha>` only ever appears on CI-built registry images.** The SHA is a
+  compile-time build ARG injected by the registry's own release workflow;
+  this repo's `docker-compose.yml` passes only `STORAGE_FEATURE`, so the
+  registry in `make up` / `make up-full` serves a bare version with no suffix.
+- **No conformance probe asserts any of this.** Nothing in
+  `playground/conformance.py` or `tests/live/` touches `/healthz` — the
+  console's own tests are the only cross-service guard today. Worth knowing
+  before assuming the playground would notice a service that stopped serving
+  the field.
+- No service's *current* version is named above as current — only a dated
+  bump and a comment documented as stale. That is deliberate:
+  `acdp-registry-rs` switched its own API docs to `<version>` placeholders
+  after naming a real one went stale, and its source comments still say
+  `0.1.0` today for exactly that reason. What is durable is where each string
+  comes from, not what it currently reads.
+
 ## 2026-09-24 — `acdp` 0.14.1: receipts now bind the served body (RFC-ACDP-0010 §8 step 3)
 
 Catches the playground up to `acdp` **0.14.1**, the version both sibling
