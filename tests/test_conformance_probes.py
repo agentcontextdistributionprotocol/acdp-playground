@@ -198,6 +198,81 @@ async def test_log_checkpoint_probe_fails_on_drift():
             await conformance.probe_log_checkpoint_signed(client, _CFG)
 
 
+def _log_proof_handler(*, second_checkpoint_tree_size: int):
+    """A registry that requested ``second=3`` but whose consistency-proof
+    response embeds a checkpoint at ``second_checkpoint_tree_size``.
+
+    Equal to 3 is the no-drift case; above 3 models a concurrent publish
+    growing the tree between the probe's own checkpoint read and this proof
+    response; below 3 models a genuine §9.1 step-4 binding violation.
+    """
+    ctx_id = synthetic_ctx_id("registry-c.test", "log-proof-consistency-probe")
+    lineage_id = synthetic_lineage_id("log-proof-consistency-probe")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/.well-known/acdp.json":
+            return httpx.Response(200, json=_WELL_KNOWN)
+        if path == "/contexts" and request.method == "POST":
+            return httpx.Response(
+                201,
+                json={
+                    "ctx_id": ctx_id,
+                    "lineage_id": lineage_id,
+                    "version": 1,
+                    "created_at": "2026-07-05T08:40:00.000Z",
+                    "status": "active",
+                },
+            )
+        if path == "/log/checkpoint":
+            return httpx.Response(200, json=dict(_CHECKPOINT, tree_size=3))
+        if path == "/log/proof":
+            if "ctx_id" in request.url.params:
+                return httpx.Response(
+                    200,
+                    json={
+                        "log_id": _CHECKPOINT["log_id"],
+                        "leaf_index": 2,
+                        "tree_size": 3,
+                        "inclusion_path": [],
+                        "log_checkpoint": dict(_CHECKPOINT, tree_size=3),
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "log_id": _CHECKPOINT["log_id"],
+                    "first_tree_size": 1,
+                    "second_tree_size": 3,
+                    "consistency_path": [],
+                    "log_checkpoint": dict(_CHECKPOINT, tree_size=second_checkpoint_tree_size),
+                },
+            )
+        return httpx.Response(404)
+
+    return handler
+
+
+async def test_log_proof_consistency_probe_tolerates_concurrent_tree_growth():
+    """The embedded checkpoint may legitimately be *ahead* of the consistency
+    proof's own ``second_tree_size`` — a concurrent publish between the probe's
+    earlier ``GET /log/checkpoint`` and this proof response, plausible under
+    ``make test-live`` with other scenarios/tests running. Must not be
+    misreported as a §9.1 binding violation.
+    """
+    async with _client(_log_proof_handler(second_checkpoint_tree_size=5)) as client:
+        summary = await conformance.probe_log_proof_inclusion_and_consistency(client, _CFG)
+    assert "consistency(1→3)" in summary
+
+
+async def test_log_proof_consistency_probe_fails_when_checkpoint_is_behind():
+    """A checkpoint *behind* the proof's own ``second_tree_size`` is a genuine
+    §9.1 step-4 binding violation and must still fail."""
+    async with _client(_log_proof_handler(second_checkpoint_tree_size=2)) as client:
+        with pytest.raises(AssertionError, match="behind"):
+            await conformance.probe_log_proof_inclusion_and_consistency(client, _CFG)
+
+
 async def test_receipts_probe_rejects_profiles_as_string():
     """#64: a bare-string ``profiles`` must not pass via substring matching.
 

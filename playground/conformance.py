@@ -115,13 +115,22 @@ _INTERIM_REVOCATION_SEED = hashlib.sha256(
 ).digest()
 _ANCHOR_VERSION_SEED = hashlib.sha256(b"acdp-playground:conformance:anchors-version-gate").digest()
 
-# RFC-ACDP-0003 §6.1 idempotency key for the media-type probe's two accept-side
+# RFC-ACDP-0003 §6.1 idempotency keys for the media-type probe's two accept-side
 # publishes. They send byte-identical bodies, and this registry does **not**
 # dedupe on content_hash alone — two identical publishes are measurably assigned
 # two different ctx_ids — so without an Idempotency-Key the probe would add a
-# row per accepted media type per run. With it, the suite creates one context on
+# row per accepted media type per run. With one, the suite creates one context on
 # its first run and replays that same context for the key's advertised TTL.
-_MEDIA_TYPE_IDEMPOTENCY_KEY = "acdp-playground-conformance-media-type-gate"
+#
+# The two arms get *distinct* (but each individually stable) keys. A single
+# shared key would make the second POST an idempotent replay of the first —
+# whether it ever reaches the §4.1 media-type gate at all would then depend on
+# the registry validating Content-Type before its idempotency lookup, an
+# ordering this probe never actually verifies — so the absent-header assertion
+# could go permanently vacuous while staying green. Distinct keys keep both
+# arms genuine publishes while still bounding growth to one context per arm.
+_MEDIA_TYPE_IDEMPOTENCY_KEY_CHARSET = "acdp-playground-conformance-media-type-gate:charset"
+_MEDIA_TYPE_IDEMPOTENCY_KEY_ABSENT = "acdp-playground-conformance-media-type-gate:absent"
 
 # RFC-ACDP-0014 §10 retires the interim `acdp:key-revocation` context_type, and
 # RFC-ACDP-0016 §10/§14 admit `anchors`, only for registries advertising at
@@ -425,11 +434,16 @@ async def probe_media_type_gate(client: httpx.AsyncClient, cfg: LiveConfig) -> s
         f"media-type: expected code unsupported_media_type, got {code!r} ({refused.text[:200]})"
     )
 
-    # The two accept cases share one Idempotency-Key so the probe adds at most
-    # one context to the registry, however often the suite runs.
-    idem = {"Idempotency-Key": _MEDIA_TYPE_IDEMPOTENCY_KEY}
+    # Each accept case gets its own stable Idempotency-Key — see the constants'
+    # docstring — so the probe adds at most one context per arm, however often
+    # the suite runs, without the two arms aliasing each other.
     charset = await client.post(
-        url, content=raw, headers={**idem, "Content-Type": "application/json; charset=utf-8"}
+        url,
+        content=raw,
+        headers={
+            "Idempotency-Key": _MEDIA_TYPE_IDEMPOTENCY_KEY_CHARSET,
+            "Content-Type": "application/json; charset=utf-8",
+        },
     )
     assert charset.status_code in (200, 201), (
         "media-type: application/json; charset=utf-8 was NOT accepted "
@@ -442,7 +456,9 @@ async def probe_media_type_gate(client: httpx.AsyncClient, cfg: LiveConfig) -> s
 
     # httpx sends no Content-Type of its own for a raw ``content=`` body, so
     # this request genuinely reaches the registry without the header.
-    absent = await client.post(url, content=raw, headers=idem)
+    absent = await client.post(
+        url, content=raw, headers={"Idempotency-Key": _MEDIA_TYPE_IDEMPOTENCY_KEY_ABSENT}
+    )
     assert "content-type" not in {k.lower() for k in absent.request.headers}, (
         "media-type: the absent-header case accidentally sent a Content-Type — "
         "the assertion below would prove nothing"
@@ -733,8 +749,17 @@ async def probe_log_proof_inclusion_and_consistency(
     assert cp["first_tree_size"] == 1 and cp["second_tree_size"] == size, (
         f"log-proof(consistency): sizes {cp['first_tree_size']}→{cp['second_tree_size']} != 1→{size}"
     )
-    assert cp["second_tree_size"] == cp["log_checkpoint"]["tree_size"], (
-        "log-proof(consistency): second_tree_size not bound to the embedded checkpoint"
+    # The embedded checkpoint must *cover* what the proof claims — not equal it.
+    # `size` was read from a separate, earlier GET /log/checkpoint (line 693); the
+    # log is append-only, so a concurrent publish between that read and this proof
+    # (plausible under make test-live, with other scenarios/tests running) can only
+    # grow the tree further, never shrink it. Asserting equality here would fail on
+    # exactly that legitimate growth; the real §9.1 step-4 binding is violated only
+    # if the checkpoint is *behind* the size the proof was computed for.
+    assert cp["log_checkpoint"]["tree_size"] >= cp["second_tree_size"], (
+        "log-proof(consistency): embedded checkpoint tree_size is behind the "
+        f"proof's own second_tree_size ({cp['log_checkpoint']['tree_size']} < "
+        f"{cp['second_tree_size']})"
     )
     return f"/log/proof inclusion(leaf={ip['leaf_index']}) + consistency(1→{size})"
 

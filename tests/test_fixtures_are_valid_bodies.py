@@ -23,6 +23,7 @@ import pytest
 from acdp import AcdpVerifier
 
 from acdp_client.identifiers import is_conformant_ctx_id
+from playground.scenarios._receipts import _OFFLINE_KEY_RESOLUTION
 from tests._bodies import (
     BODY_REQUIRED_FIELDS,
     MOCK_BODIES,
@@ -45,6 +46,10 @@ _INLINE_BODY_EXEMPT: dict[str, str] = {
     "tests/test_scenarios_v2.py": (
         "builds `previous_body` from a real build_publish_request output for "
         "the supersede path, same reason"
+    ),
+    "tests/test_scenarios_round2.py": (
+        "its fake POST handler splices registry fields onto the *real* signed "
+        "publish request S17's owner agent posted, same reason as FakeRegistry"
     ),
 }
 
@@ -80,18 +85,47 @@ def test_every_mock_body_deserializes(name: str):
     # thing Phase 5's `verify_ctx_id_binding` does — so a missing required field
     # surfaces here as `ValueError: missing field '…'`. A `RuntimeError` is the
     # expected, unrelated outcome for a `did:web` producer whose key cannot be
-    # resolved offline, and is not a fixture defect.
+    # resolved offline, and is not a fixture defect — but only *that specific*
+    # RuntimeError. Swallowing every RuntimeError here would mask a real fixture
+    # defect (a bad origin_registry, non-canonical created_at, illegal
+    # visibility/audience) behind the same exception type; narrow exactly like
+    # the production helper this guard exists to keep honest
+    # (`playground/scenarios/_receipts.py`'s `synthesize_retrieval_body`).
     try:
         AcdpVerifier.verify_body_offline(json.dumps(body))
     except ValueError as exc:  # pragma: no cover - only on a bad fixture
         pytest.fail(f"{name} does not deserialize as an SDK Body: {exc}")
-    except RuntimeError:
-        pass
+    except RuntimeError as exc:
+        did_key = str(body.get("agent_id", "")).startswith("did:key:")
+        if did_key or _OFFLINE_KEY_RESOLUTION not in str(exc):
+            pytest.fail(
+                f"{name} raised an unexpected RuntimeError from verify_body_offline "
+                f"(not the expected offline did:web key-resolution failure): {exc}"
+            )
 
     assert is_conformant_ctx_id(body["ctx_id"]), f"{name}: {body['ctx_id']}"
     assert re.fullmatch(r"lin:sha256:[0-9a-f]{64}", body["lineage_id"]), name
 
     assert AcdpVerifier.verify_content_hash(json.dumps(body), body["content_hash"]) is True
+
+
+def test_deserialize_guard_does_not_mask_a_non_key_resolution_runtimeerror():
+    """A fixture defect that fails ``verify_body_offline`` for a reason *other*
+    than offline did:web key resolution must still fail this suite.
+
+    Regression test for the guard above catching a bare ``except RuntimeError:
+    pass`` — which would have silently accepted this fixture despite its
+    ``origin_registry`` violating RFC-ACDP-0002 §3.1's bare-lowercase-hostname
+    grammar, the exact drift class this file exists to close.
+    """
+    body = dict(mock_body(authority="reg.test", seed="bad-origin-registry"))
+    body["origin_registry"] = "REG.TEST"
+    with pytest.raises(RuntimeError) as exc:
+        AcdpVerifier.verify_body_offline(json.dumps(body))
+    assert _OFFLINE_KEY_RESOLUTION not in str(exc.value), (
+        "fixture setup bug: this must fail for a *different* reason than key "
+        "resolution, or it would not exercise the guard's narrowing at all"
+    )
 
 
 @pytest.mark.parametrize("field", BODY_REQUIRED_FIELDS)
