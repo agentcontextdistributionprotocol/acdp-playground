@@ -43,6 +43,12 @@ publish time → pre-compromise; before it → fail closed). It degrades gracefu
 without a registry, and the canonical K1→K2 single-DID producer-signed rotation
 lives in the offline core because the playground's `*.playground.local` did:web
 DIDs aren't web-hosted (the S24/S27 constraint).
+
+This scenario never live-publishes a *self-signed* revocation (the revoker
+here always signs K2's revocation of a different key, K1) — the registry's own
+publish-time enforcement of that rule (RFC-ACDP-0014 §5 step 2) is covered
+live by `playground.conformance.probe_key_revocation_self_sign_rejected`
+instead, not here.
 """
 
 from __future__ import annotations

@@ -79,6 +79,16 @@ async def test_anchors_require_0_5_0(live_client: httpx.AsyncClient, live_config
     assert "400 schema_violation" in summary
 
 
+async def test_key_revocation_self_sign_rejected(
+    live_client: httpx.AsyncClient, live_config: LiveConfig
+):
+    """RFC-ACDP-0014 §5 step 2: a key cannot attest its own compromise. No
+    scenario or other probe ever publishes a self-signed key-revocation live —
+    S32 always signs K2's revocation of a *different* key (K1)."""
+    summary = await conformance.probe_key_revocation_self_sign_rejected(live_client, live_config)
+    assert "403 key_not_authorized" in summary
+
+
 # ── 0.3.0 endpoint contracts (RFC-ACDP-0011/0012/0013) ──────────────────────
 
 

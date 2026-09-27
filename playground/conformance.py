@@ -32,7 +32,7 @@ from datetime import UTC, datetime
 from urllib.parse import quote
 
 import httpx
-from acdp import AcdpCanonicalizer, AcdpProducer
+from acdp import AcdpCanonicalizer, AcdpProducer, AcdpVerifier
 
 from acdp_client.models import parse_error_envelope
 from playground.config import Settings
@@ -114,6 +114,9 @@ _INTERIM_REVOCATION_SEED = hashlib.sha256(
     b"acdp-playground:conformance:interim-revocation"
 ).digest()
 _ANCHOR_VERSION_SEED = hashlib.sha256(b"acdp-playground:conformance:anchors-version-gate").digest()
+_SELF_SIGNED_REVOCATION_SEED = hashlib.sha256(
+    b"acdp-playground:conformance:self-signed-key-revocation"
+).digest()
 
 # RFC-ACDP-0003 §6.1 idempotency keys for the media-type probe's two accept-side
 # publishes. They send byte-identical bodies, and this registry does **not**
@@ -589,6 +592,88 @@ async def probe_anchors_require_0_5_0(client: httpx.AsyncClient, cfg: LiveConfig
     return "anchors declared under acdp_version 0.4.0 → 400 schema_violation (RFC-ACDP-0016 §14)"
 
 
+async def probe_key_revocation_self_sign_rejected(
+    client: httpx.AsyncClient, cfg: LiveConfig
+) -> str:
+    """A ``key-revocation`` publish naming its OWN signer's fingerprint as
+    ``revoked_key_fingerprint`` — a key attesting its own compromise — is
+    refused **403 key_not_authorized** (RFC-ACDP-0014 §5 step 2).
+
+    Nothing else in this repo probes this live. S32's only live publish signs
+    K2's revocation of a *different* key (K1), so a self-signed body never
+    reaches a real registry from any existing scenario or probe — S32's own
+    offline ``self_signed_rejected`` assertion only exercises the SDK's
+    ``parse_key_revocation`` classification of an already-retrieved body, not
+    the registry's publish-time gate.
+
+    That gate had a real regression: acdp-rs #301 restored a §5 step-2 check
+    that #295 had silently dropped, but only for the *interim*
+    ``acdp:key-revocation`` spelling. This probe can't reproduce that exact
+    regression against this playground's own registry-a, though — RFC-ACDP-0016's
+    ``anchors`` claim is unconditional (acdp-registry-rs's ``ladder_claims`` /
+    ``acdp_version_claim``), so every reachable deployment of the shipped
+    binary advertises ``acdp_version >= 0.5.0``, and at 0.5.0 the interim
+    spelling is retired outright before any self-sign check would run (see
+    ``probe_interim_revocation_type_rejected``). So this probes the standard
+    ``key-revocation`` spelling instead: that check path was never broken by
+    #295/#301, but nothing before this probe confirmed the registry actually
+    still enforces it live rather than only in the SDK's offline
+    classification.
+
+    Reuses S32's exact known-good live-publish shape (context_type,
+    acdp_version, and metadata field names it already proves this registry
+    accepts) so the only variable is the signer/revoked-key relationship — a
+    probe that guessed at an unfamiliar shape could be rejected for the wrong
+    reason. For the same reason the assertion also requires the message to
+    name the self-sign rule: ``key_not_authorized`` is reused for other
+    identity-binding mismatches too (e.g. a did:web ``agent_id`` mismatch), so
+    the code alone cannot say *which* rule fired.
+    """
+    version = await _advertised_acdp_version(client, cfg.registry_url)
+    if version < (0, 3, 0):
+        return (
+            f"registry advertises {'.'.join(map(str, version))} < 0.3.0 — "
+            "key-revocation self-sign probe skipped (§5 step 2 gate does not apply)"
+        )
+    producer = AcdpProducer.from_seed_did_key(_SELF_SIGNED_REVOCATION_SEED)
+    own_fp = AcdpVerifier.fingerprint_ed25519_b64(producer.public_key_b64)
+    raw = producer.build_publish_request(
+        title="conformance self-signed key-revocation probe",
+        context_type="key-revocation",
+        visibility="public",
+        tags=["conformance", "probe"],
+        summary=f"Self-signed revocation of {own_fp} — must be rejected.",
+        acdp_version="0.3.0",
+        metadata=json.dumps(
+            {
+                "revoked_key_fingerprint": own_fp,
+                "compromised_since": "2026-01-01T00:00:00.000Z",
+                "reason": "conformance probe — a key cannot attest its own compromise",
+            }
+        ),
+    )
+    r = await client.post(
+        f"{cfg.registry_url}/contexts", content=raw, headers={"Content-Type": "application/json"}
+    )
+    assert r.status_code == 403, (
+        "self-sign-revocation: expected 403 for a self-signed key-revocation, got "
+        f"{r.status_code} ({r.text[:200]}) — a 2xx means a compromised key could revoke itself"
+    )
+    ctype = r.headers.get("content-type", "")
+    assert _ACDP_CONTENT_TYPE in ctype, (
+        f"self-sign-revocation: expected the {_ACDP_CONTENT_TYPE} envelope, got {ctype!r}"
+    )
+    code, message = _envelope(r)
+    assert code == "key_not_authorized", (
+        f"self-sign-revocation: expected code key_not_authorized, got {code!r} ({r.text[:200]})"
+    )
+    assert "signed by that same key" in message, (
+        "self-sign-revocation: the rejection does not name the self-sign rule "
+        f"({message[:200]!r}) — key_not_authorized is reused for other identity mismatches too"
+    )
+    return "self-signed key-revocation publish → 403 key_not_authorized (RFC-ACDP-0014 §5 step 2)"
+
+
 # ── 0.3.0 endpoint probes (RFC-ACDP-0011/0012/0013) ─────────────────────────
 #
 # These drive the REAL 0.3.0 contracts on registry-a (the receipts/lifecycle/
@@ -955,6 +1040,7 @@ REGISTRY_PROBES = (
     probe_media_type_gate,
     probe_interim_revocation_type_rejected,
     probe_anchors_require_0_5_0,
+    probe_key_revocation_self_sign_rejected,
 )
 # RFC-ACDP-0011/0012/0013 endpoint contracts on registry-a. Real probes: they
 # hard-fail on drift wherever the profile is advertised (mock-drift detection).

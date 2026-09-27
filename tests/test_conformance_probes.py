@@ -641,10 +641,67 @@ async def test_anchors_version_gate_probe_rejects_an_unrelated_schema_violation(
             await conformance.probe_anchors_require_0_5_0(client, _CFG)
 
 
+_SELF_SIGN_MESSAGE = (
+    "revocation of key sha256:11 is signed by that same key — a key is not authorized to "
+    "attest its own compromise; treat as unverified (RFC-ACDP-0014 §5 step 2)"
+)
+
+
+def _self_sign_registry(*, publish=None, acdp_version="0.5.0"):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/.well-known/acdp.json":
+            return httpx.Response(200, json=dict(_WELL_KNOWN, acdp_version=acdp_version))
+        if publish is not None:
+            return publish()
+        return _envelope_response(403, "key_not_authorized", _SELF_SIGN_MESSAGE)
+
+    return handler
+
+
+async def test_self_sign_revocation_probe_passes_on_conformant_mock():
+    async with _client(_self_sign_registry()) as client:
+        summary = await conformance.probe_key_revocation_self_sign_rejected(client, _CFG)
+    assert "403 key_not_authorized" in summary
+
+
+async def test_self_sign_revocation_probe_detects_acceptance():
+    """A registry that accepts a self-signed key-revocation lets a compromised
+    key attest its own compromise — no scenario publishes this live, so only
+    this probe would notice the regression."""
+    async with _client(_self_sign_registry(publish=_accepted)) as client:
+        with pytest.raises(AssertionError, match="a compromised key could revoke itself"):
+            await conformance.probe_key_revocation_self_sign_rejected(client, _CFG)
+
+
+async def test_self_sign_revocation_probe_rejects_an_unrelated_key_not_authorized():
+    """``key_not_authorized`` is reused for other identity-binding mismatches
+    (e.g. a did:web ``agent_id`` mismatch) — a 403 that does not name the
+    self-sign rule could be any of those, and would let the probe pass against
+    a registry whose §5 step-2 check is not actually wired up."""
+    async with _client(
+        _self_sign_registry(
+            publish=lambda: _envelope_response(
+                403, "key_not_authorized", "agent_id does not match the resolved did:web signer"
+            )
+        )
+    ) as client:
+        with pytest.raises(AssertionError, match="does not name the self-sign rule"):
+            await conformance.probe_key_revocation_self_sign_rejected(client, _CFG)
+
+
+async def test_self_sign_revocation_probe_skips_below_0_3_0():
+    """Below 0.3.0 RFC-ACDP-0014 does not apply at all, so no §5 step-2 gate
+    is required. Documented skip, and the publish never happens."""
+    async with _client(_self_sign_registry(publish=_accepted, acdp_version="0.2.0")) as client:
+        summary = await conformance.probe_key_revocation_self_sign_rejected(client, _CFG)
+    assert "skipped" in summary
+
+
 def test_registry_contract_probes_registered():
     for probe in (
         conformance.probe_media_type_gate,
         conformance.probe_interim_revocation_type_rejected,
         conformance.probe_anchors_require_0_5_0,
+        conformance.probe_key_revocation_self_sign_rejected,
     ):
         assert probe in conformance.REGISTRY_PROBES, probe.__name__
