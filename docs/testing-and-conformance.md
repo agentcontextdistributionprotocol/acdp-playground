@@ -176,6 +176,7 @@ by both entry points.
 | `probe_media_type_gate` | `POST /contexts` gates on `Content-Type` per RFC-ACDP-0007 §4.1 — `text/plain` → **415** `unsupported_media_type`, a `charset` parameter accepted, an absent header accepted *on this route* |
 | `probe_interim_revocation_type_rejected` | A new publish typed `acdp:key-revocation` → **400** `schema_violation` (RFC-ACDP-0014 §10 retirement) |
 | `probe_anchors_require_0_5_0` | A publish carrying `anchors` while declaring `acdp_version` below 0.5.0 → **400** `schema_violation` (RFC-ACDP-0016 §14) |
+| `probe_key_revocation_self_sign_rejected` | A `key-revocation` publish naming its own signer as the revoked key → **403** `key_not_authorized` (RFC-ACDP-0014 §5 step 2) |
 
 **0.3.0 endpoint contracts** (`ENDPOINT_0_3_0_PROBES`, RFC-ACDP-0011/0012/0013):
 
@@ -218,7 +219,7 @@ this probe is what says which side is at fault. Its offline counterpart in
 `MockTransport` and asserts the probe fails, so the probe cannot quietly become
 a no-op.
 
-### The three registry-contract probes
+### The registry-contract probes
 
 These pin contracts the siblings enforce today that no scenario would notice
 regressing — each one's *observable* behaviour in the playground is identical
@@ -254,6 +255,22 @@ whether the gate exists or not.
   S33 only ever publishes the accepted side. No version scoping is needed — on
   an older registry the other half of the same gate (§10, the registry's own
   advertised version) refuses the publish with the same status and code.
+- **`probe_key_revocation_self_sign_rejected`** pins RFC-ACDP-0014 §5 step 2: a
+  key cannot attest its own compromise. S32 only ever publishes K2's revocation
+  of a *different* key (K1) — its own `self_signed_rejected` assertion checks
+  the SDK's offline classification of an already-retrieved body, never a live
+  publish — so nothing else would notice a registry that let a self-signed
+  revocation through. This is also the probe that would have caught acdp-rs
+  #301's regression (a dropped §5 step-2 check for the interim
+  `acdp:key-revocation` spelling), except this playground's own registry-a
+  always advertises `acdp_version >= 0.5.0` (RFC-ACDP-0016's `anchors` claim is
+  unconditional), where that spelling is already retired outright by
+  `probe_interim_revocation_type_rejected`. So it asserts the same rule against
+  the standard `key-revocation` spelling instead — a check path #301 never
+  touched, but one nothing had ever proven enforced live before. The message
+  assertion requires it to name the self-sign rule specifically:
+  `key_not_authorized` is reused for other identity-binding mismatches (e.g. a
+  did:web `agent_id` mismatch), so the code alone can't say which rule fired.
 
 Each has a `MockTransport` counterpart in `tests/test_conformance_probes.py`
 that serves the *wrong* answer and asserts the probe raises, so none of them can
