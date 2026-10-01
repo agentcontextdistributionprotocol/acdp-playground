@@ -231,6 +231,37 @@ async def test_s7_supersession(fake_registry):
     assert res.summary["current_ctx_id"] == res.contexts[1]
 
 
+async def test_s7_supersession_fails_closed_on_current_mismatch(fake_registry, monkeypatch):
+    """S7's internal assertion must fail the run, not silently report
+    ``complete``, if ``/current`` ever disagrees with v2 — the exact defect
+    issue #81 reported (current resolving to v1 instead of v2).
+    """
+    real_get = fake_registry.get
+
+    def bad_get(url: str) -> httpx.Response:
+        path = httpx.URL(str(url)).path
+        if "/lineages/" in path and path.endswith("/current"):
+            lineage_id = unquote(path.split("/lineages/", 1)[1].removesuffix("/current"))
+            ctx_ids = fake_registry.lineages[lineage_id]
+            return httpx.Response(
+                200,
+                json=fake_registry._envelope(ctx_ids[0]),  # wrongly resolve to v1
+                request=httpx.Request("GET", str(url)),
+            )
+        return real_get(url)
+
+    monkeypatch.setattr(fake_registry, "get", bad_get)
+
+    res = await _run("s7_supersession")
+    assert res.status == "failed"
+    assert res.error == "S7 supersession assertions failed"
+    # The other two checks were unaffected by the injected fault — only the
+    # current-mismatch check should be what fails the run.
+    assert res.summary["same_lineage"] is True
+    assert res.summary["lineage_length"] == 2
+    assert res.summary["current_ctx_id"] != res.contexts[1]
+
+
 async def test_s8_cross_org(fake_registry):
     res = await _run("s8_cross_org")
     assert res.status == "complete"
