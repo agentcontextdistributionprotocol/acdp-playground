@@ -226,6 +226,8 @@ async def test_s7_supersession(fake_registry):
     res = await _run("s7_supersession")
     assert res.status == "complete"
     assert len(res.contexts) == 2
+    assert res.summary["same_lineage"] is True
+    assert res.summary["lineage_length"] == 2
     assert res.summary["current_ctx_id"] == res.contexts[1]
 
 
