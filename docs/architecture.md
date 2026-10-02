@@ -103,9 +103,14 @@ the SDK's verifier before returning it.
 2. **`runner.execute`** (`scenarios/runner.py`) emits `run.started` and
    notifies the control plane of the start, calls the scenario's
    `run(spec, events)` coroutine, then emits `run.complete` (with
-   `contexts_produced` and the `lineage_graph`) or `run.error` (with the
-   exception message; the full traceback is kept on the persisted
-   `RunResult.error`). The `RunResult` is persisted in an in-process dict and a
+   `contexts_produced`, the `lineage_graph`, and `status`) or `run.error`
+   (with the exception message and `status`; the full traceback is kept on
+   the persisted `RunResult.error`). The event `type` distinguishes
+   "returned" from "raised", not success from failure — a scenario can
+   return without raising but with `RunResult.status == "failed"` (an
+   internal assertion failing, not a transport exception), which still
+   streams `run.complete`; its `status` field is what actually carries the
+   outcome. The `RunResult` is persisted in an in-process dict and a
    `notify_run_complete` is fired to the control plane.
 
 3. **The scenario** uses `_factory.py` helpers to mint deterministic agent
