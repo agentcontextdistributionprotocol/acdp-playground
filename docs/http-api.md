@@ -138,7 +138,7 @@ Behavior:
 | `preview` | Short LLM-output preview |
 | `contexts_produced`, `lineage_graph` | On `run.complete` |
 | `error` | On `run.error` |
-| `status` | The scenario's `RunResult.status` (`"complete"`/`"failed"`), set by the runner on the `run.complete` and `run.error` events *it* emits — a scenario can return without raising but with `status="failed"` (an internal assertion failing), which still streams `run.complete`; check this field (or `GET /runs/{id}`) rather than the event `type` alone to tell that apart from a real success. Not set on an event a scenario emits directly with `type="run.error"` mid-run instead of returning (a pre-existing, separate misuse — see acdp-playground#85) |
+| `status` | The scenario's `RunResult.status` (`"complete"`/`"failed"`), on both `run.complete` and `run.error` — a scenario can return without raising but with `status="failed"` (an internal assertion failing), which still streams `run.complete`; check this field (or `GET /runs/{id}`) rather than the event `type` alone to tell that apart from a real success |
 | `registry_authority`, `tenant_id`, `event_id` | Routing / dedup metadata |
 | `key_fingerprint`, `receipt_present` | ACDP 0.2 trust signals lifted from webhook payloads |
 

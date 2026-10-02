@@ -191,9 +191,16 @@ async def run(spec: RunSpec, events: asyncio.Queue[StepEvent]) -> RunResult:
         audience_ok = outcomes["audience_member"]["outcome"] == "allowed"
         all_correct = anon_ok and outsider_ok and audience_ok
 
+        # type="scenario.note", never "run.complete"/"run.error": this is a
+        # mid-run informational event, not the run's terminal outcome. The
+        # SSE generator (api/runs.py) ends the stream on the FIRST event of
+        # either terminal type from ANY source, so using one here would
+        # truncate the stream before the runner's own real terminal event
+        # (which carries RunResult.status, per #84) ever arrives — exactly
+        # the bug reported in acdp-playground#85.
         await events.put(
             StepEvent(
-                type="acdp.search" if all_correct else "run.error",
+                type="scenario.note",
                 run_id=spec.run_id,
                 ts=datetime.now(UTC).isoformat(),
                 title="restricted-visibility outcomes",
