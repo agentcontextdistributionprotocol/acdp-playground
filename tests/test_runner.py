@@ -50,8 +50,40 @@ async def test_execute_success_emits_started_then_complete_and_persists():
     assert complete.type == "run.complete"
     assert complete.contexts_produced == 1
     assert complete.lineage_graph is not None
+    assert complete.status == "complete"
     # Result is retrievable by run_id afterwards.
     assert get_result(run_id) is result
+
+
+async def test_execute_logical_failure_still_emits_complete_but_with_status_failed():
+    """Regression for acdp-playground#84: a scenario can return a RunResult
+    with status="failed" without raising (an internal assertion failing,
+    not a transport exception) -- see s7_supersession.py and friends. The
+    event type stays run.complete (the runner only emits run.error when an
+    exception was actually raised), but its status field must carry the
+    real outcome so an SSE-only consumer isn't left unable to tell this
+    apart from a genuine success.
+    """
+    run_id = "runner-logical-failure"
+
+    async def run(spec: RunSpec, events: asyncio.Queue) -> RunResult:
+        return RunResult(
+            run_id=spec.run_id,
+            scenario_id=spec.scenario_id,
+            status="failed",
+            error="some internal assertion failed",
+        )
+
+    queue: asyncio.Queue = asyncio.Queue()
+    result = await execute(_scenario(run), _spec(run_id), queue)
+
+    assert result.status == "failed"
+
+    started = queue.get_nowait()
+    complete = queue.get_nowait()
+    assert started.type == "run.started"
+    assert complete.type == "run.complete"  # returned, not raised
+    assert complete.status == "failed"  # but the real outcome is visible here
 
 
 async def test_execute_notifies_cp_start_before_complete(monkeypatch):
@@ -98,4 +130,5 @@ async def test_execute_failure_emits_error_and_persists_failed_result():
     assert started.type == "run.started"
     assert err.type == "run.error"
     assert err.error == "kaboom"
+    assert err.status == "failed"
     assert get_result(run_id) is result

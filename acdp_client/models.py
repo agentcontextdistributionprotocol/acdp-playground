@@ -350,6 +350,13 @@ class StepEvent(_Open):
     contexts_produced: int | None = None
     lineage_graph: dict[str, Any] | None = None
     error: str | None = None
+    # The scenario's RunResult.status ("complete"/"failed"), set on
+    # run.complete and run.error so an SSE-only consumer can tell a
+    # scenario that returned without raising but with status="failed"
+    # (an internal assertion failing, not a transport exception) apart
+    # from a genuine success -- both previously streamed run.complete
+    # with nothing to distinguish them.
+    status: str | None = None
     scenario_id: str | None = None
     framework: str | None = None
     registry_authority: str | None = None
