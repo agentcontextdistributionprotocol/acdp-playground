@@ -3,8 +3,9 @@
 The **ACDP Playground** generates real Agent Context Distribution Protocol
 (ACDP) traffic so the SDK (`acdp-rs`), the registry (`acdp-registry-rs`), and the
 control plane (`acdp-control-plane`) can be exercised end-to-end. It spins up
-agents, calls real LLMs, publishes signed context, streams events over SSE, and
-forwards registry webhooks.
+agents, calls real LLMs (in 10 of the 34 scenarios; the rest are LLM-free),
+publishes signed context, streams events over SSE, and forwards registry
+webhooks.
 
 This is the **conformance and demonstration harness** for ACDP — not the protocol
 itself, and not the SDK, registry, or control plane.
@@ -63,6 +64,23 @@ Reach for these when you need the canonical detail:
 | **Control plane** | [`acdp-control-plane`](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/tree/main/docs) | Token issuance, introspection, revocation, policy, ingest, federation, CP configuration |
 | **UI console** | [`acdp-ui-console`](https://github.com/agentcontextdistributionprotocol/acdp-ui-console) | The web UI that visualizes runs |
 
+### Sibling docs the playground relies on
+
+| Project | Start here |
+|---------|------------|
+| **Spec / RFCs** | [RFC index](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/README.md) · [version matrix](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/docs/version-matrix.md) |
+| **SDK** (`acdp-rs`) | [getting-started.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/getting-started.md) · [conformance.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/conformance.md) · [registry.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/registry.md) · [cli.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/cli.md) |
+| **Registry** | [README](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/README.md) · [ARCHITECTURE.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/ARCHITECTURE.md) · [OPERATIONS.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/OPERATIONS.md) · [UPGRADING.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/UPGRADING.md) |
+| **Control plane** | [README](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/README.md) · [TROUBLESHOOTING.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/TROUBLESHOOTING.md) · [TESTING.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/TESTING.md) |
+| **UI console** | [README](https://github.com/agentcontextdistributionprotocol/acdp-ui-console/blob/main/README.md) |
+| **Ecosystem** (`acdp-docs`) | [ecosystem map](https://github.com/agentcontextdistributionprotocol/acdp-docs/blob/main/kb/ecosystem-map.md) · [playground knowledge-base entry](https://github.com/agentcontextdistributionprotocol/acdp-docs/blob/main/kb/repos/acdp-playground.md) |
+
+These docs were last checked against **acdp-rs 0.14.5** (the SDK version in
+`uv.lock`), **acdp-registry-rs 0.4.2**, **acdp-control-plane 0.1.4** and
+**spec v0.5.0** (still a Draft line). That is a "checked against" note, not a
+compatibility promise; the spec's version matrix is the place to check which
+versions work together.
+
 ### Frequently-needed cross-references
 
 - **How a context is signed / canonicalized** → [`acdp-rs` producing.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/producing.md) · [security.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/security.md)
@@ -71,7 +89,7 @@ Reach for these when you need the canonical detail:
 - **Token issuance / challenge flow** → [registry AUTHENTICATION.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/AUTHENTICATION.md) · [control-plane AUTH.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/AUTH.md)
 - **Multi-tenancy rules** → [registry MULTI-TENANCY.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/MULTI-TENANCY.md) · [control-plane TENANCY.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/TENANCY.md)
 - **Registry / CP configuration knobs** → [registry CONFIGURATION.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/CONFIGURATION.md) · [control-plane CONFIGURATION.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/CONFIGURATION.md)
-- **Registry receipts** (what registry-a mints; the S22–S32 scenarios verify) → [registry RECEIPTS.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/RECEIPTS.md) · [RFC-ACDP-0010](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0010-registry-receipts.md)
+- **Registry receipts** (what registry-a mints; the receipt-verifying scenarios S22–S24, S27 and S29–S32 check) → [registry RECEIPTS.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/RECEIPTS.md) · [RFC-ACDP-0010](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0010-registry-receipts.md)
 
 ## Repo links
 

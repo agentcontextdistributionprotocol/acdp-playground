@@ -29,14 +29,14 @@ signs, and when) is the registry's — see its
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `RECEIPT_SIGNING_SEED_B64` | *(demo seed baked in)* | Ed25519 signing seed for registry-a's receipts profile; `Settings.receipts_enabled` is `bool(...)` of it and `receipt_verification_public_key_b64()` derives the verify key |
+| `RECEIPT_SIGNING_SEED_B64` | *(demo seed baked in)* | Base64 Ed25519 seed for registry-a's receipts profile. **Must equal** `[receipt].signing_key_seed_b64` in `config/registry-a.toml`; `receipt_verification_public_key_b64()` derives the verify key from it. Set it **empty** to disable receipts (`Settings.receipts_enabled` is `bool(...)` of it) — the receipt-backed scenarios then degrade |
 
 ### LLM provider
 
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `LLM_PROVIDER` | `openai` | `openai` \| `anthropic` \| `mock` |
-| `LLM_MODEL` | `gpt-4o-mini` | Passed straight to the provider |
+| `LLM_MODEL` | `gpt-4o-mini` | Passed straight to the provider — set an Anthropic model id when `LLM_PROVIDER=anthropic` |
 | `OPENAI_API_KEY` | — | Required for `openai` |
 | `ANTHROPIC_API_KEY` | — | Required for `anthropic` |
 
@@ -46,15 +46,15 @@ Use `LLM_PROVIDER=mock` for fully offline runs (deterministic echo, no key).
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `WEBHOOK_SECRET` | `playground-dev-secret` | **Must match** the value the registries are launched with; used to verify inbound `X-ACDP-Signature` |
+| `WEBHOOK_SECRET` | `playground-dev-secret` | **Must match** the value the registries are launched with; used to verify inbound `X-ACDP-Signature`. **Empty disables verification** — every webhook is accepted unsigned |
 
 ### Control plane (optional)
 
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `CONTROL_PLANE_URL` | *(empty)* | Empty disables all CP forwarding; set it to enable |
-| `CONTROL_PLANE_HMAC_SECRET` | *(empty)* | Must match the CP's `WEBHOOK_SECRET`; re-signs forwarded webhooks |
-| `CONTROL_PLANE_ADMIN_TOKEN` | *(empty)* | Admin bearer for CP admin endpoints (introspection, revocation feed, pinned-key reload); matches a CP `AUTH_ADMIN_API_KEYS` entry |
+| `CONTROL_PLANE_HMAC_SECRET` | *(empty)* | Must match the CP's `WEBHOOK_SECRET`; signs forwarded webhooks and run notifications. **Empty sends them unsigned** |
+| `CONTROL_PLANE_ADMIN_TOKEN` | *(empty)* | Admin bearer for the CP calls `introspect`, `revocations`, `events`, `declare_capability` and `reload_pinned_keys` (each returns `None` without it); matches a CP `AUTH_ADMIN_API_KEYS` entry. Domain-pack listing does **not** need it |
 
 `Settings.control_plane_enabled` is simply `bool(control_plane_url)`.
 
@@ -62,21 +62,26 @@ Use `LLM_PROVIDER=mock` for fully offline runs (deterministic echo, no key).
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `DEFAULT_SIGNATURE_ALG` | `ed25519` | `ed25519` \| `ecdsa-p256` — default signer for agents that don't override |
-| `TENANCY_ENABLED` | `false` | Attach tenant context in tenancy-aware scenarios; off keeps S1–S8 single-tenant |
-| `JWT_SIGNING_ALG` | `HS256` | `HS256` \| `EdDSA` — informational on the playground side (it verifies via JWKS when needed) |
+| `DEFAULT_SIGNATURE_ALG` | `ed25519` | `ed25519` \| `ecdsa-p256` — intended default signer |
+| `TENANCY_ENABLED` | `false` | Intended switch for tenant context in tenancy-aware scenarios |
+| `JWT_SIGNING_ALG` | `HS256` | `HS256` \| `EdDSA` — informational only |
+
+These three are declared and validated (an invalid value fails startup) but
+**no code currently reads them**: scenarios pick their algorithm per call
+(`producer_for(..., algorithm=...)`) and their tenancy explicitly, so changing
+them has no effect on a run today.
 
 ### Logging
 
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `LOG_FORMAT` | `pretty` | `pretty` (human) \| `json` (structured) |
-| `LOG_LEVEL` | `INFO` | Standard Python log level |
+| `LOG_LEVEL` | `INFO` | Standard Python log level name; case-insensitive (upper-cased before use) |
 
 ## The consumer SSRF guard
 
 There is **no env toggle** — `acdp_client.safe_http` is always enforced on the
-`data_refs[].location` fetch path (RFC-ACDP-0008 §4.9): https-only,
+`data_refs[].location` fetch path ([RFC-ACDP-0008](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0008-security.md) §4.9): https-only,
 private/loopback/IMDS blocked, same-authority redirects only, mixed-DNS-answer
 rejection — orchestration only; the policy itself is the SDK's. See
 [Client SDK → safe_http](client-sdk.md#safe_httppy--consumer-ssrf-guard-orchestration-only).
@@ -91,7 +96,8 @@ the JCS-vectors test at the sibling RFC repo; the test skips if absent.
 not the playground. The compose file bakes in secure-but-demo-friendly defaults;
 `.env.example` lists the overrides (audience binding, strict tenancy, ingest DoS
 caps, outbound-webhook SSRF policy, federation feeds, the CP `default`-tenant
-fail-fast rule, the registry loopback-bind rule, …).
+fail-fast rule, the registry loopback-bind rule, the CP's `DOMAIN_PACKS` and
+`POLICY_BACKEND`, …). None of them is a playground setting.
 
 These are **documented by the projects that own them** — don't treat the
 playground as their reference:

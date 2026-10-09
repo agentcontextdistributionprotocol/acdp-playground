@@ -4,6 +4,85 @@ Notable changes to the ACDP stack as observed from the playground.
 Tracks cross-repo work — playground, control plane, registry, SDK —
 so operators reading any one repo can see the system-wide picture.
 
+## 2026-10-09 — Docs re-synced with the code
+
+A docs-only pass bringing `docs/`, `README.md` and `CLAUDE.md` back in line with
+the code, and shrinking restatements of sibling-owned rules to short summaries
+plus links to the RFCs, `acdp-rs`, registry and control-plane docs.
+
+### Docs
+
+- **Scenario catalog** — names match `ScenarioDef.name`; per-scenario identity
+  (`did:key` / `did:web`), LLM use (10 of 34), control-plane need and
+  degradation are read from the catalog source. The live token-issuance caveat
+  now names **S10 only**.
+- **HTTP API, architecture, agents, configuration** — corrected against
+  `playground/api/*`, `control_plane.py`, `agents/*` and `config.py`; the
+  SSE mid-run disconnect behaviour is documented as current behaviour with
+  issue #92.
+- **Testing** — four layers, including the opt-in real-LLM suite and a
+  live-gate table (`ACDP_LIVE_STACK`, `ACDP_LIVE_SSE`, `ACDP_LIVE_REAL_LLM`).
+- **CI / deployment** — every workflow listed (`auto-merge.yml`,
+  `bump-acdp.yml` added; `deploy-images.yml` builds the playground image only),
+  `railway.json` described, registry-a's `pinned_only = true` stated
+  correctly, and the full stack's Postgres `db` and UI console named.
+- **SDK bumps** — lockfile bumps are automated by `bump-acdp.yml`; the pin is
+  raised by hand only for new API; Dependabot is monthly and ignores `acdp`.
+
+## 2026-10-07 — Opt-in real-LLM suite for S1–S34 (#91)
+
+Adds `tests/live/test_live_scenarios_real_llm.py`: 34 tests that run every
+scenario through `POST /runs` on a `make up-full` stack with a real LLM
+provider, assert each scenario's documented `summary`, and re-fetch and
+re-verify every produced `ctx_id` through a fresh `AcdpClient` (content hash,
+`did:key` signature, registry receipt). Double-gated — it needs
+`ACDP_LIVE_STACK=1` **and** `ACDP_LIVE_REAL_LLM=1` — so `make test-live` and CI
+never bill a key. `PLAYGROUND_URL` (default `http://localhost:8000`) points it
+at the playground.
+
+## 2026-10-06 — `acdp` 0.14.3 → 0.14.5 lockfile bumps (#88, #89, #90)
+
+Three automated `uv.lock`-only bumps opened by `bump-acdp.yml`: 0.14.3 (#88,
+2026-10-03), 0.14.4 (#89, 2026-10-04) and 0.14.5 (#90, 2026-10-06). The
+`acdp>=0.14.1` pin in `pyproject.toml` did not move and no playground code
+changed; CI, including the SDK surface guard, passed on each.
+
+## 2026-10-03 — S6 no longer truncates its own SSE stream (#87)
+
+S6 emitted its own `run.error`-typed event mid-run when its access checks came
+out wrong. The SSE endpoint ends a stream on the first `run.complete` /
+`run.error` it sees, so the stream closed before the runner's real terminal
+event arrived. The mid-run event is now a `scenario.note`, matching the other
+catalog scenarios, with an end-to-end regression test over the real SSE
+endpoint. `GET /runs/{id}` was never affected. Fixes #85.
+
+## 2026-10-02 — `run.complete` / `run.error` carry the run's status (#86)
+
+A scenario that returned `status: "failed"` without raising still streamed a
+plain `run.complete`, so an SSE-only consumer could not tell it from a success.
+`StepEvent` gains an optional `status` field, which the runner fills from
+`RunResult.status` on both terminal events (additive; `GET /runs/{id}` and the
+control-plane notification were already correct). Fixes #84.
+
+## 2026-09-30 — S7 supersession uses the real supersede path (#82)
+
+S7 published v2 as a plain derived publish, so v1 and v2 landed on two
+unrelated lineages. v2 now goes through `agent.supersede()` /
+`build_supersede_request()`, `lineage()` / `current()` are queried for real,
+and the run reports `failed` if the lineage length isn't 2 or `/current`
+doesn't resolve to v2. Fixes #81.
+
+## 2026-09-27 — `acdp` 0.14.2 + live self-signed key-revocation probe (#79, #80)
+
+`uv.lock` moved to `acdp` **0.14.2** (#79, automated); its only change is a
+Rust-internal error-chain fix with no Python-visible surface, so the pin stayed
+at `acdp>=0.14.1`. #80 adds
+`playground/conformance.py::probe_key_revocation_self_sign_rejected`, the first
+live check of RFC-ACDP-0014 §5 step 2 (a key cannot attest its own compromise),
+with a `MockTransport` counterpart that serves the wrong answer. It probes the
+standard `key-revocation` spelling, because registry-a advertises 0.5.0+ where
+the interim spelling is already retired.
+
 ## 2026-09-25 — Every service now answers "which build is running?" on `GET /healthz`
 
 Until this month nothing in the stack could answer that over HTTP. No service's

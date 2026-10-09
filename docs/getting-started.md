@@ -69,8 +69,8 @@ This launches the playground on `:8000`, `registry-a` (the receipts/lifecycle/
 transparency-log profile) on `:8100`, and `registry-b` on `:8200` via
 `docker-compose.yml`.
 
-For the full stack (adds the control plane on `:3001` and the UI console on
-`:3000`):
+For the full stack (adds the control plane on `:3001`, the Postgres `db` it
+requires, and the UI console on `:3000`):
 
 ```bash
 make up-full
@@ -118,9 +118,9 @@ The SSE stream emits one `StepEvent` per protocol action — `agent.started`,
 | `make smoke-live` | Smoke checks against a running full stack |
 | `make test` | Unit suite (`pytest -q`, offline) |
 | `make cov` | Unit suite with the coverage gate CI enforces (≥ 80%) |
-| `make test-live` | Live conformance suite (needs `make up-full`) |
+| `make test-live` | Live conformance probes (needs `make up-full`); the SSE de-dup and real-LLM tests are collected but skip without their own gates |
 | `make up` / `make down` | Playground + two registries |
-| `make up-full` / `make down-full` | Full stack incl. control plane |
+| `make up-full` / `make down-full` | Full stack incl. control plane, its `db`, and the UI console |
 | `make docker` | Build the compose images without starting them |
 | `make fmt` / `make lint` | `ruff format` / `ruff check` |
 | `make clean` | Remove `.venv` and caches |
@@ -134,3 +134,8 @@ Everything except real registry calls runs without external services:
 - Scenarios **S16**, **S19**, **S20**, **S21** are fully offline by design
   (injected DNS resolver / no network), proving crypto and guard logic without
   any running infrastructure.
+
+The opposite end is opt-in: a real-LLM suite that runs all 34 scenarios against
+a running full stack with a real provider key. It bills that key, so it needs
+`ACDP_LIVE_REAL_LLM=1` on top of `ACDP_LIVE_STACK=1` and no Makefile target sets
+it — see [Testing & conformance](testing-and-conformance.md#real-llm-scenario-suite).

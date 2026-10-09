@@ -20,15 +20,17 @@ BasePlaygroundAgent(
 ```
 
 Class attribute `framework` identifies the adapter (`"base"`, `"langchain"`,
-`"crewai"`, `"langgraph"`); it is stamped into published metadata for
-observability.
+`"crewai"`, `"langgraph"`); it is stamped into published metadata as
+`agent_framework` and onto every emitted `StepEvent` as `framework`, for
+observability. (It is unrelated to `ScenarioDef.framework`, which is catalog
+metadata.)
 
 ### Core operations
 
 | Method | What it does |
 |--------|--------------|
 | `publish(task, llm_result)` | Builds the signed publish request via `producer.build_publish_request(...)`, POSTs it through `client.publish(...)` (forwarding `task.idempotency_key`), emits `acdp.publish`, returns `AgentOutput` |
-| `supersede(previous_body_json, task, llm_result, *, expected_lineage_id=None)` | Carries the lineage forward + auto-increments the version via `build_supersede_request(...)`; optional `expected_lineage_id` is the concurrency guard |
+| `supersede(previous_body_json, task, llm_result, *, expected_lineage_id=None)` | Carries the lineage forward + auto-increments the version via `build_supersede_request(...)`; optional `expected_lineage_id` is the concurrency guard. Forwards only `title`, `summary`, `tags`, `domain`, `metadata` and the extended `data_refs`/`data_period`/`expires_at` from the task (not `context_type`, `visibility`, `derived_from`, `audience`, `contributors`, `schema_uri` or `idempotency_key`). Emits `acdp.publish` — there is no separate supersede event type |
 | `retrieve(ctx_id)` | Cross-registry-aware retrieval via `client.resolve(ctx_id, authority_map)`; emits `acdp.retrieve` |
 | `search(**filters)` | `client.search(...)`; emits `acdp.search` |
 | `call_llm(prompt)` | Abstract — subclasses implement the LLM call |
@@ -38,7 +40,9 @@ observability.
 
 1. Emit `agent.started` with the task title.
 2. **Grounding** — if `task.derived_from` is set, retrieve up to the first two
-   referenced contexts and prepend them (with agent id + title) to the prompt.
+   referenced contexts and **append** them to the prompt after a
+   `Use this grounding material:` line, each as
+   `[ground: <last DID segment> — <title>]` followed by its `summary`.
 3. **LLM** — if `task.override_response` is set (tests), use it; otherwise emit
    `llm.thinking` and call `call_llm(prompt)`.
 4. **Publish** — call `publish(task, llm_result)` and return the `AgentOutput`.
@@ -60,8 +64,13 @@ The unit of work an agent runs. Notable fields:
 | `override_response` | Bypass the LLM (deterministic tests) |
 | `summary_chars` | Truncation budget for the summary |
 
-`_publish_kwargs` omits empty fields to keep the content-hash preimage minimal
-and JSON-encodes `metadata`, `data_refs`, and `data_period`.
+`_publish_kwargs` keeps the content-hash preimage minimal in two ways: empty
+list fields (`tags`, `derived_from`, `audience`, `contributors`) and unset
+`domain`/`schema_uri` are passed to the SDK as `None`, while the extended
+fields `data_refs`, `data_period` and `expires_at` are left out of the kwargs
+entirely when empty. `metadata` (always present — framework, run id and slug
+merged with `task.metadata`), `data_refs` and `data_period` are JSON-encoded.
+`summary` is the LLM result truncated to `summary_chars`.
 
 ### `AgentOutput`
 
@@ -72,12 +81,16 @@ Returned by `publish`/`run`: `ctx_id`, `lineage_id`, `version`, `title`,
 
 All three read the LLM provider from settings (`LLM_PROVIDER`, `LLM_MODEL`, and
 the matching API key) and lazy-import their heavyweight dependencies so the base
-install stays light.
+install stays light. Only `LangChainAgent` goes through `build_llm`; the other
+two construct their models inline (see below).
 
 > **Catalog usage.** `LangChainAgent` via `_factory.make_langchain_agent` is
 > the only adapter any scenario uses, and only a subset of the catalog uses
-> it: 15 of the 34 scenarios (S1–S11, S15, S17, S18, S26) drive an LLM agent
-> that way. The rest are deterministic protocol-conformance scenarios that
+> it: 15 of the 34 scenarios (S1–S11, S15, S17, S18, S26) build one. Building
+> an agent is not the same as calling the LLM: only **10** of them (S1–S8,
+> S10, S11) reach `call_llm` (via `agent.run(...)` or a direct call); the
+> others use the agent only for its identity and `publish`/`supersede`/
+> `retrieve` helpers with fixed text. The rest are deterministic protocol-conformance scenarios that
 > need no LLM — most drive producers directly through `_factory`'s
 > `producer_for` / `AgentBundle` helpers or a raw `AcdpProducer` (as S33
 > does), and a few (S12, S13, S14, S16, S20) build no producer at all,
@@ -91,19 +104,25 @@ install stays light.
 ### `LangChainAgent` (`framework = "langchain"`)
 
 The default. If no `llm` is passed, it builds one from settings via
-`build_llm(...)`. `call_llm(prompt)` calls `llm.ainvoke(prompt)` and returns
-`.content`.
+`build_llm(...)` (with `OPENAI_API_KEY` for `openai`, else
+`ANTHROPIC_API_KEY`). `call_llm(prompt)` calls `llm.ainvoke(prompt)` and
+returns `.content`.
 
 ### `CrewAIAgent` (`framework = "crewai"`)
 
 Wraps CrewAI as a "crew of one" with configurable `role` / `goal` / `backstory`.
-The agent is lazy-built on first call. Because CrewAI's execution is synchronous,
+The agent is lazy-built on first call with a `ChatOpenAI`/`ChatAnthropic` model
+for `openai`/`anthropic`; for any other provider (including `mock`) it passes
+`llm=None`, leaving model selection to CrewAI's own defaults — so the mock
+provider is **not** offline here. Because CrewAI's execution is synchronous,
 `call_llm` offloads `task.execute_sync()` to a thread via `asyncio.to_thread`.
 
 ### `LangGraphAgent` (`framework = "langgraph"`)
 
 A minimal two-node graph — `think` (drafts an outline) → `respond` (calls the
 LLM) → `END`. State is a `TypedDict` of `prompt` / `draft` / `answer`. The
+model is `ChatOpenAI`/`ChatAnthropic` for `openai`/`anthropic` and the
+deterministic mock for **any other** provider value (no `ValueError`). The
 compiled app is cached; `call_llm` invokes it and returns the `answer`.
 
 ## The LLM factory
@@ -112,14 +131,13 @@ compiled app is cached; `call_llm` invokes it and returns the `answer`.
 
 | `provider` | Result |
 |------------|--------|
-| `mock` | `_MockLLM` — echoes the first line of the prompt (deterministic, no key) |
+| `mock` | `_MockLLM` — deterministic, no key; returns `MOCK_LLM_RESPONSE :: echoing first line: <first prompt line, ≤80 chars> :: this would be an LLM-generated answer in production.` |
 | `openai` | `langchain_openai.ChatOpenAI(model, api_key)` |
 | `anthropic` | `langchain_anthropic.ChatAnthropic(model, api_key)` |
 
-Unknown providers raise `ValueError`. Set `LLM_PROVIDER=mock` for offline smoke
-and CI runs.
+Unknown providers raise `ValueError` (in `build_llm` only — see the CrewAI and
+LangGraph notes above). Set `LLM_PROVIDER=mock` for offline smoke and CI runs.
 
-> When building real LLM applications on top of ACDP, prefer the latest Claude
-> models (e.g. `claude-opus-4-8`, `claude-sonnet-4-6`). The playground's
-> `anthropic` provider passes `LLM_MODEL` straight through to
-> `langchain-anthropic`.
+`LLM_MODEL` defaults to `gpt-4o-mini` (an OpenAI model) and is passed straight
+through to whichever provider is selected — so `LLM_PROVIDER=anthropic` also
+needs `LLM_MODEL` set to an Anthropic model id.

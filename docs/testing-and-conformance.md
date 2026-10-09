@@ -1,11 +1,20 @@
 # Testing & conformance
 
-The playground has three test layers, increasing in fidelity:
+The playground has four test layers, increasing in fidelity (and cost):
 
 1. **Smoke test** — `scripts/smoke_test.py` — fast offline wiring checks
 2. **Unit suite** — `tests/` — offline, asserts against `httpx.MockTransport`
 3. **Live conformance** — `tests/live/` + `playground/conformance.py` — probes a
    real running stack to catch mock drift
+4. **Real-LLM scenario suite** — `tests/live/test_live_scenarios_real_llm.py` —
+   opt-in; runs the whole S1–S34 catalog through a running playground with a
+   real LLM provider and re-verifies everything it published
+
+The SDK's own conformance suite (vectors, fixtures, the cross-language matrix)
+lives in `acdp-rs` — see its
+[conformance.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/conformance.md).
+The layers here test the *playground's* wiring and the deployed stack's
+observable contracts, not the SDK's primitives.
 
 ## Smoke test
 
@@ -97,8 +106,10 @@ bound method.
 Arities count `self` for instance methods (`inspect.signature` on the unbound
 descriptor sees it), so `AcdpProducer.sign_challenge` is `(2, 2)`.
 
-**Updating it on an SDK bump.** Raise the `acdp>=` pin in `pyproject.toml`,
-`uv lock`, then run `uv run pytest tests/test_sdk_surface.py`. A red entry is a
+**Updating it on an SDK bump.** Routine lockfile bumps arrive as automated PRs
+(see [SDK bumps](#sdk-bumps)) and CI runs this guard on them. When a release
+adds API the playground wants to call, raise the `acdp>=` pin in
+`pyproject.toml`, `uv lock`, then run `uv run pytest tests/test_sdk_surface.py`. A red entry is a
 work item, not a number to edit: read the new signature, fix the call sites, and
 move the entry last. Editing `EXPECTED_SURFACE` without touching the callers
 re-hides exactly the break the guard exists to surface. A new SDK call added to
@@ -156,9 +167,14 @@ contracts against a running `make up-full` stack.
 
 ```bash
 make up-full          # in another shell
-make test-live        # ACDP_LIVE_STACK=1 pytest -m live
+make test-live        # ACDP_LIVE_STACK=1 uv run pytest -m live -q
 make smoke-live       # scripts/smoke_test.py --live
 ```
+
+`make test-live` collects everything under `tests/live/`: the 18 conformance
+probes in `test_live_conformance.py` run, while the SSE de-dup check and the
+real-LLM suite are collected but **skip** unless their own extra gate is set
+(see [Live gates](#live-gates)).
 
 The probes live in `playground/conformance.py`, in three ordered groups shared
 by both entry points.
@@ -172,13 +188,13 @@ by both entry points.
 | `probe_ingest_body_limit_413` | A >1 MiB body → **413** before parsing |
 | `probe_receipts_profile_advertised` | `acdp-registry-receipts` is advertised and `acdp_version` is at or above the probe's floor (a *minimum*, not an allowlist — the registry's version legitimately climbs as RFCs land) |
 | `probe_did_key_method_advertised` | `did:key` appears in `supported_did_methods` — the gate the ephemeral-agent scenarios publish through |
-| `probe_served_ctx_id_binding` | A retrieval serves back the **same** `ctx_id` it was asked for, on both `/contexts/{id}` and `/contexts/{id}/body` (RFC-ACDP-0006 §4.1 step 7) |
-| `probe_media_type_gate` | `POST /contexts` gates on `Content-Type` per RFC-ACDP-0007 §4.1 — `text/plain` → **415** `unsupported_media_type`, a `charset` parameter accepted, an absent header accepted *on this route* |
-| `probe_interim_revocation_type_rejected` | A new publish typed `acdp:key-revocation` → **400** `schema_violation` (RFC-ACDP-0014 §10 retirement) |
-| `probe_anchors_require_0_5_0` | A publish carrying `anchors` while declaring `acdp_version` below 0.5.0 → **400** `schema_violation` (RFC-ACDP-0016 §14) |
+| `probe_served_ctx_id_binding` | A retrieval serves back the **same** `ctx_id` it was asked for, on both `/contexts/{id}` and `/contexts/{id}/body` ([RFC-ACDP-0006](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0006-cross-registry.md) §4.1 step 7) |
+| `probe_media_type_gate` | `POST /contexts` gates on `Content-Type` per [RFC-ACDP-0007](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0007-capabilities.md) §4.1 — `text/plain` → **415** `unsupported_media_type`, a `charset` parameter accepted, an absent header accepted *on this route* |
+| `probe_interim_revocation_type_rejected` | A new publish typed `acdp:key-revocation` → **400** `schema_violation` ([RFC-ACDP-0014](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0014-key-revocation.md) §10 retirement) |
+| `probe_anchors_require_0_5_0` | A publish carrying `anchors` while declaring `acdp_version` below 0.5.0 → **400** `schema_violation` ([RFC-ACDP-0016](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0016-external-anchors.md) §14) |
 | `probe_key_revocation_self_sign_rejected` | A `key-revocation` publish naming its own signer as the revoked key → **403** `key_not_authorized` (RFC-ACDP-0014 §5 step 2) |
 
-**0.3.0 endpoint contracts** (`ENDPOINT_0_3_0_PROBES`, RFC-ACDP-0011/0012/0013):
+**0.3.0 endpoint contracts** (`ENDPOINT_0_3_0_PROBES`, [RFC-ACDP-0011](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0011-lineage-head-receipts.md), [0012](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0012-transparency-log.md), [0013](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0013-lifecycle-events.md)):
 
 | Probe | Asserts |
 |-------|---------|
@@ -223,66 +239,80 @@ a no-op.
 
 These pin contracts the siblings enforce today that no scenario would notice
 regressing — each one's *observable* behaviour in the playground is identical
-whether the gate exists or not.
+whether the gate exists or not. The rules themselves belong to the RFCs; the
+probe docstrings in `playground/conformance.py` record the playground-specific
+reasoning.
 
-- **`probe_media_type_gate`** is deliberately two-sided. `AcdpClient` labels
-  every request `application/json`, so a registry that narrowed its accept-set
-  to `application/acdp+json` alone would break every publish, retract and
-  republish at once — and a reject-only probe would stay green straight
-  through it. So the probe asserts the rejection (`text/plain` → 415
-  `unsupported_media_type`, checked on the **envelope code**, not the status
-  alone, so a proxy answering 415 can't be mistaken for a conformant registry)
-  *and* both accept cases. The header-less accept is scoped to `POST /contexts`
-  and must not be generalized: that route infers a type for a body with no
-  `Content-Type`, while `/auth/*` rejects one with 415 — a per-route divergence
-  the registry documents and intends. Its two accept-side publishes share one
-  `Idempotency-Key`, so the probe adds at most one context to the registry
-  however often it runs.
-- **`probe_interim_revocation_type_rejected`** pins the RFC-ACDP-0014 §10
-  *retirement* of the interim `acdp:key-revocation` context type. S32 publishes
-  the modern `key-revocation` spelling, so the playground would notice nothing
-  if a registry started accepting the interim form again. The probe publishes a
-  schema-**valid** revocation body under the interim type on purpose: a
-  malformed one answered 400 `schema_violation` long before §10 existed, so a
-  broken body would pass green against a registry with no retirement gate at
-  all. For the same reason it requires the message to name the offending type —
-  `schema_violation` is the generic body-rejection code and can't say which rule
-  fired. Scoped to registries advertising 0.5.0 or above; below that line §10
-  requires the interim form to be treated as an opaque custom type and
-  *accepted*.
-- **`probe_anchors_require_0_5_0`** pins the RFC-ACDP-0016 §14 gate S33 depends
-  on: `anchors` carried under a declared `acdp_version` below 0.5.0 is refused.
-  S33 only ever publishes the accepted side. No version scoping is needed — on
-  an older registry the other half of the same gate (§10, the registry's own
-  advertised version) refuses the publish with the same status and code.
-- **`probe_key_revocation_self_sign_rejected`** pins RFC-ACDP-0014 §5 step 2: a
-  key cannot attest its own compromise. S32 only ever publishes K2's revocation
-  of a *different* key (K1) — its own `self_signed_rejected` assertion checks
-  the SDK's offline classification of an already-retrieved body, never a live
-  publish — so nothing else would notice a registry that let a self-signed
-  revocation through. This is also the probe that would have caught acdp-rs
-  #301's regression (a dropped §5 step-2 check for the interim
-  `acdp:key-revocation` spelling), except this playground's own registry-a
-  always advertises `acdp_version >= 0.5.0` (RFC-ACDP-0016's `anchors` claim is
-  unconditional), where that spelling is already retired outright by
-  `probe_interim_revocation_type_rejected`. So it asserts the same rule against
-  the standard `key-revocation` spelling instead — a check path #301 never
-  touched, but one nothing had ever proven enforced live before. The message
-  assertion requires it to name the self-sign rule specifically:
-  `key_not_authorized` is reused for other identity-binding mismatches (e.g. a
-  did:web `agent_id` mismatch), so the code alone can't say which rule fired.
+- **`probe_media_type_gate`** — two-sided on purpose: it asserts the `text/plain`
+  → 415 rejection (on the envelope code) *and* the accept cases `AcdpClient`
+  relies on, since it labels every request `application/json`. The header-less
+  accept is specific to `POST /contexts`. See
+  [RFC-ACDP-0007](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0007-capabilities.md).
+- **`probe_interim_revocation_type_rejected`** — the §10 retirement of the
+  interim `acdp:key-revocation` type, probed with a schema-*valid* body so a
+  generic 400 can't pass it; scoped to registries advertising 0.5.0 or above.
+  See [RFC-ACDP-0014](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0014-key-revocation.md).
+- **`probe_anchors_require_0_5_0`** — the §14 gate S33 depends on but only ever
+  exercises from the accepted side. See
+  [RFC-ACDP-0016](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0016-external-anchors.md).
+- **`probe_key_revocation_self_sign_rejected`** — §5 step 2 (a key cannot attest
+  its own compromise), which S32 never publishes live. It is probed with the
+  standard `key-revocation` spelling because registry-a always advertises
+  0.5.0+, where the interim spelling (the one acdp-rs #301 regressed) is already
+  retired. See
+  [RFC-ACDP-0014](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0014-key-revocation.md).
 
 Each has a `MockTransport` counterpart in `tests/test_conformance_probes.py`
 that serves the *wrong* answer and asserts the probe raises, so none of them can
-decay into a check that passes against any registry at all.
+decay into a check that passes against any registry at all. Those counterparts
+run on every plain `pytest`; the live probes do not.
 
-The live probes are **skipped unless `ACDP_LIVE_STACK` is set** (their
-`MockTransport` counterparts above are not — those run on every plain
-`pytest`). The SSE de-duplication
-check additionally needs `ACDP_LIVE_SSE=1` (the bug only reproduces on a Redis
-`StreamHub`; the demo stack is memory-backed). CI runs the live suite on manual
-`workflow_dispatch` **and on a weekly schedule** (Mondays 05:17 UTC) — the
-schedule is the mock-drift tripwire.
+### Live gates
+
+Everything under `tests/live/` is tagged `live` by `tests/live/conftest.py` and
+skipped unless `ACDP_LIVE_STACK` is set. Two files add a second gate:
+
+| File | Tests | Needs | Why the extra gate |
+|------|-------|-------|--------------------|
+| `test_live_conformance.py` | 18 (one per probe) | `ACDP_LIVE_STACK=1` | — |
+| `test_live_sse_dedup.py` | 1 | `ACDP_LIVE_STACK=1` **and** `ACDP_LIVE_SSE=1` | The SSE de-dup bug only reproduces on a Redis `StreamHub`; the demo stack is memory-backed |
+| `test_live_scenarios_real_llm.py` | 34 (S1–S34) | `ACDP_LIVE_STACK=1` **and** `ACDP_LIVE_REAL_LLM=1` | Bills a real LLM API key |
+
+### Real-LLM scenario suite
+
+`tests/live/test_live_scenarios_real_llm.py` is the only layer that runs the
+scenario catalog end to end against real infrastructure. For each of S1–S34 it:
+
+1. starts the run through the playground's own API (`POST /runs`) and polls
+   `GET /runs/{id}` until it leaves `running` (240 s timeout per run);
+2. asserts the scenario's documented `summary` fields, not just
+   `status: complete`;
+3. re-fetches every produced `ctx_id` through a fresh `AcdpClient` and
+   re-verifies the content hash, the signature (offline, for `did:key`
+   producers) and, where registry-a mints one, the registry receipt.
+
+It talks to the playground over HTTP only, at `PLAYGROUND_URL` (default
+`http://localhost:8000`), so the playground's own `.env` decides the provider:
+set `LLM_PROVIDER` to `openai` or `anthropic` with a real key before
+`make up-full`. Only the 10 scenarios that call the configured LLM (S1–S8,
+S10, S11 — see the [catalog](scenarios.md#the-catalog)) actually spend tokens;
+the rest run their protocol paths with no model call.
+
+```bash
+make up-full                                    # with a real LLM key in .env
+ACDP_LIVE_STACK=1 ACDP_LIVE_REAL_LLM=1 uv run pytest tests/live/test_live_scenarios_real_llm.py
+```
+
+No Makefile target sets `ACDP_LIVE_REAL_LLM`, so `make test-live` collects the
+file and skips it, and CI never runs it. Known special cases, each asserted at
+its own test:
+
+- **S10** — degraded is the *expected* outcome on a stock stack (its per-run
+  `did:web` agents can't obtain live tokens).
+- **S23** — never opens a real socket, so it says nothing about the stack.
+- **S12, S14, S24** — touch fixed, non-run-scoped state (pinned keys, a fixed
+  ingested `ctx_id`, a pinned identity); safe to re-run, but S24 adds one more
+  context to registry-a on every run.
 
 ## Linting & formatting
 
@@ -301,13 +331,31 @@ before pushing.
 
 | Job | When | What |
 |-----|------|------|
-| `test` | push / PR | `ruff check` + `ruff format --check`, pytest with the 80% coverage gate, smoke test — on Python **3.12 and 3.13** |
+| `test` | push to `main` / PR / `workflow_dispatch` | `ruff check` + `ruff format --check`, pytest with the 80% coverage gate, smoke test — on Python **3.12 and 3.13**, with `LLM_PROVIDER=mock` |
 | `docker` | PR | Builds the playground image (no push) so a broken `Dockerfile` can't hide until the next release tag; shares the release workflow's layer cache |
-| `live` | `workflow_dispatch` / weekly schedule | Boots registry-a + control-plane from the sibling repos and runs `pytest -m live` + `smoke_test.py --live`; uploads compose logs as an artifact on failure |
+| `live` | `workflow_dispatch` / weekly schedule (Mondays 05:17 UTC) | Boots registry-a + control-plane (and the `db` it depends on) from the sibling repos, then runs `ACDP_LIVE_STACK=1 pytest -m live` + `smoke_test.py --live`; uploads compose logs as an artifact on failure |
 
-Superseded pushes to the same PR cancel the in-flight run. Dependency bumps
-arrive weekly via Dependabot (`uv` lockfile + GitHub Actions, grouped; the
-`acdp` SDK pin is excluded — bumping it is a by-hand semantic change).
+The `live` job sets only `ACDP_LIVE_STACK`, so of `tests/live/` it runs the 18
+conformance probes; the SSE de-dup check and the real-LLM suite skip there (the
+playground app itself isn't booted in that job). The weekly schedule is the
+mock-drift tripwire. Superseded pushes to the same PR cancel the in-flight run.
+
+The other workflows (`auto-merge.yml`, `bump-acdp.yml`, `deploy-images.yml`,
+`notify-website.yml`) are listed in [Deployment → CI/CD](deployment.md#cicd).
+
+### SDK bumps
+
+- **Lockfile bumps are automated.** `bump-acdp.yml` runs on an `acdp-released`
+  `repository_dispatch` (or manually, with an optional exact version) and calls
+  the shared `acdp-ci`
+  [`bump-consume.yml`](https://github.com/agentcontextdistributionprotocol/acdp-ci/blob/main/.github/workflows/bump-consume.yml)
+  workflow, which runs `uv lock --upgrade-package acdp`, opens a PR and — for a
+  non-breaking bump — arms auto-merge. The pin in `pyproject.toml` stays put;
+  CI (including the [SDK surface guard](#sdk-surface-guard)) gates the merge.
+- **The pin is raised by hand** only when the playground starts using new SDK
+  API — that is a semantic change, recorded in the annotated pin comment.
+- **Dependabot** opens grouped monthly PRs for the other `uv` dependencies and
+  GitHub Actions; it ignores `acdp`.
 
 ## Helper scripts
 

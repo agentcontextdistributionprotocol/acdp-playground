@@ -5,8 +5,8 @@
 Two compose files describe the stack:
 
 - **`docker-compose.yml`** — the playground + two registries
-- **`docker-compose.full.yml`** — an overlay adding the control plane and UI
-  console (run together via `make up-full`)
+- **`docker-compose.full.yml`** — an overlay adding the control plane, its
+  Postgres `db`, and the UI console (run together via `make up-full`)
 
 The playground image builds with `context: .` (this repo) — the `acdp` SDK
 installs from PyPI, so no sibling checkout is needed. The registry / control
@@ -40,22 +40,26 @@ The playground-relevant choices in them are:
 - `authority` / `port` — `registry-a.playground.local:8100`,
   `registry-b.playground.local:8200`
 - `cross_registry_resolution = true` — lets S5 route an edge across registries
-- `auth.anonymous_public_reads = true`, `require_tenant = false` — keeps the
-  legacy single-tenant scenarios (S1–S8) working with anonymous publish
-- **registry-a runs the receipts profile alongside** the `[playground]` lax
-  mode (`pinned_only = true` — a receipts-advertising registry must verify
-  every publish, so the unverified fallback is closed instead) — the
-  S22/S24/S27 receipt scenarios and the S28–S31 lifecycle/log/witness
-  scenarios all target it; registry-b stays plain core+discovery. What the
-  receipts profile commits the registry to (verify-every-publish, atomic
-  receipt mint, profile advertisement) is registry-owned — see its
+- `auth.enabled = true` with `did_methods = ["did:web", "did:key"]` — auth is
+  on so S6 can run the challenge/token flow; `anonymous_public_reads = true`
+  and `require_tenant = false` keep the token-less scenarios (public reads,
+  unbound producer-signed publishes) working
+- **registry-a runs the receipts, head-receipt, lifecycle and transparency-log
+  profiles** — the S22/S24/S27 receipt scenarios and the S28–S31
+  lifecycle/log/witness scenarios target it; registry-b stays plain
+  core+discovery. What those profiles commit the registry to is
+  registry-owned — see its
   [RECEIPTS.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/RECEIPTS.md)
+- registry-a's `[playground] pinned_only = true` — a receipts-advertising
+  registry must verify every publish, so the unverified fallback is closed: a
+  publish must carry a verified `did:key` signature or match a currently-valid
+  pinned key. That is why nearly every publishing scenario uses `did:key`; the
+  pinned `did:web` identities are the exceptions — `rotating-publisher` (the
+  key-rotation windows S12 demonstrates), `rotating-historical` (the stable
+  identity S24 publishes under) and `p256-publisher`
 - `webhook.enabled = false` — the registry's SSRF policy refuses the loopback
   `http://playground:8000` target in the demo (webhook-driven events are
   exercised in the unit suite instead)
-- `[playground]` pinned keys — a demo-only block that lets the playground's
-  per-run `did:web` agents publish without live DID resolution (see the
-  [live auth caveat](#live-auth-caveat))
 
 The `[[playground.pinned_keys]]` entries also demonstrate **key rotation** (the
 `rotating-publisher` agent has overlapping old/new Ed25519 windows, plus a
@@ -86,15 +90,20 @@ for Railway.
 
 ## Live auth caveat
 
-The registry verifies challenge signatures by resolving the agent's `did:web`
-document. The playground's `*.playground.local` DIDs aren't web-hosted and keys
-rotate per run, so token issuance **can't fully complete against a stock
-registry**. The auth-dependent scenarios are built to
-[**degrade gracefully**](scenarios.md#graceful-degradation) and are validated by
-the unit suite (mocked registry/CP). The deterministic cores — P-256 crypto,
-cursor logic, tenant-header policy, rotation windows, `Retry-After` — are fully
-exercised offline. The `[playground] pinned_only = false` + pinned-key config is
-what lets the demo's run-keyed agents publish without live DID resolution.
+For a `did:web` agent, the registry verifies challenge signatures by resolving
+the agent's DID document. The playground's `*.playground.local` DIDs aren't
+web-hosted and per-run keys change every run, so token issuance for a per-run
+`did:web` agent **can't complete against a stock registry**. Of the
+token-issuing scenarios that affects **S10 only**: it
+[**degrades gracefully**](scenarios.md#graceful-degradation) and its
+deterministic core is validated by the unit suite. S6 and S11 use
+self-certifying `did:key` agents (the registry verifies the key embedded in the
+DID, no fetch) and complete live. The pinned `did:web` identities above publish
+because their keys are pinned, not resolved. Running the registry itself
+(admin endpoints, migrations, rate limits, version-to-version changes) is
+covered by its
+[OPERATIONS.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/OPERATIONS.md)
+and [UPGRADING.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/UPGRADING.md).
 
 ## Railway
 
@@ -120,6 +129,16 @@ wiring. Key points:
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `ci.yml` | push / PR | `ruff check` + `ruff format --check`, the offline unit suite with an 80% coverage gate on Python 3.12 + 3.13, smoke test; PRs also build the playground image (no push); live conformance on manual `workflow_dispatch` **or the weekly schedule** (boots registry-a + control-plane, uploads compose logs on failure) |
-| `deploy-images.yml` | `v*` tag / dispatch | Build + push full-stack ghcr images |
-| `notify-website.yml` | push to `main` touching `docs/**` or `README.md` | Dispatch a `docs-updated` event to `acdp-website` |
+| `ci.yml` | push to `main` / PR / `workflow_dispatch` / weekly schedule | `test`: `ruff check` + `ruff format --check`, the offline unit suite with an 80% coverage gate on Python 3.12 + 3.13, smoke test (every trigger except the schedule); `docker`: PRs build the playground image (no push); `live`: conformance on manual `workflow_dispatch` **or the weekly schedule** (boots registry-a + control-plane, uploads compose logs on failure). See [What CI runs](testing-and-conformance.md#what-ci-runs) |
+| `deploy-images.yml` | `v*` tag / dispatch | Build + push the **playground** image only to `ghcr.io/<owner>/acdp-playground` (`latest` + the tag); every other stack image is published by its own repo |
+| `auto-merge.yml` | every PR | Calls the shared `acdp-ci` auto-merge workflow, which arms GitHub auto-merge for patch/minor **Dependabot** PRs once required checks pass (it never bypasses CI) |
+| `bump-acdp.yml` | `repository_dispatch` `acdp-released` / dispatch | Calls the shared `acdp-ci` `bump-consume.yml` to open a `uv.lock` bump PR for a new `acdp` release — see [SDK bumps](testing-and-conformance.md#sdk-bumps) |
+| `notify-website.yml` | push to `main` touching `docs/**` or `README.md`, or dispatch | Dispatch a `docs-updated` event to `acdp-website` |
+
+### `railway.json`
+
+Railway builds the service from the repo's `Dockerfile` (`builder: DOCKERFILE`),
+health-checks it on `/healthz` with a 120 s timeout, and restarts it
+`ON_FAILURE` up to 10 times. `/healthz` always answers 200 once the app is up
+(see the [HTTP API](http-api.md)), so it is a liveness check — it does not wait
+for the registries.
