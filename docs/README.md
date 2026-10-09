@@ -64,6 +64,23 @@ Reach for these when you need the canonical detail:
 | **Control plane** | [`acdp-control-plane`](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/tree/main/docs) | Token issuance, introspection, revocation, policy, ingest, federation, CP configuration |
 | **UI console** | [`acdp-ui-console`](https://github.com/agentcontextdistributionprotocol/acdp-ui-console) | The web UI that visualizes runs |
 
+### Sibling docs the playground relies on
+
+| Project | Start here |
+|---------|------------|
+| **Spec / RFCs** | [RFC index](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/README.md) · [version matrix](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/docs/version-matrix.md) |
+| **SDK** (`acdp-rs`) | [getting-started.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/getting-started.md) · [conformance.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/conformance.md) · [registry.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/registry.md) · [cli.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/cli.md) |
+| **Registry** | [README](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/README.md) · [ARCHITECTURE.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/ARCHITECTURE.md) · [OPERATIONS.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/OPERATIONS.md) · [UPGRADING.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/UPGRADING.md) |
+| **Control plane** | [README](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/README.md) · [TROUBLESHOOTING.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/TROUBLESHOOTING.md) · [TESTING.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/TESTING.md) |
+| **UI console** | [README](https://github.com/agentcontextdistributionprotocol/acdp-ui-console/blob/main/README.md) |
+| **Ecosystem** (`acdp-docs`) | [ecosystem map](https://github.com/agentcontextdistributionprotocol/acdp-docs/blob/main/kb/ecosystem-map.md) · [playground knowledge-base entry](https://github.com/agentcontextdistributionprotocol/acdp-docs/blob/main/kb/repos/acdp-playground.md) |
+
+These docs were last checked against **acdp-rs 0.14.5** (the SDK version in
+`uv.lock`), **acdp-registry-rs 0.4.2**, **acdp-control-plane 0.1.4** and
+**spec v0.5.0** (still a Draft line). That is a "checked against" note, not a
+compatibility promise; the spec's version matrix is the place to check which
+versions work together.
+
 ### Frequently-needed cross-references
 
 - **How a context is signed / canonicalized** → [`acdp-rs` producing.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/producing.md) · [security.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/security.md)

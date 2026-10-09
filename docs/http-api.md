@@ -170,7 +170,7 @@ Behavior:
 
 **Event types:** `agent.started`, `llm.thinking`, `acdp.publish`,
 `acdp.retrieve`, `acdp.search`, `acdp.verify`, `acdp.retract`, `acdp.republish`
-(RFC-ACDP-0013 lifecycle), `auth.token`, `auth.revoke`, `policy.check`,
+([RFC-ACDP-0013](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0013-lifecycle-events.md) lifecycle), `auth.token`, `auth.revoke`, `policy.check`,
 `scenario.note`, `run.started`, `run.complete`, `run.error`, and
 `webhook.received` — the fallback for a registry webhook whose type validates
 but has no `acdp.*` mapping (`context_published`/`_retrieved`/`_retracted`/
@@ -188,7 +188,7 @@ that authority. A registry HTTP error is passed through with the **registry's
 status code** and its body as the `detail`.
 
 **502** if the retrieval succeeds but the body the registry served is not bound
-to the `ctx_id` that was asked for (RFC-ACDP-0006 §4.1 step 7). The body is
+to the `ctx_id` that was asked for ([RFC-ACDP-0006](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0006-cross-registry.md) §4.1 step 7). The body is
 never relayed in that case — passing it on would launder the substitution
 through this host — and the detail names which way it failed:
 

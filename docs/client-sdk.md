@@ -70,10 +70,10 @@ for the endpoint contracts they call.
 | `search(...)` | `GET /contexts/search` | Filters: `q`, `context_type`, `domain`, `agent_id`, `tags`, `derived_from`, `visibility`, `limit`, `cursor` → `SearchResponse`; raises `CursorError` |
 | `search_all(...)` | paginated search | Async-yields every `SearchHit`; continues through empty-but-cursored pages |
 | `lineage(lineage_id)` | `GET /lineages/{id}` | → `list[FullContext]` |
-| `current(lineage_id)` | `GET /lineages/{id}/current` | → newest non-superseded, non-retracted `FullContext`; surfaces `lineage_head_receipt` (RFC-ACDP-0011) verbatim |
-| `retract(ctx_id, event_json)` | `POST /contexts/{id}/retract` | Wraps the signed lifecycle event in the closed `{"event": …}` envelope, byte-verbatim → post-transition `FullContext` (RFC-ACDP-0013) |
+| `current(lineage_id)` | `GET /lineages/{id}/current` | → newest non-superseded, non-retracted `FullContext`; surfaces `lineage_head_receipt` ([RFC-ACDP-0011](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0011-lineage-head-receipts.md)) verbatim |
+| `retract(ctx_id, event_json)` | `POST /contexts/{id}/retract` | Wraps the signed lifecycle event in the closed `{"event": …}` envelope, byte-verbatim → post-transition `FullContext` ([RFC-ACDP-0013](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0013-lifecycle-events.md)) |
 | `republish(ctx_id, event_json)` | `POST /contexts/{id}/republish` | Reverses a retraction; same envelope → `FullContext` |
-| `log_checkpoint()` | `GET /log/checkpoint` | Signed tree head, verbatim dict for `AcdpVerifier.verify_log_checkpoint` (RFC-ACDP-0012) |
+| `log_checkpoint()` | `GET /log/checkpoint` | Signed tree head, verbatim dict for `AcdpVerifier.verify_log_checkpoint` ([RFC-ACDP-0012](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0012-transparency-log.md)) |
 | `log_proof(ctx_id=…/leaf_index=…[, tree_size=…] \| first=…, second=…)` | `GET /log/proof` | Inclusion or consistency proof (mutually-exclusive modes), verbatim dict |
 | `log_entries(start, end)` | `GET /log/entries` | Leaf page (0-based, end-exclusive; server caps 256/page), verbatim dict |
 | `resolve(ctx_id, authority_map)` | cross-registry | Routes retrieval to the right registry by authority |
@@ -96,15 +96,17 @@ so no scenario has to remember it. The lineage routes (`lineage()`,
 there is no requested `ctx_id` to compare against and they get a *form-only*
 check instead, as the "Where it runs" table below records.
 
-**Why it is needed.** `ctx_id` is assigned by the *registry*, after the
-producer has signed. It is therefore covered by neither `content_hash` nor the
-producer signature (RFC-ACDP-0001 §5.7). On the receipt-less retrieval path —
-which is most of the traffic — nothing else binds "the context I asked for" to
-"the bytes I got back": a registry can serve any other validly-signed body from
-the same producer under the requested `ctx_id`, and every other consumer check
-still passes. Comparing requested against served is the only binding available
-there. (Where a registry *receipt* is served, RFC-ACDP-0010 §8 adds its own,
-independent bindings — see [scenarios.md](scenarios.md) for S22/S23.)
+**Why it is needed.** `ctx_id` is registry-assigned after signing, so neither
+`content_hash` nor the producer signature covers it; on a receipt-less
+retrieval, comparing requested against served is the only binding available.
+The rule is
+[RFC-ACDP-0001](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0001-core.md)
+§5.7 with
+[RFC-ACDP-0006](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0006-cross-registry.md)
+§4.1 step 7; the SDK side is described in acdp-rs's
+[consuming.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/consuming.md).
+(Where a registry *receipt* is served, [RFC-ACDP-0010](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0010-registry-receipts.md) §8 adds its own bindings —
+see [scenarios.md](scenarios.md) for S22/S23.)
 
 **Where it runs.** All seven methods that return a served body go through one
 chokepoint (`AcdpClient._get_full_context` for the `/contexts/*` routes,
@@ -183,13 +185,13 @@ All except `CursorError` subclass `AcdpHTTPError`, which exposes `.status`,
 | `NotAuthorizedError` | **403** — authenticated but not permitted (terminal) |
 | `PayloadTooLargeError` | **413** — oversized body, even from outer middleware |
 | `CursorError` | **400** with a cursor error code |
-| `ImmutableFieldError` | **400** `immutable_field` — a lifecycle request touched immutable body content (RFC-ACDP-0013) |
+| `ImmutableFieldError` | **400** `immutable_field` — a lifecycle request touched immutable body content ([RFC-ACDP-0013](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0013-lifecycle-events.md)) |
 | `InvalidLifecycleTransitionError` | **409** `invalid_lifecycle_transition` — retract of an already-retracted / republish of a never-retracted context |
-| `InvalidLogProofError` | **502** `invalid_log_proof` — a transparency-log artifact failed verification on a federation/consumer path (RFC-ACDP-0012) |
+| `InvalidLogProofError` | **502** `invalid_log_proof` — a transparency-log artifact failed verification on a federation/consumer path ([RFC-ACDP-0012](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0012-transparency-log.md)) |
 
 `CtxIdBindingError` is the one exception in `client.py` that is **not** an
 `AcdpHTTPError`: it is raised on a perfectly successful 2xx whose *content*
-fails the RFC-ACDP-0006 §4.1 step 7 binding, so there is no status, envelope or
+fails the [RFC-ACDP-0006](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0006-cross-registry.md) §4.1 step 7 binding, so there is no status, envelope or
 wire code to carry. See [Served-`ctx_id` binding](#served-ctx_id-binding-rfc-acdp-0006-41-step-7).
 
 `models.py` also defines the code tables (`ERROR_CODES`,
@@ -311,7 +313,7 @@ offline.
 For consumer-side DID resolution the package re-exports the SDK's `AcdpDid`,
 `AcdpDidDocument`, and `DidResolutionError` — the resolution logic (including
 the assertionMethod-authorization and algorithm-downgrade defenses of
-RFC-ACDP-0008 §3.9) is entirely the SDK's; `acdp_client` only surfaces the
+[RFC-ACDP-0008](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0008-security.md) §3.9) is entirely the SDK's; `acdp_client` only surfaces the
 names so scenarios import one package.
 
 ## Wire types (`models.py`)
@@ -322,7 +324,7 @@ compatibility: `Body`, `FullContext`, `PublishResponse`, `SearchHit`,
 ACDP 0.3 additions ride on the typed surface as verbatim members:
 `RegistryState.lifecycle_events` (list of raw event dicts, absent → `None`)
 plus the `is_retracted` convenience predicate on both `RegistryState` and
-`FullContext` (RFC-ACDP-0013 §7.2: `retracted` dominates), and
+`FullContext` ([RFC-ACDP-0013](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0013-lifecycle-events.md) §7.2: `retracted` dominates), and
 `FullContext.lineage_head_receipt` (raw dict, `/current` only).
 These track the [context-body](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0002-context-body.md)
 and [publish](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0003-publish.md)

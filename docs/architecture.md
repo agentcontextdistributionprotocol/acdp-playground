@@ -43,7 +43,7 @@ playground; the playground fans every protocol step out to the client over
 | `events.py` | In-process SSE bus — one `asyncio.Queue` per run |
 | `control_plane.py` | Optional fire-and-forget bridge to the control plane |
 | `conformance.py` | Live conformance probes against real binaries |
-| `pinned_keys.py` | Key-rotation window evaluation (RFC-ACDP-0008 §9.3) |
+| `pinned_keys.py` | Key-rotation window evaluation ([RFC-ACDP-0008](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0008-security.md) §9.3) |
 | `retry_after.py` | RFC 9110 `Retry-After` parsing (re-export) |
 | `logging_setup.py` | `pretty` / `json` structured logging |
 

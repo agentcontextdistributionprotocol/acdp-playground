@@ -68,7 +68,8 @@ How to read the columns:
 ## Scenario waves
 
 The catalog grew in waves that track remediation/feature work across the
-sibling repos:
+sibling repos. The RFCs cited below are indexed in the spec's
+[`rfcs/README.md`](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/README.md):
 
 - **V1 (S1–S8)**: core protocol: publish, derive, fan-out, chains,
   cross-registry routing, restricted visibility, supersession, cross-org
@@ -102,7 +103,7 @@ sibling repos:
   P-256 agent emits the `ecdsa-p256` capability declaration the CP's capability
   DTO now accepts.
 - **ACDP 0.2 trust & hardening (S22–S27)**: registry receipts and the
-  RFC-ACDP-0010 §9 key lifecycle. **S22** verifies a registry-signed receipt
+  [RFC-ACDP-0010](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0010-registry-receipts.md) §9 key lifecycle. **S22** verifies a registry-signed receipt
   end-to-end; **S23** proves every dishonest receipt fails closed; **S24** and
   **S27** cover the §9 retired-key lifecycle, the *producer* side and the
   *registry receipt-key* side respectively, delegating resolution to the SDK's
@@ -114,7 +115,7 @@ sibling repos:
   degrades only if `RECEIPT_SIGNING_SEED_B64` is blanked, because the settings
   ship a built-in default seed.
 - **ACDP 0.3.0 (S28–S30)**: lifecycle, head receipts, transparency log
-  (RFC-ACDP-0011/0012/0013), served live by registry-a's three new profiles.
+  ([RFC-ACDP-0011](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0011-lineage-head-receipts.md), [0012](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0012-transparency-log.md), [0013](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0013-lifecycle-events.md)), served live by registry-a's three new profiles.
   **S28** retracts and republishes a context with producer-signed lifecycle
   events (`verify_lifecycle_event`, replay/tamper fail-closed, the §7.1
   order-based derivation, 409 `invalid_lifecycle_transition` on a double
@@ -147,30 +148,12 @@ sibling repos:
   tampered anchor fails closed. The live half supersedes an anchored context to
   show anchors carry forward unless `clear_anchors=True`.
 - **Embedded data-ref content (S34)**: the `data_refs[].embedded` branch
-  (RFC-ACDP-0002 §6.3/§6.6), which every earlier scenario skips by publishing
-  only `location`-form refs. **Check 8** scopes the publish-time integrity
-  obligation to `embedded.content_hash` and nothing else: when present it MUST
-  equal the SHA-256 of the **decoded** `embedded.content` bytes, and the decoded
-  form is encoding-specific: `json` hashes the JCS canonical bytes, `utf8` the
-  raw UTF-8 bytes of the string, `base64` the base64-decoded bytes. S34 builds
-  one ref per encoding and verifies them twice, as a wire `PublishRequest` and
-  as the `body` a registry serves back; declaring a `utf8` payload's *JCS*
-  digest (a different preimage over the same visible text) fails closed. It
-  then separates `embedded.content_hash` (§6.3) from the DataRef-root
-  `content_hash` (§6.1) with one digest in two slots: foreign in the root slot
-  it is **accepted** (§6.6 makes the root check a registry MAY, and SDK 0.14.1
-  reverted the undocumented 0.14.0 fallback that had briefly enforced it),
-  foreign in the embedded slot it is **rejected**. Absent is legal (the field is
-  optional) while an explicit `null` is a *deserialization* failure
-  (`EmbeddedContent` is `deny_unknown_fields` with a `de_present` deserializer on
-  that member), and the run asserts the SDK's own wording so the two are never
-  conflated. Tampering with one byte of signed embedded content fails closed at
-  both layers: the body-level `content_hash` on the publish-request path, and
-  the data-ref-level `embedded.content_hash mismatch` on the retrieval path,
-  where `validate_body` runs Check 8 before the signature. The live half
-  publishes the embedded refs to registry-a, re-verifies the served body and
-  supersedes to confirm the payloads and their hashes carry forward
-  byte-exactly, degrading gracefully.
+  ([RFC-ACDP-0002](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0002-context-body.md) §6.3/§6.6), which earlier scenarios skip by
+  publishing only `location`-form refs. S34 checks `embedded.content_hash` over
+  the *decoded* bytes of each encoding (`json`, `utf8`, `base64`), shows it is
+  independent of the DataRef-root `content_hash`, and shows a tampered byte fails
+  closed on both the publish and retrieval paths. The live half round-trips and
+  supersedes the refs on registry-a, degrading gracefully.
 
 ## Graceful degradation
 

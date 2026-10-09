@@ -1,10 +1,10 @@
 # acdp-playground
 
 The ACDP playground generates real protocol traffic so the SDK
-(`acdp-rs`), the registry (`acdp-registry-rs`), and (later) the
-control plane can be exercised end-to-end. It spins agents, calls real
-LLMs, publishes context, streams events over SSE, and forwards
-registry webhooks.
+(`acdp-rs`), the registry (`acdp-registry-rs`), and the control plane
+(`acdp-control-plane`) can be exercised end-to-end. It spins agents, calls
+real LLMs (in 10 of the 34 scenarios), publishes signed context, streams
+events over SSE, and forwards registry webhooks.
 
 ## Documentation
 
@@ -21,7 +21,7 @@ section of [agentcontextdistributionprotocol.io](https://agentcontextdistributio
 | [Agents](docs/agents.md) | `BasePlaygroundAgent` + LangChain / CrewAI / LangGraph |
 | [Configuration](docs/configuration.md) | The playground's own environment variables |
 | [Deployment](docs/deployment.md) | Docker Compose, the full stack, Railway |
-| [Testing & conformance](docs/testing-and-conformance.md) | Unit suite, smoke test, live probes |
+| [Testing & conformance](docs/testing-and-conformance.md) | Smoke test, unit suite, live probes, opt-in real-LLM suite, CI |
 
 These docs cover **only what is unique to the playground**. Anything owned by
 another project is referenced, not re-explained:
@@ -41,17 +41,18 @@ playground/
   agents/                     # BasePlaygroundAgent + LangChain/CrewAI/LangGraph
   scenarios/
     catalog/                  # S1–S34 — auto-discovered, runnable end-to-end
-  api/                        # FastAPI routers: scenarios, runs, contexts, webhooks
+  api/                        # FastAPI routers: health, scenarios, runs, contexts, webhooks
   config.py                   # pydantic-settings (.env)
   events.py                   # in-process SSE bus
   control_plane.py            # no-op when CONTROL_PLANE_URL unset
 scripts/
   smoke_test.py               # offline wiring checks (P-256, JCS vectors, SSRF guard, CP stub); --live adds real-stack conformance
   gen_keys.py                 # deterministic agent identity material (ed25519 / p256)
-  pinned_keys_diff.py         # translate registry [playground]pinned_keys → CONTROL_PLANE_PINNED_KEYS env
+  pinned_keys_diff.py         # translate registry [[playground.pinned_keys]] → CONTROL_PLANE_PINNED_KEYS env
 config/                       # registry-a.toml, registry-b.toml
 docker-compose.yml            # playground + two registries
-docker-compose.full.yml       # overlay adding the control plane (make up-full)
+docker-compose.full.yml       # overlay adding db (Postgres) + control plane + ui-console (make up-full)
+tests/                        # offline unit suite; tests/live/ = opt-in live-stack suites
 ```
 
 ## Quickstart
@@ -166,7 +167,7 @@ full table, including the infrastructure each scenario needs.
 > against the producer's key.
 >
 > **ACDP 0.2 trust & hardening (S22–S27)** cover registry receipts and the
-> RFC-ACDP-0010 §9 key lifecycle: a registry-signed receipt on every publish
+> [RFC-ACDP-0010](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0010-registry-receipts.md) §9 key lifecycle: a registry-signed receipt on every publish
 > (**S22**), every dishonest receipt failing closed (**S23**), the retired-key
 > lifecycle on both the producer (**S24**) and registry receipt-key (**S27**)
 > sides, ephemeral did:key agents (**S25**), and the `explain_hash_mismatch`
@@ -174,9 +175,9 @@ full table, including the infrastructure each scenario needs.
 > round-trips degrade gracefully against a stock registry.
 >
 > **ACDP 0.3.0 (S28–S30)** cover lifecycle events & retraction
-> (RFC-ACDP-0013, **S28**), the registry's Merkle transparency log
-> (RFC-ACDP-0012, **S29**), and signed lineage-head receipts on `/current`
-> (RFC-ACDP-0011, **S30**), all served live by registry-a's receipts/
+> ([RFC-ACDP-0013](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0013-lifecycle-events.md), **S28**), the registry's Merkle transparency log
+> ([RFC-ACDP-0012](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0012-transparency-log.md), **S29**), and signed lineage-head receipts on `/current`
+> ([RFC-ACDP-0011](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0011-lineage-head-receipts.md), **S30**), all served live by registry-a's receipts/
 > lifecycle/log profiles. Each mints its artifacts offline with the SDK
 > primitives, so the deterministic core runs with no registry; the live
 > halves degrade gracefully.
@@ -197,115 +198,33 @@ full table, including the infrastructure each scenario needs.
 > an anchor is signed like any other field, is never dereferenced by
 > verification, and carries forward on supersede unless `clear_anchors=True`.
 >
-> **S34** proves **embedded data-ref content integrity** (RFC-ACDP-0002
-> §6.3/§6.6): `embedded.content_hash` is verified over the **decoded** bytes,
-> and the decoded form is encoding-specific (JCS canonical bytes for `json`,
-> raw UTF-8 for `utf8`, base64-decoded bytes for `base64`), so declaring a
-> `utf8` payload's JCS digest fails closed even though the visible text is
-> identical. **Check 8** is scoped to that field alone and not to the
-> DataRef-root `content_hash` (§6.1); S34 proves the independence with one
-> foreign digest in two slots, **accepted** in the root slot (the root check is
-> a registry MAY, and SDK 0.14.1 reverted the undocumented 0.14.0 fallback that
-> had briefly enforced it) and **rejected** in the embedded slot. Absent is
-> legal, an explicit `null` is a *deserialization* failure (`de_present` on a
-> `deny_unknown_fields` struct), and one flipped byte of signed embedded
-> content fails closed at both layers: body-level `content_hash` on the
-> publish path, data-ref-level `embedded.content_hash mismatch` on the
-> retrieval path. The live half round-trips the refs through registry-a and
-> supersedes them, degrading gracefully without a registry.
+> **S34** proves **embedded data-ref content integrity**
+> ([RFC-ACDP-0002](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0002-context-body.md) §6.3/§6.6): `embedded.content_hash` is
+> checked over the *decoded* bytes of each encoding (`json`, `utf8`,
+> `base64`), is independent of the DataRef-root `content_hash`, and a tampered
+> byte fails closed on both the publish and retrieval paths. The live half
+> round-trips the refs through registry-a, degrading gracefully without one.
 
-## V2 protocol features
+## Protocol features exercised
 
-- **Multi-algorithm signing.** Agents sign with Ed25519 or ECDSA-P256.
-  The token manager posts the matching `algorithm` to `/auth/token` and
-  the verifier picks the right path. `scripts/gen_keys.py --algorithm
-  ecdsa-p256` emits SEC1/JWK/`verificationMethod` material.
-- **Multi-tenancy.** The authoritative tenant rides in the JWT `tenant`
-  claim (issuer-stamped via the registry's `auth.tenant_agents`).
-  `X-Tenant-Id` is **only a fallback** for unbound producer-signed
-  publishes (RFC-ACDP-0008 §6.4); the client never lets the header
-  contradict the claim.
-- **Cursor pagination.** `AcdpClient.search_all(...)` walks the whole
-  paginated sequence and **continues through an empty-but-cursored page**
-  (RFC-ACDP-0005 §2.3). `invalid_cursor` / `cursor_expired` surface as
-  `CursorError`.
-- **Token revocation.** `TokenManager.revoke(...)` calls
-  `POST /auth/token/revoke` (RFC 7009) and drops the cached token.
-- **Pinned-key rotation.** Overlapping `valid_from`/`valid_until` windows
-  let an outgoing and incoming key both verify during a rollover;
-  `pinned_keys_diff.py` encodes algorithm + windows in the CP wire
-  format and the CP can hot-reload via `/admin/pinned-keys/reload`.
-- **Extended body fields.** Publishes carry `data_refs`, `data_period`,
-  and `expires_at`; supersession uses `expected_lineage_id`.
-
-### Round-2 sibling sync (2026-06)
-
-Closes the security-remediation + wire-conformance gap that landed across
-the siblings just after the V2 sync.
-
-- **Consumer SSRF guard.** `acdp_client.safe_http` screens any
-  `data_refs[].location` fetch the way RFC-ACDP-0008 §4.9 requires:
-  https-only, **all** resolved IPs validated against private/loopback/
-  IMDS/ULA/NAT64/v4-mapped ranges with **mixed-answer rejection**,
-  **same-authority** (scheme+host+effective-port) redirects only, and
-  size/timeout caps. `AcdpClient.fetch_data_ref(...)` also verifies the
-  `content_hash`. The per-address/URL **classification is delegated to the
-  Rust SDK** (`acdp.AcdpSsrfPolicy`, delegated since acdp-py 0.2.0) — the
-  playground keeps only the host-language orchestration (DNS, the
-  mixed-answer loop, the `httpx` fetch) because its client never goes through
-  the Rust `RegistryClient`. Validated against the RFC's `*-ssrf-*` fixtures;
-  demoed offline by **S16**.
-- **Error wire envelope.** `AcdpHTTPError` parses the RFC-ACDP-0007 §4
-  `application/acdp+json` envelope (`code`/`message`/`details`); a denied
-  or non-owner supersession surfaces as `SupersededError` with a `.reason`
-  (`not_found`, `cross_registry_supersession_unsupported`, …).
-- **JCS canonicalization.** `acdp.AcdpCanonicalizer` (the Rust SDK, delegated
-  since acdp-py 0.2.0) produces the RFC 8785 §3.2.2.3 canonical form
-  (negative-zero → `0`, exponential bands, integer exactness) — the wire form
-  producers must hit. The playground drives it through the binding and gates
-  it on the RFC's `can-011` vectors instead of shipping a second pure-Python
-  implementation.
-- **Cooperative token throttling.** `TokenManager` honours a `429 +
-  Retry-After` (RFC 9110) on `/auth/challenge` and `/auth/token` with one
-  capped retry — matching the registry's per-agent challenge throttle.
-- **Identifier hygiene.** `acdp_client.identifiers` validates that
-  `origin_registry` is a bare DNS hostname (no port/scheme/DID/uppercase),
-  per RFC-ACDP-0002 §3.1.
-
-### Round-3 sibling sync (2026-06)
-
-Tracks the P0/P1 remediation + RFC-ACDP-0007 §5 wire-conformance wave that
-landed in the registry (`#24`/`#25`/`#26`) and control plane (`#48`/`#49`)
-just after round 2.
-
-- **§5 error-code model.** `acdp_client.models.ERROR_CODES` enumerates the
-  machine codes the registry now emits (`invalid_signature`,
-  `unsupported_algorithm`, `key_resolution_failed`/`_unreachable`,
-  `not_implemented`, …); `SIGNATURE_ERROR_CODES` groups the "re-sign / fix
-  my key" subset. `data_ref_hash_mismatch` is kept **distinct** from
-  `hash_mismatch` (body hash vs data-ref hash).
-- **Typed wire errors.** `not_authorized` moved to **403** (`#24`) and
-  surfaces as `NotAuthorizedError`; an oversized body returns **413** with
-  `application/acdp+json` even from the outer middleware (`#26`) and
-  surfaces as `PayloadTooLargeError`. Both subclass `AcdpHTTPError`. The
-  client retries only on **401** (stale token) — a 403 is terminal.
-- **Idempotent publish.** The client forwards `Idempotency-Key` verbatim
-  (1–256 chars; an out-of-range value is treated as absent server-side, not
-  pre-rejected); a repeat replays one context — demoed by **S18**.
-- **Audience telemetry.** `CachedToken.aud` peeks the JWT `aud` claim (now
-  bound to the issuing authority on both registry and CP) and logs it on
-  mint, so an audience-mismatch `TokenAuthError` is diagnosable. Verification
-  still belongs to the issuer — the playground only peeks.
-- **CP error-envelope logging.** The control-plane bridge parses the CP's
-  ACDP error envelope (`#49`) and logs `error.code`/`reason` instead of a
-  bare status.
-- **did:web P-256 parity.** The CP now resolves P-256 did:web verification
-  methods (`#49`); **S19** proves the playground emits exactly the JWK-only
-  `JsonWebKey2020` form it accepts (offline).
-- **Config knobs.** `docker-compose.full.yml` + `.env.example` document the
-  new CP env (`JWT_AUDIENCE`, `AUTH_REQUIRE_TENANT`, `INGEST_*`,
-  `WEBHOOK_SSRF_*`) with secure-but-demo-friendly defaults; the registry
-  configs note the new loopback-bind constraint.
+Beyond the scenario catalog, the client layer (`acdp_client`) drives the
+protocol surfaces a real consumer needs: Ed25519 and ECDSA-P256 signing,
+JWT-bound multi-tenancy (`X-Tenant-Id` only as a fallback), cursor pagination
+(`search_all`), token revocation, pinned-key rotation windows, idempotent
+publish, the consumer SSRF guard for `data_refs` fetches, and the
+`application/acdp+json` error envelope surfaced as typed exceptions
+(`NotAuthorizedError`, `PayloadTooLargeError`, `SupersededError`,
+`CursorError`). Signing, JCS canonicalization and SSRF classification are
+delegated to the SDK — the playground keeps only the host-language
+orchestration. [`docs/client-sdk.md`](docs/client-sdk.md) documents what the
+client adds; the rules themselves live in
+[RFC-ACDP-0007](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0007-capabilities.md)
+(capabilities and error envelope),
+[RFC-ACDP-0008](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0008-security.md)
+(security, tenancy, SSRF) and the SDK's
+[security.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/security.md)
+and [errors.md](https://github.com/agentcontextdistributionprotocol/acdp-rs/blob/main/docs/errors.md).
+The history of how each piece landed is in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## LLM provider
 
@@ -336,12 +255,14 @@ The `ControlPlaneClient` also drives the CP operator surface when
 ### Running the full stack
 
 ```bash
-make up-full   # playground + registry-a + registry-b + control-plane
+make up-full   # playground + registry-a + registry-b + db + control-plane + ui-console
 ```
 
-`docker-compose.full.yml` adds the NestJS control plane (DB-less:
-`AUTH_PERSISTENCE=memory`) on `:3001`, points the playground at it, and
-wires the shared HMAC + admin secrets. S13 and S14 need the control plane
+`docker-compose.full.yml` adds the NestJS control plane on `:3001`, the
+ephemeral Postgres `db` (`postgres:16-alpine` on `tmpfs`) it requires for its
+event, run and receipt-audit stores, and the UI console on `:3000`. It points
+the playground at the control plane and wires the shared HMAC + admin secrets
+(auth nonces and revocations stay in memory, `AUTH_PERSISTENCE=memory`). S13 and S14 need the control plane
 (S11 and S12 use it optionally); the full stack gives them a real one.
 
 > **Live auth caveat.** For a `did:web` agent, the registry verifies
@@ -364,24 +285,34 @@ externally-observable contracts against a running `make up-full` stack:
 
 ```bash
 make up-full                     # in another shell (or: docker compose ... up -d --wait)
-make test-live                   # ACDP_LIVE_STACK=1 pytest -m live
+make test-live                   # ACDP_LIVE_STACK=1 uv run pytest -m live -q
 make smoke-live                  # scripts/smoke_test.py --live
 ```
 
-The probes live in `playground/conformance.py` (shared by both entry points),
-grouped into registry-core contracts, the 0.3.0 endpoint set, and the control
-plane. They cover the reserved-tenant 400, the `application/acdp+json` error
-envelope, the 1 MiB ingest 413, the media-type gate on `POST /contexts`, the
-served-`ctx_id` binding, the retired interim revocation type, the anchors
-version gate, signed log checkpoints with inclusion and consistency proofs,
-head receipts, lifecycle fail-closed, the `GET /events` server-side limit cap,
-the revocation-feed shape, the admin pinned-key reload, and that the capability
-DTO accepts `ecdsa-p256` (CP #51). `docs/testing-and-conformance.md` lists each
-one and what it asserts. They are **skipped unless `ACDP_LIVE_STACK` is set**, so a
-plain `pytest` stays offline. The SSE de-duplication check additionally needs
-`ACDP_LIVE_SSE=1` (the bug only reproduces on a Redis StreamHub; the demo stack
-is memory-backed). CI runs this suite on manual `workflow_dispatch` and on a
-weekly schedule, as the tripwire for exactly that kind of drift.
+The 18 probes live in `playground/conformance.py` (shared by both entry
+points), grouped into registry-core contracts, the 0.3.0 endpoint set, and the
+control plane. They cover the reserved-tenant 400, the `application/acdp+json`
+error envelope, the 1 MiB ingest 413, the receipts profile and minimum
+`acdp_version` being advertised, `did:key` being an advertised DID method, the
+served-`ctx_id` binding, the media-type gate on `POST /contexts`, the retired
+interim revocation type, the anchors version gate, rejection of a
+self-signed key revocation, signed log checkpoints with inclusion and
+consistency proofs, head receipts on `/current`, the retract endpoint failing
+closed, the `GET /events` server-side limit cap, the revocation-feed shape, the
+admin pinned-key reload, and that the capability DTO accepts `ecdsa-p256`
+(CP #51). [`docs/testing-and-conformance.md`](docs/testing-and-conformance.md)
+lists each one and what it asserts.
+
+Everything in `tests/live/` is **skipped unless `ACDP_LIVE_STACK` is set**, so a
+plain `pytest` stays offline. Two files need a second gate as well, so
+`make test-live` collects but skips them: the SSE de-duplication check
+(`ACDP_LIVE_SSE=1`; the bug only reproduces on a Redis StreamHub, and the demo
+stack is memory-backed) and the opt-in **real-LLM suite**
+(`ACDP_LIVE_REAL_LLM=1`), which runs all 34 scenarios through `POST /runs`
+against the playground at `PLAYGROUND_URL` with a real, billed provider key and
+re-verifies every context they publish. CI runs the conformance probes on
+manual `workflow_dispatch` and on a weekly schedule, as the tripwire for exactly
+that kind of drift; it never runs the real-LLM suite.
 
 ### TokenManager refresh-reason telemetry
 
@@ -397,7 +328,8 @@ The playground image builds with `context: .` — the `acdp` Python SDK
 installs as a prebuilt wheel from PyPI, so no sibling checkout is needed.
 The registry images build from the sibling `acdp-registry-rs/` repo's
 Dockerfile; `docker-compose.full.yml` overlays the control plane (built
-from `../acdp-control-plane`).
+from `../acdp-control-plane`), its Postgres `db` (stock `postgres:16-alpine`
+image), and the UI console (built from `../acdp-ui-console`).
 
 ## Deploying to Railway
 

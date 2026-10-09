@@ -81,7 +81,7 @@ them has no effect on a run today.
 ## The consumer SSRF guard
 
 There is **no env toggle** — `acdp_client.safe_http` is always enforced on the
-`data_refs[].location` fetch path (RFC-ACDP-0008 §4.9): https-only,
+`data_refs[].location` fetch path ([RFC-ACDP-0008](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0008-security.md) §4.9): https-only,
 private/loopback/IMDS blocked, same-authority redirects only, mixed-DNS-answer
 rejection — orchestration only; the policy itself is the SDK's. See
 [Client SDK → safe_http](client-sdk.md#safe_httppy--consumer-ssrf-guard-orchestration-only).
