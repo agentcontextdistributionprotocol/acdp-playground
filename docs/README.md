@@ -3,8 +3,9 @@
 The **ACDP Playground** generates real Agent Context Distribution Protocol
 (ACDP) traffic so the SDK (`acdp-rs`), the registry (`acdp-registry-rs`), and the
 control plane (`acdp-control-plane`) can be exercised end-to-end. It spins up
-agents, calls real LLMs, publishes signed context, streams events over SSE, and
-forwards registry webhooks.
+agents, calls real LLMs (in 10 of the 34 scenarios; the rest are LLM-free),
+publishes signed context, streams events over SSE, and forwards registry
+webhooks.
 
 This is the **conformance and demonstration harness** for ACDP — not the protocol
 itself, and not the SDK, registry, or control plane.
@@ -71,7 +72,7 @@ Reach for these when you need the canonical detail:
 - **Token issuance / challenge flow** → [registry AUTHENTICATION.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/AUTHENTICATION.md) · [control-plane AUTH.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/AUTH.md)
 - **Multi-tenancy rules** → [registry MULTI-TENANCY.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/MULTI-TENANCY.md) · [control-plane TENANCY.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/TENANCY.md)
 - **Registry / CP configuration knobs** → [registry CONFIGURATION.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/CONFIGURATION.md) · [control-plane CONFIGURATION.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/CONFIGURATION.md)
-- **Registry receipts** (what registry-a mints; the S22–S32 scenarios verify) → [registry RECEIPTS.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/RECEIPTS.md) · [RFC-ACDP-0010](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0010-registry-receipts.md)
+- **Registry receipts** (what registry-a mints; the receipt-verifying scenarios S22–S24, S27 and S29–S32 check) → [registry RECEIPTS.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/RECEIPTS.md) · [RFC-ACDP-0010](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0010-registry-receipts.md)
 
 ## Repo links
 

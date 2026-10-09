@@ -3,10 +3,12 @@
 ## Big picture
 
 The playground is a **FastAPI service** that owns the run lifecycle. A client
-starts a *run* of a named *scenario*; the scenario drives one or more *agents*;
-each agent calls an LLM and publishes signed context to a *registry*; the
-registry verifies and stores it, then fires a *webhook* back to the playground;
-the playground fans every protocol step out to the client over **SSE**.
+starts a *run* of a named *scenario*; the scenario drives one or more *agents*
+or producers; agents in the LLM-backed scenarios call an LLM, and every
+producer publishes signed context to a *registry*; the registry verifies and
+stores it and — where webhooks are enabled — fires a *webhook* back to the
+playground; the playground fans every protocol step out to the client over
+**SSE**.
 
 ```
                     ┌──────────────────────────────────────────────┐
@@ -14,12 +16,12 @@ the playground fans every protocol step out to the client over **SSE**.
       ▲                     │                                        │
       │  SSE                │  scenario.run(spec, events)            │
       │ /runs/{id}/events   ▼                                        │
-      └──────────────  in-process SSE bus  ◀── webhook.received ──┐  │
+      └──────────────  in-process SSE bus  ◀── acdp.* (webhook) ──┐  │
                             │                                     │  │
                             ▼  agent.publish / retrieve / search  │  │
                      ┌──────────────┐   webhook   ┌───────────────┴┐ │
-                     │ acdp_client  │────────────▶│ registry-a/-b/ │ │
-                     │ (async httpx)│◀────────────│ -c (Rust bins) │ │
+                     │ acdp_client  │────────────▶│ registry-a /-b │ │
+                     │ (async httpx)│◀────────────│  (Rust bins)   │ │
                      └──────┬───────┘   POST /ctx └───────┬────────┘ │
                             │ sign via acdp (Rust SDK)    │          │
                             ▼                              ▼          │
@@ -67,30 +69,19 @@ project — see
 
 ### Scenario helpers (`playground/scenarios/_receipts.py`)
 
-Some trust scenarios need artifacts a *registry* produces, not a producer — a
-signed receipt, a lifecycle event, a lineage-head receipt, a log checkpoint, or
-the body a retrieval would serve. A live registry only ever emits its current
-state, so paths like "verify a receipt signed under a since-rotated key" are
-unobservable without modelling the registry side offline. That is what these
-helpers do, and the delegation boundary still holds: every signature, digest,
-and canonicalization comes from the SDK, and what the playground authors is
-only the small set of fields a registry itself authors. For a served body that
-set is exactly four — `ctx_id`, `lineage_id`, `origin_registry` and `created_at`.
-Three of them are the difference between the SDK's `Body` and the
-`PublishRequest` a producer signs; `lineage_id` is the exception, present on
-both, because a v2+ supersede request legitimately carries it for the registry
-to verify against. Those four sit outside the `content_hash` preimage
-(RFC-ACDP-0001 §5.7),
-so `synthesize_retrieval_body` overlays them onto a **real** publish request
-built and signed by `AcdpProducer`, leaving the integrity half byte-identical,
-and never hand-builds a body dict — that would be a second implementation of
-the body schema. It refuses a request that already carries one of the three
-registry-only fields (a silent overwrite would mask a schema change), treats
-`lineage_id` as merge-or-verify because a v2+ supersede legitimately carries it
-as a self-verification value, insists on canonical millisecond-precision
-RFC 3339 UTC for `created_at` (`…SS.mmmZ`, the form RFC-ACDP-0010 §8 requires of
-the receipt that will attest the body), and round-trips its own output through
-the SDK's verifier before returning it.
+Some trust scenarios need artifacts a *registry* produces — a signed receipt,
+a lifecycle event, a lineage-head receipt, a log checkpoint, or the body a
+retrieval would serve — in states a live registry never emits (e.g. a receipt
+under a since-rotated key). `_receipts.py` models that registry side offline
+(`synthesize_retrieval_body`, `mint_receipt`, `mint_lifecycle_event`,
+`mint_lineage_head_receipt`, `mint_log_checkpoint`). The delegation boundary
+still holds: every signature, digest and canonicalization comes from the SDK,
+and the playground authors only the registry-owned fields. What those fields
+are, and which sit outside the content hash, is the spec's — see
+[RFC-ACDP-0001 §5.7](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0001-core.md#57-content-hash),
+[RFC-ACDP-0010](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0010-registry-receipts.md)
+and the registry's
+[RECEIPTS.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/RECEIPTS.md).
 
 ## The run lifecycle
 
@@ -101,7 +92,8 @@ the SDK's verifier before returning it.
    `stream_url`.
 
 2. **`runner.execute`** (`scenarios/runner.py`) emits `run.started` and
-   notifies the control plane of the start, calls the scenario's
+   **awaits** the control-plane start notification (so start/complete stay
+   ordered at the CP), calls the scenario's
    `run(spec, events)` coroutine, then emits `run.complete` (with
    `contexts_produced`, the `lineage_graph`, and `status`) or `run.error`
    (with the exception message and `status`; the full traceback is kept on
@@ -110,8 +102,9 @@ the SDK's verifier before returning it.
    return without raising but with `RunResult.status == "failed"` (an
    internal assertion failing, not a transport exception), which still
    streams `run.complete`; its `status` field is what actually carries the
-   outcome. The `RunResult` is persisted in an in-process dict and a
-   `notify_run_complete` is fired to the control plane.
+   outcome. The `RunResult` is persisted in an in-process dict, then
+   `notify_run_complete` is awaited (the playground's `complete` is sent to the
+   CP as `completed`; `failed` passes through).
 
 3. **The scenario** uses `_factory.py` helpers to mint deterministic agent
    identities, build `AcdpClient`s (one per registry, cached in an
@@ -125,7 +118,11 @@ the SDK's verifier before returning it.
 
 5. **`GET /runs/{id}/events`** drains the queue as `text/event-stream`, emitting
    keepalives every 15s and terminating on `run.complete` / `run.error`. If the
-   run already finished, it replays the final result instead.
+   run already finished, it replays the final result instead. The queue is
+   dropped whenever the stream ends — including a mid-run client disconnect,
+   which currently makes the run 404 until its result is persisted (see
+   [HTTP API](http-api.md#get-runsrun_idevents--sse) and
+   [acdp-playground#92](https://github.com/agentcontextdistributionprotocol/acdp-playground/issues/92)).
 
 ## Determinism & identity
 
@@ -133,41 +130,47 @@ Agent identities are **deterministic within a run** but **fresh across runs**.
 `RunSpec.agent_seed(slug)` is `sha256(run_id:slug)`, so the same slug always
 yields the same 32-byte key seed within a run, while a new `run_id` produces a
 new identity. Producers are minted from these seeds in `_factory.producer_for`
-(P-256 rehashes the seed to a valid curve scalar). DIDs follow
-`did:web:{authority}:agents:{slug}` with key id `{did}#key-1`.
+(P-256 rehashes the seed to a valid curve scalar). The DID method is chosen per
+call: the factory **default** (`method="did:web"` on `producer_for` and
+`make_langchain_agent`) yields `did:web:{authority}:agents:{slug}` with key id
+`{did}#key-1`, but most scenarios pass `method="did:key"` — a self-certifying
+DID derived from the key, which a stock registry can verify without fetching a
+DID document — and several build `AcdpProducer.from_seed_did_key(...)`
+directly. A few still use `did:web` (the factory default, or a DID pinned in
+the registry config). [Scenarios](scenarios.md) lists the identity each
+scenario uses.
 
 ## Graceful degradation
 
-Many V2/security scenarios depend on infrastructure that a stock registry can't
-fully provide offline (live token issuance needs web-hosted `did:web`
-documents; some checks need the control plane). These scenarios are built to
-**degrade gracefully** — they complete and mark themselves *complete-but-degraded*
-via a `degraded: true` flag in the run summary rather than failing. Their
+Many V2/security scenarios depend on infrastructure the stack may not provide
+— the control plane, a provisioned registry profile (receipts, lifecycle, log),
+or, for S10 only, live token issuance for a per-run `did:web` identity whose
+DID document is not web-hosted. These scenarios are built to **degrade
+gracefully** — they complete and mark themselves *complete-but-degraded* via a
+`degraded: true` flag in the run summary rather than failing. Their
 deterministic cores (P-256 crypto, cursor logic, tenant-header policy, rotation
 windows, `Retry-After`) are always exercised offline. See
-[Scenarios](scenarios.md) for which scenarios degrade.
+[Scenarios](scenarios.md) for which scenarios degrade and why.
 
 ## The control plane bridge
 
-This describes the **playground side** of the integration. The control plane is
-its own project — its ingest, auth, introspection, revocation, and policy
-surfaces are documented in
-[`acdp-control-plane`](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/tree/main/docs)
-([API.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/API.md),
-[INGEST.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/INGEST.md),
-[AUTH.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/AUTH.md)).
+This describes only the **playground side** (`playground/control_plane.py`).
+The control plane's ingest, auth, introspection, revocation, capability and
+policy surfaces are its own — see
+[API.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/API.md),
+[INGEST.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/INGEST.md)
+and [AUTH.md](https://github.com/agentcontextdistributionprotocol/acdp-control-plane/blob/main/docs/AUTH.md).
 
-When `CONTROL_PLANE_URL` is empty the playground runs standalone and every
-forwarding method is a no-op. When set:
-
-- Every registry webhook is **HMAC-signed with the CP secret** and forwarded to
-  `/ingest/acdp`, preserving the `X-ACDP-Event-Id` dedup key and stamping
-  `X-Tenant-Id` for tenant attribution.
-- Run **start/complete** notifications are posted.
-- The bridge honors a cooperative `Retry-After` on transient upstream
-  responses (`429/502/503/504`) with one capped retry.
-
-When `CONTROL_PLANE_ADMIN_TOKEN` is set, `ControlPlaneClient` also drives the CP
-operator surface: `introspect` (RFC 7662), the cross-issuer `revocations` feed,
-the cross-run `events` history, capability declaration, domain-pack listing, and
-`reload_pinned_keys`.
+- `CONTROL_PLANE_URL` empty → every method is a no-op and the playground runs
+  standalone.
+- Set → registry webhooks are forwarded to `/ingest/acdp` (headers and signing
+  in [HTTP API → Webhooks](http-api.md#post-webhooksacdp)), and run
+  start/complete are posted and awaited by the runner.
+- Forwards and run notifications (`_post`) get **one** retry on
+  `429/502/503/504`, and only when the response carries a parseable
+  `Retry-After`; the wait is capped at 30 s. Failures are logged, never raised
+  into the run.
+- `domain_packs()` (`GET /domain-packs`) needs only `CONTROL_PLANE_URL`.
+  `introspect`, `revocations`, `events`, `declare_capability` and
+  `reload_pinned_keys` additionally need `CONTROL_PLANE_ADMIN_TOKEN` and
+  return `None` without it.

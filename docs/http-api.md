@@ -2,7 +2,9 @@
 
 The playground exposes a small FastAPI surface. The base URL is
 `http://localhost:8000` by default. Interactive docs are available at `/docs`
-(Swagger) and `/redoc` when the server is running.
+(Swagger) and `/redoc`, and the raw schema at `/openapi.json`, when the server
+is running. CORS is wide open (`allow_origins=["*"]`, all methods and headers —
+`playground/main.py`), which suits a local demo harness, not a public deployment.
 
 ## Route summary
 
@@ -10,14 +12,14 @@ The playground exposes a small FastAPI surface. The base URL is
 |--------|------|--------|---------|
 | `GET` | `/` | 200 | Service metadata + endpoint list |
 | `GET` | `/healthz` | 200 | Liveness |
-| `GET` | `/readyz` | 200 | Readiness — pings registry-a and registry-b |
+| `GET` | `/readyz` | 200 | Readiness — pings registry-a and registry-b (always 200; read `ok`) |
 | `GET` | `/scenarios` | 200 | List the scenario catalog |
 | `GET` | `/scenarios/{id}` | 200 / 404 | One scenario's metadata |
-| `POST` | `/runs` | 202 / 404 | Start a scenario run (404: unknown scenario) |
+| `POST` | `/runs` | 202 / 404 / 422 | Start a scenario run (404: unknown scenario; 422: body fails validation, e.g. a bad `registry_mode`) |
 | `GET` | `/runs/{id}` | 200 / 404 | Poll run status + result |
-| `GET` | `/runs/{id}/events` | 200 | SSE stream of run events |
-| `GET` | `/contexts/{ctx_id}` | 200 / 404 / 502 | Retrieve a context from the right registry (502: the registry served a body not bound to the requested id) |
-| `POST` | `/webhooks/acdp` | 204 / 400 / 401 | Registry → playground webhook ingestion (400: bad JSON; 401: missing/invalid signature) |
+| `GET` | `/runs/{id}/events` | 200 / 404 | SSE stream of run events (404: no live queue and no persisted result) |
+| `GET` | `/contexts/{ctx_id}` | 200 / 404 / 502 / *registry status* | Retrieve a context from the right registry (502: the registry served a body not bound to the requested id; other registry errors pass through with the registry's status) |
+| `POST` | `/webhooks/acdp` | 204 / 400 / 401 | Registry → playground webhook ingestion (400: bad JSON; 401: missing/invalid signature when `WEBHOOK_SECRET` is set) |
 
 ## Health
 
@@ -32,8 +34,9 @@ run from an uninstalled source tree).
 
 ### `GET /readyz`
 
-Best-effort pings both registries; one registry being down does not fail the
-response.
+Best-effort pings both registries. The status is **always 200**; `ok` is
+`registry_a and registry_b`, so one registry being down shows up as
+`"ok": false` in the body, not as an error status.
 
 ```json
 { "ok": true, "registry_a": true, "registry_b": true }
@@ -59,6 +62,10 @@ response.
 }
 ```
 
+`registry_mode` is one of `single` | `dual` | `cross_org`; `framework` is one of
+`langchain` | `crewai` | `langgraph` | `mixed` (catalog metadata — every
+scenario currently declares `langchain`).
+
 ### `GET /scenarios/{scenario_id}`
 
 Returns the single serialized `ScenarioDef`, or **404** if unknown.
@@ -79,7 +86,9 @@ Returns the single serialized `ScenarioDef`, or **404** if unknown.
 
 - `scenario_id` *(required)* — must exist (404 otherwise)
 - `inputs` *(optional)* — merged over the scenario's `default_inputs`
-- `registry_mode` *(optional)* — overrides the scenario default
+- `registry_mode` *(optional)* — `single` | `dual` | `cross_org`; overrides the
+  scenario default. Any other value (or a malformed body) is a **422** from
+  FastAPI's request validation.
 
 **Response** (**202 Accepted**):
 
@@ -105,24 +114,41 @@ The run executes as a background task. Subscribe to `stream_url` for live events
 }
 ```
 
-Checks both the in-flight queue and persisted results; **404** if the run is
-unknown and not in flight.
+`result`, once present, is the `RunResult`: `run_id`, `scenario_id`, `status`
+(`complete` | `failed`), `contexts` (ctx ids produced), `lineage_graph`,
+`summary` (scenario-specific, e.g. `degraded: true`), and `error` (with
+traceback, when the scenario raised).
+
+A run counts as in flight while its SSE queue exists; otherwise the persisted
+result is used. **404** if neither exists — see the disconnect caveat below.
 
 ### `GET /runs/{run_id}/events`  (SSE)
 
 Media type `text/event-stream`. Each message is:
 
 ```
-data: {"type":"acdp.publish","run_id":"9f1c...","ts":"...","agent_id":"did:web:...","ctx_id":"acdp://...","title":"..."}
+data: {"type":"acdp.publish","run_id":"9f1c...","ts":"...","agent_id":"did:key:z6Mk...","ctx_id":"acdp://...","title":"..."}
 
 ```
 
 Behavior:
 
 - **Run in flight** — drains the run's queue as it fills. Sends a keepalive
-  comment every 15s on idle. Terminates on `run.complete` or `run.error`.
-- **Run already finished** — replays the final result and an end marker.
-- The queue is cleaned up on client disconnect.
+  comment (`: keepalive`) every 15s on idle. After the first `run.complete` or
+  `run.error` it sends a final `event: end` / `data: complete` marker and
+  closes.
+- **Run already finished** — sends one `data:` message carrying the serialized
+  `RunResult` (not a `StepEvent`), then the same `event: end` marker.
+- **No queue and no result** — **404**.
+- **Client disconnect (current behavior)** — the run's queue is dropped
+  whenever the stream ends for any reason, including a client disconnecting
+  mid-run. The scenario keeps running in the background, but until its result
+  is persisted both `GET /runs/{id}` and `GET /runs/{id}/events` answer **404**,
+  events emitted in that window are not replayable, and webhooks for the run
+  are not fanned into SSE. Tracked as
+  [acdp-playground#92](https://github.com/agentcontextdistributionprotocol/acdp-playground/issues/92).
+  Keep the stream open until the end marker, or poll `GET /runs/{id}` instead
+  of reconnecting.
 
 #### `StepEvent` schema
 
@@ -133,7 +159,7 @@ Behavior:
 | `scenario_id` | Set on `run.started` / `run.complete` / `run.error` |
 | `ts` | UTC ISO-8601 timestamp |
 | `agent_id` | Emitting agent's DID (when applicable) |
-| `framework` | `langchain` / `crewai` / `langgraph` |
+| `framework` | Emitting agent's adapter: `langchain` / `crewai` / `langgraph`, or `base` for a bare `BasePlaygroundAgent` (also stamped into published metadata as `agent_framework`) |
 | `ctx_id`, `title`, `derived_from` | Context details on publish/retrieve |
 | `preview` | Short LLM-output preview |
 | `contexts_produced`, `lineage_graph` | On `run.complete` |
@@ -143,9 +169,12 @@ Behavior:
 | `key_fingerprint`, `receipt_present` | ACDP 0.2 trust signals lifted from webhook payloads |
 
 **Event types:** `agent.started`, `llm.thinking`, `acdp.publish`,
-`acdp.retrieve`, `acdp.search`, `acdp.verify`, `auth.token`, `auth.revoke`,
-`policy.check`, `scenario.note`, `webhook.received`, `run.started`,
-`run.complete`, `run.error`.
+`acdp.retrieve`, `acdp.search`, `acdp.verify`, `acdp.retract`, `acdp.republish`
+(RFC-ACDP-0013 lifecycle), `auth.token`, `auth.revoke`, `policy.check`,
+`scenario.note`, `run.started`, `run.complete`, `run.error`, and
+`webhook.received` — the fallback for a registry webhook whose type validates
+but has no `acdp.*` mapping (`context_published`/`_retrieved`/`_retracted`/
+`_republished` and `search_executed` map to the `acdp.*` types).
 
 ## Contexts
 
@@ -155,7 +184,8 @@ Behavior:
 `acdp://registry-a.playground.local/<uuid>`); it is matched as a path
 parameter. The playground extracts the authority, routes to the matching
 registry, and proxies the retrieval. **404** if no registry is configured for
-that authority. Registry errors are forwarded as HTTP exceptions.
+that authority. A registry HTTP error is passed through with the **registry's
+status code** and its body as the `detail`.
 
 **502** if the retrieval succeeds but the body the registry served is not bound
 to the `ctx_id` that was asked for (RFC-ACDP-0006 §4.1 step 7). The body is
@@ -184,28 +214,40 @@ registry's.
 
 ### `POST /webhooks/acdp`
 
-The endpoint registries call when a context is published/retrieved/searched.
-Returns **204**. The webhook **payload and signing scheme are the registry's** —
-see the registry's
+The endpoint registries call when a context is published/retrieved/searched/
+retracted/republished. The webhook **payload and signing scheme are the
+registry's** — see the registry's
 [WEBHOOKS.md](https://github.com/agentcontextdistributionprotocol/acdp-registry-rs/blob/main/docs/WEBHOOKS.md);
-the playground is the receiver.
+the playground is the receiver. Receiver-side behavior:
 
-**Signature** — header `X-ACDP-Signature: sha256=<hex>`, a GitHub-style
-HMAC-SHA256 of the raw body keyed by `WEBHOOK_SECRET`. A missing or invalid
-signature yields **401**.
-
-**Processing:**
-
-1. Validate the body is JSON (**400** otherwise).
-2. Parse a `WebhookEvent` (a schema mismatch logs a warning but does not fail).
-3. Lift request headers onto the event when not already present
+1. **Signature** — when `WEBHOOK_SECRET` is **empty, verification is skipped**.
+   Otherwise `X-ACDP-Signature` must be present, use the `sha256=` prefix, and
+   match; anything else is **401**.
+2. **JSON** — a body that is not JSON is **400**.
+3. **Schema** — a body that does not parse as a `WebhookEvent` is logged and
+   answered **204**, but is *not* enqueued and *not* forwarded.
+4. **Header lift** — `X-Tenant-Id` → `tenant_id`, `X-ACDP-Event-Id` →
+   `event_id` (dedup key), `X-Run-Id` → `run_id`, each only when the body did
+   not already carry it
    ([RFC-ACDP-0008](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0008-security.md)
-   §6.4): `X-Tenant-Id` → `tenant_id`, `X-ACDP-Event-Id` → `event_id` (dedup
-   key), `X-Run-Id` → `run_id`.
-4. If `run_id` maps to an in-flight run, convert via `StepEvent.from_webhook`
-   and enqueue onto that run's SSE bus (silent drop otherwise).
-5. Fire-and-forget forward to the control plane (re-signed with the CP secret),
-   preserving the original body, headers, and tenant id.
+   §6.4).
+5. **SSE fan-in** — if `run_id` names a run with a live queue, the event is
+   converted via `StepEvent.from_webhook` and enqueued; otherwise it is dropped
+   silently.
+6. **Control-plane forward** — scheduled as a background task (it sends nothing when
+   `CONTROL_PLANE_URL` is empty, though the reserved-tenant check below still runs first) that POSTs the original body to the CP's
+   `/ingest/acdp`. It carries `X-ACDP-Event`, `X-ACDP-Event-Id`, `X-Run-Id`
+   (each when the inbound request had it) and `X-Tenant-Id` (the lifted
+   tenant), plus `X-ACDP-Signature` re-computed with
+   `CONTROL_PLANE_HMAC_SECRET` — only when that secret is set; otherwise the
+   forward is unsigned. If the tenant is the reserved `default` sentinel,
+   `reject_reserved_tenant` raises inside that background task: nothing is
+   forwarded, the registry has already received its 204, and the error only
+   appears in the log as an unhandled task exception.
+
+Steps 4 and 5 run outside the schema guard, so an unexpected failure there
+returns a **5xx** to the registry, which then retries the delivery (the
+step-6 forward runs detached and cannot change the response).
 
 > In the default demo stack the registry webhook is **disabled** (its SSRF
 > policy refuses the loopback `http://playground:8000` target). Webhook-driven

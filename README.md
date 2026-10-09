@@ -82,57 +82,69 @@ curl -N localhost:8000/runs/RUN_ID/events
 
 ## Scenarios
 
-| ID | Name | What it shows |
-|----|------|---------------|
-| `s1_single_publish` | Single Publish | Smallest publish round-trip |
-| `s2_producer_consumer` | Producer → Consumer | One derivation edge |
-| `s3_fanout` | Fan-out 1→N | One source, parallel facet analyses |
-| `s4_chain` | Linear Chain A→B→C | C derives from both A and B |
-| `s5_cross_registry` | Cross-Registry Chain | Edge crosses registry-a → registry-b |
-| `s6_restricted` | Restricted Visibility | Audience-gated reads (auth) |
-| `s7_supersession` | Supersession v1→v2 | Same lineage, two versions |
-| `s8_cross_org` | Cross-Org Isolation | Two orgs, no cross-references |
-| `s9_p256_publish` | ECDSA-P256 Publish | P-256 signer + verifier parity |
-| `s10_tenant_isolation` | Tenant Isolation | JWT-bound tenancy; cross-tenant denied |
-| `s11_revocation` | Token Revocation | Mint → use → revoke (RFC 7009) |
-| `s12_key_rotation` | Key Rotation + Reload | Overlapping pinned-key validity windows |
-| `s13_policy_deny` | Policy / Authz | Guarded CP endpoint denies/admits |
-| `s14_domain_pack` | Domain-Pack Gating | Context-type gating on ingest |
-| `s15_supersession_lineage` | Supersession + guard | `expected_lineage_id` concurrency guard |
-| `s16_dataref_ssrf` | Consumer SSRF guard | `data_refs[].location` fetch screened (offline) |
-| `s17_supersession_authz` | Supersession authz | Non-owner / cross-tenant lineage takeover rejected |
-| `s18_idempotency` | Idempotent publish | Repeated `Idempotency-Key` replays one context |
-| `s19_cp_did_web_p256` | CP did:web P-256 | P-256 verification method the CP now resolves (offline) |
-| `s20_reserved_tenant` | Reserved-tenant guard | Asserting `default` tenant is rejected (offline) |
-| `s21_capabilities_p256` | P-256 capability | `ecdsa-p256` capability declaration accepted (offline) |
-| `s22_receipts` | Registry Receipts | did:key publish + registry-signed receipt verified under a Require policy |
-| `s23_receipt_tamper` | Receipt Tamper | Every missing/mutated/mismatched receipt fails closed (offline) |
-| `s24_historical_key` | Historical Key | Pre-rotation context is HistoricallyAuthorized via receipt + retained key |
-| `s25_did_key` | did:key Agents | Ephemeral did:key agents self-verify offline; rotation is a new identity |
-| `s26_divergence` | Divergence Diagnostics | `explain_hash_mismatch` names the JCS divergence cause |
-| `s27_receipt_key_rotation` | Receipt-Key Rotation | Registry rotates its receipt key; a historical receipt still verifies |
-| `s28_lifecycle_retraction` | Lifecycle Events & Retraction | Signed retract/republish (mark-not-delete); 409 on conflicting transitions |
-| `s29_transparency_log` | Transparency Log Proofs | Signed checkpoint + inclusion + consistency proofs; tamper fails closed |
-| `s30_head_receipt_freshness` | Lineage-Head Receipt Freshness | `/current` answers are registry-signed; `as_of` freshness/stale policy |
-| `s31_witness_cosigning` | Transparency-Log Witness Cosigning | Independent witness cosigns a checkpoint; consumer verifies quorum |
-| `s32_key_revocation` | Producer Key-Revocation Signal | Time-scoped key-compromise signal; pre/post-compromise classification |
-| `s33_anchors` | External Anchors | Well-formed anchor accepted & signed byte-exactly; scheme-unaware verifier never dereferences `anchors[].uri`; tamper fails closed; supersede carries anchors forward / `clear_anchors` drops them |
-| `s34_embedded_content` | Embedded Content Integrity | `embedded.content_hash` verified over the decoded bytes (JCS for `json`, raw UTF-8 for `utf8`, decoded for `base64`); independent of the DataRef-root `content_hash`; absent legal, explicit `null` rejected; tampered content fails closed at both layers |
+| ID | Name | What it shows | Identity | LLM | CP | Degrades |
+|----|------|---------------|----------|-----|----|----------|
+| `s1_single_publish` | Single Publish | Smallest publish round-trip | `did:key` | yes | — | no |
+| `s2_producer_consumer` | Producer → Consumer | One derivation edge | `did:key` | yes | — | no |
+| `s3_fanout` | Fan-out (1 → N) | One source, parallel facet analyses | `did:key` | yes | — | no |
+| `s4_chain` | Linear Chain A → B → C | C derives from both A and B | `did:key` | yes | — | no |
+| `s5_cross_registry` | Cross-Registry Chain | Edge crosses registry-a → registry-b | `did:key` | yes | — | no |
+| `s6_restricted` | Restricted Visibility (V2 auth) | Audience-gated reads by three authenticated agents | `did:key` | yes | — | yes |
+| `s7_supersession` | Supersession (v1 → v2) | Same lineage, two versions | `did:key` | yes | — | no |
+| `s8_cross_org` | Cross-Org Isolation | Two orgs, no cross-references | `did:key` | yes | — | no |
+| `s9_p256_publish` | ECDSA-P256 Publish | P-256 signer + verifier parity | `did:key` (P-256) | no | — | no |
+| `s10_tenant_isolation` | Tenant Isolation | JWT-bound tenancy; cross-tenant denied | `did:web` (per run) | yes | — | yes |
+| `s11_revocation` | Token Revocation | Mint → use → revoke (RFC 7009) | `did:key` | yes | optional | yes |
+| `s12_key_rotation` | Key Rotation + Admin Reload | Overlapping pinned-key validity windows | `did:web` (pinned) | no | optional | no |
+| `s13_policy_deny` | Policy / Authz Enforcement | Guarded CP endpoint denies/admits | none | no | required | yes |
+| `s14_domain_pack` | Domain-Pack Gating | Context-type gating on ingest | none | no | required | yes |
+| `s15_supersession_lineage` | Supersession w/ expected_lineage_id | `expected_lineage_id` concurrency guard | `did:key` | no | — | no |
+| `s16_dataref_ssrf` | Consumer SSRF guard (data_refs) | `data_refs[].location` fetch screened (offline) | none | no | — | no |
+| `s17_supersession_authz` | Supersession authorization | Non-owner lineage takeover rejected | `did:key` | no | — | yes |
+| `s18_idempotency` | Idempotent publish | Repeated `Idempotency-Key` replays one context | `did:key` | no | — | yes |
+| `s19_cp_did_web_p256` | CP did:web P-256 conformance | P-256 verification method the CP now resolves (offline) | `did:web` (P-256) | no | — | no |
+| `s20_reserved_tenant` | Reserved-tenant rejection | Asserting the `default` tenant is rejected (offline) | none | no | — | no |
+| `s21_capabilities_p256` | CP capability P-256 declaration | `ecdsa-p256` capability declaration accepted (offline) | `did:web` (P-256) | no | — | no |
+| `s22_receipts` | Registry Receipts (happy path) | Registry-signed receipt verified under a Require policy | `did:key` | no | — | yes |
+| `s23_receipt_tamper` | Receipt Tamper (fail-closed) | Every missing/mutated/mismatched receipt fails closed (offline) | `did:web` (per run) | no | — | only with no receipt seed |
+| `s24_historical_key` | Historical Key Verification | Pre-rotation context is HistoricallyAuthorized via receipt + retained key | `did:web` (pinned) | no | — | yes |
+| `s25_did_key` | did:key Ephemeral Agents | Ephemeral agents self-verify offline; rotation is a new identity | `did:key` | no | — | yes |
+| `s26_divergence` | Divergence Diagnostics | `explain_hash_mismatch` names the JCS divergence cause | `did:key` | no | — | yes |
+| `s27_receipt_key_rotation` | Registry Receipt-Key Rotation | Registry rotates its receipt key; a historical receipt still verifies | `did:key` | no | — | yes |
+| `s28_lifecycle_retraction` | Lifecycle Events & Retraction | Signed retract/republish (mark-not-delete); 409 on conflicting transitions | `did:key` | no | — | yes |
+| `s29_transparency_log` | Transparency Log Proofs | Signed checkpoint + inclusion + consistency proofs; tamper fails closed | `did:key` | no | — | yes |
+| `s30_head_receipt_freshness` | Lineage-Head Receipt Freshness | `/current` answers are registry-signed; `as_of` freshness/stale policy | `did:key` | no | — | yes |
+| `s31_witness_cosigning` | Transparency-Log Witness Cosigning | Independent witness cosigns a checkpoint; consumer verifies quorum | `did:key` | no | — | yes |
+| `s32_key_revocation` | Producer Key-Revocation Signal | Time-scoped key-compromise signal; pre/post-compromise classification | `did:key` live, `did:web` offline core | no | — | yes |
+| `s33_anchors` | External Anchors | Anchors are signed like any field and never dereferenced | `did:key` | no | — | yes |
+| `s34_embedded_content` | Embedded Content Integrity | `embedded.content_hash` verified over the decoded bytes | `did:key` | no | — | yes |
+
+**Identity** is the signing agents' DID method (`did:web` per run comes from the
+factory default; pinned keys live in the registry config). **LLM** marks the
+10 scenarios that call the configured LLM. **CP** *required* means the run
+degrades without a control plane; *optional* means a best-effort extra.
+**Degrades** means the run completes with `degraded: true` in its summary when
+its infrastructure is missing. [`docs/scenarios.md`](docs/scenarios.md) has the
+full table, including the infrastructure each scenario needs.
 
 > **V2 scenarios (S9–S15)** exercise the features that landed across the
-> sibling repos — P-256 signing, multi-tenancy, token revocation,
-> key-rotation windows, policy, and domain packs. **S9** and **S15** run
-> in the default stack (anonymous publish). **S10–S14** need live token
-> issuance and/or the control plane; they **degrade gracefully** (marked
-> *complete-but-degraded* via a `degraded: true` summary flag) when that
-> infra is absent — see *Running the full stack*.
+> sibling repos: P-256 signing, multi-tenancy, token revocation,
+> key-rotation windows, policy, and domain packs. **S9** verifies its P-256
+> crypto offline and skips the registry round-trip when registry-a is absent;
+> **S15** runs against registry-a in the default stack. **S10** and **S11** need
+> live token issuance; S10's per-run `did:web` agents degrade against a stock
+> registry, while S11's `did:key` agent completes live. **S12** runs offline and
+> only reloads pinned keys when a control plane is configured. **S13** and
+> **S14** need the control plane and **degrade gracefully** (marked
+> *complete-but-degraded* via a `degraded: true` summary flag) without it; see
+> *Running the full stack*.
 >
 > **Round-2 scenarios (S16–S17)** cover the latest security-remediation
 > wave. **S16** runs **fully offline** (injected DNS resolver) and proves
 > the consumer SSRF guard blocks IMDS / mixed-answer / cross-port-redirect
 > / non-https `data_refs` fetches. **S17** drives the live registry's
 > producer-ownership check on supersession and degrades gracefully without
-> it.
+> it; the cross-tenant variant is asserted in the unit suite.
 >
 > **Round-3 scenarios (S18–S19)** cover the post-remediation wire
 > conformance. **S18** proves a repeated `Idempotency-Key` replays a single
@@ -142,7 +154,7 @@ curl -N localhost:8000/runs/RUN_ID/events
 >
 > **Round-4 scenario (S20)** tracks `acdp-control-plane` #50. **S20** runs
 > **fully offline** and proves the reserved `default` tenant can never be
-> *asserted* (via `X-Tenant-Id` or a token claim) — it would alias the
+> *asserted* (via `X-Tenant-Id` or a token claim), since it would alias the
 > untenanted bucket. The registry returns 400 `schema_violation` and the CP
 > 403 `not_authorized`; the playground mirrors the rule client-side so a
 > caller fails fast locally.
@@ -164,42 +176,31 @@ curl -N localhost:8000/runs/RUN_ID/events
 > **ACDP 0.3.0 (S28–S30)** cover lifecycle events & retraction
 > (RFC-ACDP-0013, **S28**), the registry's Merkle transparency log
 > (RFC-ACDP-0012, **S29**), and signed lineage-head receipts on `/current`
-> (RFC-ACDP-0011, **S30**) — all served live by registry-a's receipts/
+> (RFC-ACDP-0011, **S30**), all served live by registry-a's receipts/
 > lifecycle/log profiles. Each mints its artifacts offline with the SDK
 > primitives, so the deterministic core runs with no registry; the live
 > halves degrade gracefully.
 >
-> **ACDP 0.4 (S31)** proves transparency-log **witness cosigning**
-> (RFC-ACDP-0015) with the playground itself acting as an independent
-> witness (the PLAYGROUND-AS-WITNESS pattern — no control-plane witness
-> required): it discharges the §7 witness obligation, mints its own `did:key`
-> cosignature, and a consumer verifies the cosignature plus an N-witnessed
-> quorum; a cosignature over a tampered root fails closed as
-> `invalid_witness_cosignature`.
+> **S31** proves transparency-log witness cosigning
+> ([RFC-ACDP-0015](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0015-witness-cosigning.md)):
+> the playground acts as an independent `did:key` witness, and a cosignature
+> over a tampered root fails closed.
 >
-> **S32** proves the producer **key-revocation signal** (RFC-ACDP-0014): a
-> did:web producer rotates K1→K2 and publishes a signed `key-revocation`
-> context naming K1's fingerprint with a compromise boundary T; a consumer
-> classifies a K1-signed context as historically authorized only when its
-> receipt-attested `created_at` predates T, and rejects a revocation of K1
-> signed by K1 itself.
+> **S32** proves the producer key-revocation signal
+> ([RFC-ACDP-0014](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0014-key-revocation.md)):
+> a K1-signed context is accepted only when its receipt-attested `created_at`
+> predates the compromise time. The offline core uses a `did:web` producer; the
+> live half publishes with `did:key` agents.
 >
-> **S33** proves **external anchors** (RFC-ACDP-0016, ACDP 0.5.0): a
-> well-formed `anchors` entry is accepted and signed byte-exactly like any
-> other field (**anc-001**), and a scheme-unaware verifier still produces a
-> fully valid verdict while `anchors[].uri` is never dereferenced by
-> ACDP-level verification per §6 (**anc-005**), proven inside a DNS trap
-> rather than merely asserted; a tampered anchor fails closed like any other
-> field. The live half exercises the `Producer::new_version_from` fix that
-> shipped back in SDK 0.8.3 (the pin has since moved on) — omitting `anchors`
-> on supersede now carries the previous version's anchors forward, and
-> `clear_anchors=True` explicitly drops them — degrading gracefully without a
-> registry.
+> **S33** proves external anchors
+> ([RFC-ACDP-0016](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0016-external-anchors.md)):
+> an anchor is signed like any other field, is never dereferenced by
+> verification, and carries forward on supersede unless `clear_anchors=True`.
 >
 > **S34** proves **embedded data-ref content integrity** (RFC-ACDP-0002
 > §6.3/§6.6): `embedded.content_hash` is verified over the **decoded** bytes,
-> and the decoded form is encoding-specific — JCS canonical bytes for `json`,
-> raw UTF-8 for `utf8`, base64-decoded bytes for `base64` — so declaring a
+> and the decoded form is encoding-specific (JCS canonical bytes for `json`,
+> raw UTF-8 for `utf8`, base64-decoded bytes for `base64`), so declaring a
 > `utf8` payload's JCS digest fails closed even though the visible text is
 > identical. **Check 8** is scoped to that field alone and not to the
 > DataRef-root `content_hash` (§6.1); S34 proves the independence with one
@@ -208,7 +209,7 @@ curl -N localhost:8000/runs/RUN_ID/events
 > had briefly enforced it) and **rejected** in the embedded slot. Absent is
 > legal, an explicit `null` is a *deserialization* failure (`de_present` on a
 > `deny_unknown_fields` struct), and one flipped byte of signed embedded
-> content fails closed at both layers — body-level `content_hash` on the
+> content fails closed at both layers: body-level `content_hash` on the
 > publish path, data-ref-level `embedded.content_hash mismatch` on the
 > retrieval path. The live half round-trips the refs through registry-a and
 > supersedes them, degrading gracefully without a registry.
@@ -340,17 +341,19 @@ make up-full   # playground + registry-a + registry-b + control-plane
 
 `docker-compose.full.yml` adds the NestJS control plane (DB-less:
 `AUTH_PERSISTENCE=memory`) on `:3001`, points the playground at it, and
-wires the shared HMAC + admin secrets. The auth/revocation/policy
-scenarios (S10–S14) have a real IdP to talk to there.
+wires the shared HMAC + admin secrets. S13 and S14 need the control plane
+(S11 and S12 use it optionally); the full stack gives them a real one.
 
-> **Live auth caveat.** The registry verifies challenge signatures by
-> resolving the agent's `did:web` document — the playground's
-> `*.playground.local` DIDs aren't web-hosted and keys rotate per run, so
-> token issuance can't fully complete against a stock registry. The
-> auth-dependent scenarios are built to **degrade gracefully** and are
-> validated by the unit suite (mocked registry/CP); the deterministic
-> cores (P-256 crypto, cursor logic, tenant-header policy, rotation
-> windows, Retry-After) are fully exercised offline.
+> **Live auth caveat.** For a `did:web` agent, the registry verifies
+> challenge signatures by resolving the agent's DID document. The
+> playground's `*.playground.local` DIDs aren't web-hosted and keys rotate
+> per run, so token issuance for per-run `did:web` agents can't complete
+> against a stock registry. That affects **S10 only**: the other
+> token-issuing scenarios (S6, S11) use self-certifying `did:key` agents and
+> complete live. S10 **degrades gracefully** and is validated by the unit
+> suite (mocked registry/CP); the deterministic cores (P-256 crypto, cursor
+> logic, tenant-header policy, rotation windows, Retry-After) are fully
+> exercised offline.
 
 ### Live conformance suite
 
