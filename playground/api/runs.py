@@ -70,6 +70,11 @@ async def get_run(run_id: str) -> dict:
 @router.get("/{run_id}/events")
 async def stream_events(run_id: str, request: Request) -> StreamingResponse:
     queue = get_queue(run_id)
+    # A persisted result with a drained queue means the run is over, even if the
+    # terminal event was lost to a disconnect: replay rather than wait forever.
+    if queue is not None and queue.empty() and get_result(run_id) is not None:
+        drop_queue(run_id)
+        queue = None
     if queue is None:
         # Late subscriber: the run may already be complete.
         result = get_result(run_id)
@@ -83,20 +88,25 @@ async def stream_events(run_id: str, request: Request) -> StreamingResponse:
         return StreamingResponse(replay(), media_type="text/event-stream")
 
     async def generate():
-        try:
-            while True:
-                if await request.is_disconnected():
-                    return
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
-                except TimeoutError:
-                    yield ": keepalive\n\n"
-                    continue
-                yield f"data: {event.model_dump_json()}\n\n"
-                if event.type in ("run.complete", "run.error"):
+        # Drop the queue only once the terminal event has been delivered. A
+        # client disconnect must not drop it, or the still-running scenario
+        # 404s and its remaining events are lost; a reconnect resumes the queue.
+        while True:
+            if await request.is_disconnected():
+                return
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=15.0)
+            except TimeoutError:
+                if get_result(run_id) is not None:  # terminal event was lost
                     yield "event: end\ndata: complete\n\n"
+                    drop_queue(run_id)
                     return
-        finally:
-            drop_queue(run_id)
+                yield ": keepalive\n\n"
+                continue
+            yield f"data: {event.model_dump_json()}\n\n"
+            if event.type in ("run.complete", "run.error"):
+                yield "event: end\ndata: complete\n\n"
+                drop_queue(run_id)
+                return
 
     return StreamingResponse(generate(), media_type="text/event-stream")

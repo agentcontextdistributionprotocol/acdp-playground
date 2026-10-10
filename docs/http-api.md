@@ -120,7 +120,7 @@ The run executes as a background task. Subscribe to `stream_url` for live events
 traceback, when the scenario raised).
 
 A run counts as in flight while its SSE queue exists; otherwise the persisted
-result is used. **404** if neither exists — see the disconnect caveat below.
+result is used. **404** if neither exists.
 
 ### `GET /runs/{run_id}/events`  (SSE)
 
@@ -140,15 +140,16 @@ Behavior:
 - **Run already finished** — sends one `data:` message carrying the serialized
   `RunResult` (not a `StepEvent`), then the same `event: end` marker.
 - **No queue and no result** — **404**.
-- **Client disconnect (current behavior)** — the run's queue is dropped
-  whenever the stream ends for any reason, including a client disconnecting
-  mid-run. The scenario keeps running in the background, but until its result
-  is persisted both `GET /runs/{id}` and `GET /runs/{id}/events` answer **404**,
-  events emitted in that window are not replayable, and webhooks for the run
-  are not fanned into SSE. Tracked as
-  [acdp-playground#92](https://github.com/agentcontextdistributionprotocol/acdp-playground/issues/92).
-  Keep the stream open until the end marker, or poll `GET /runs/{id}` instead
-  of reconnecting.
+- **Client disconnect** — the run's queue survives a client dropping the
+  stream mid-run. The scenario keeps running and `GET /runs/{id}` keeps
+  answering. Reconnecting to `GET /runs/{id}/events` resumes from the events
+  not yet dequeued (an event in flight at the moment of disconnect can be
+  lost; if that was the terminal event, the reconnect gets the persisted
+  result replay instead). The queue is dropped once the terminal event has
+  been streamed. Use one subscriber per run: concurrent subscribers split the
+  events between them. A run whose stream is never opened, or is abandoned
+  mid-run, keeps its queue (which grows with the run's events) until the
+  process restarts.
 
 #### `StepEvent` schema
 

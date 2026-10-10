@@ -119,10 +119,9 @@ and the registry's
 5. **`GET /runs/{id}/events`** drains the queue as `text/event-stream`, emitting
    keepalives every 15s and terminating on `run.complete` / `run.error`. If the
    run already finished, it replays the final result instead. The queue is
-   dropped whenever the stream ends — including a mid-run client disconnect,
-   which currently makes the run 404 until its result is persisted (see
-   [HTTP API](http-api.md#get-runsrun_idevents--sse) and
-   [acdp-playground#92](https://github.com/agentcontextdistributionprotocol/acdp-playground/issues/92)).
+   dropped only after the terminal event has been delivered, so a client that
+   disconnects mid-run can reconnect and resume the same stream, and
+   `GET /runs/{id}` keeps answering while the run is in flight.
 
 ## Determinism & identity
 
