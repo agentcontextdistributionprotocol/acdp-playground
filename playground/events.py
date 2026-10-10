@@ -1,8 +1,8 @@
 """In-process SSE event bus.
 
 One ``asyncio.Queue`` per run_id. Queues are created when a run starts
-and removed when a run finishes (or its SSE consumer disconnects after
-``run.complete``).
+and removed once an SSE consumer has been delivered the terminal event
+(``run.complete``/``run.error``). A consumer disconnecting mid-run leaves it.
 """
 
 from __future__ import annotations

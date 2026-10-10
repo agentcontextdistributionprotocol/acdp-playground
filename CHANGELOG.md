@@ -4,6 +4,13 @@ Notable changes to the ACDP stack as observed from the playground.
 Tracks cross-repo work — playground, control plane, registry, SDK —
 so operators reading any one repo can see the system-wide picture.
 
+## 2026-10-10 — SSE disconnect no longer drops the run
+
+Fixes #92: the SSE stream dropped the run's event queue whenever it ended, so a
+client disconnecting mid-run made `GET /runs/{id}` and `/events` 404 until the
+run finished. The queue is now dropped only after `run.complete` / `run.error`
+has been streamed; a reconnect resumes it. Docs updated to match.
+
 ## 2026-10-09 — Docs re-synced with the code
 
 A docs-only pass bringing `docs/`, `README.md` and `CLAUDE.md` back in line with
@@ -18,8 +25,7 @@ plus links to the RFCs, `acdp-rs`, registry and control-plane docs.
   now names **S10 only**.
 - **HTTP API, architecture, agents, configuration** — corrected against
   `playground/api/*`, `control_plane.py`, `agents/*` and `config.py`; the
-  SSE mid-run disconnect behaviour is documented as current behaviour with
-  issue #92.
+  SSE mid-run disconnect caveat was documented (since fixed, see above).
 - **Testing** — four layers, including the opt-in real-LLM suite and a
   live-gate table (`ACDP_LIVE_STACK`, `ACDP_LIVE_SSE`, `ACDP_LIVE_REAL_LLM`).
 - **CI / deployment** — every workflow listed (`auto-merge.yml`,
