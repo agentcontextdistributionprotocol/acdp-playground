@@ -65,8 +65,11 @@ async def test_publish_threads_extended_body_fields():
     )
     req = client.requests[0]
     assert req["data_refs"][0]["type"] == "primary_result"
-    assert req["data_period"]["start"] == "2026-01-01T00:00:00Z"
-    assert req["expires_at"].startswith("2026-12-31")
+    # acdp >= 0.15 producers canonicalize to the RFC-ACDP-0001 §5.3 `.mmmZ`
+    # form; the whole-second inputs above prove the canonicalization.
+    assert req["data_period"]["start"] == "2026-01-01T00:00:00.000Z"
+    assert req["data_period"]["end"] == "2026-03-31T23:59:59.000Z"
+    assert req["expires_at"] == "2026-12-31T00:00:00.000Z"
     assert "did:web:reg:agents:helper" in req["contributors"]
 
 

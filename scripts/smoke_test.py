@@ -540,13 +540,14 @@ async def _check_extended_body_fields() -> int:
     req = captured.get("request", {})
     if (
         not req.get("data_refs")
-        or req.get("data_period", {}).get("start") != "2026-01-01T00:00:00Z"
+        or req.get("data_period", {}).get("start") != "2026-01-01T00:00:00.000Z"
     ):
         print(
             f"  FAIL: extended fields not threaded: {req.get('data_refs')} {req.get('data_period')}"
         )
         return 1
-    if not str(req.get("expires_at", "")).startswith("2026-12-31"):
+    # acdp >= 0.15 producers emit the RFC-ACDP-0001 §5.3 canonical `.mmmZ` form.
+    if req.get("expires_at") != "2026-12-31T00:00:00.000Z":
         print(f"  FAIL: expires_at not set: {req.get('expires_at')}")
         return 1
     print("  ok: data_refs + data_period + expires_at present on publish request")
