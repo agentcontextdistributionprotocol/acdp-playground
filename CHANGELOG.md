@@ -4,6 +4,19 @@ Notable changes to the ACDP stack as observed from the playground.
 Tracks cross-repo work — playground, control plane, registry, SDK —
 so operators reading any one repo can see the system-wide picture.
 
+## 2026-10-18 — `acdp` 0.14.5 → 0.15.1 (#96, supersedes #95)
+
+`acdp` 0.15 producers emit the RFC-ACDP-0001 §5.3 canonical `.mmmZ` form for
+`expires_at` and `data_period`, which turned the lockfile-only bump PRs red on
+one whole-second assertion. The unit suite and smoke test now pin the canonical
+form exactly (`data_period.start`/`end`, `expires_at`) from whole-second inputs.
+The pin is raised to `acdp>=0.15.0` because those assertions encode 0.15
+producer behaviour — a deliberate, reversible exception to the new-API-only
+rule; the alternative was comparing parsed instants, which would stop pinning
+the canonical form. The Python surface is otherwise unchanged;
+`verify_body_offline` now hashes the raw wire JSON, and wheels are
+`cp310-abi3`. Needs a 0.15 registry (`acdp-registry-rs` v0.5.3+).
+
 ## 2026-10-10 — SSE disconnect no longer drops the run
 
 Fixes #92: the SSE stream dropped the run's event queue whenever it ended, so a

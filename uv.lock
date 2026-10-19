@@ -53,7 +53,7 @@ multiagent = [
 
 [package.metadata]
 requires-dist = [
-    { name = "acdp", specifier = ">=0.14.1" },
+    { name = "acdp", specifier = ">=0.15.0" },
     { name = "crewai", marker = "extra == 'multiagent'", specifier = ">=0.86" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },

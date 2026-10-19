@@ -66,11 +66,22 @@ dependencies = [
     # without being able to break one — EmbeddedContent gained an optional
     # content_hash (so data_refs JSON 0.8.3 rejected is now accepted), and a
     # malformed derived_from id now raises ValueError where 0.8.3 raised
-    # RuntimeError. No wheel-ABI change: pyo3 0.29 with abi3-py39 first
-    # shipped in acdp 0.8.2, one release before the pin this bump replaces —
-    # read out of the published wheels (0.8.1 → pyo3-0.22.6; 0.8.2, 0.8.3 and
-    # 0.14.1 → pyo3-0.29.2), not inferred from a manifest or a changelog.
-    "acdp>=0.14.1",
+    # RuntimeError. No wheel-ABI change at the time: pyo3 0.29 with abi3-py39
+    # (historical — see 0.15 below) first shipped in acdp 0.8.2, one release
+    # before the pin that bump replaced — read out of the published wheels
+    # (0.8.1 → pyo3-0.22.6; 0.8.2, 0.8.3 and 0.14.1 → pyo3-0.29.2), not
+    # inferred from a manifest or a changelog.
+    # 0.15.0/0.15.1: (1) the Python surface is unchanged — no
+    # expected_surface.json diff between acdp-py-v0.14.5 and acdp-py-v0.15.1.
+    # (2) Producers now emit the RFC-ACDP-0001 §5.3 canonical `.mmmZ` form for
+    # expires_at and data_period, which needs a 0.15 registry (the sibling
+    # acdp-registry-rs is already on 0.15); the pin is raised to 0.15.0 because
+    # tests/test_scenarios_v2.py and scripts/smoke_test.py assert that form
+    # (a deliberate exception to the raise-only-for-new-API rule). (3) verify_body_offline now hashes the raw wire JSON
+    # (verify_body_value_offline) rather than a typed re-serialization.
+    # (4) Wheels are now cp310-abi3 (pyo3 abi3-py310, requires-python >=3.10),
+    # well under this project's >=3.12 floor.
+    "acdp>=0.15.0",
 ]
 
 [project.optional-dependencies]

@@ -54,9 +54,9 @@ _MS_RFC3339 = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z")
 _REGISTRY_ONLY_FIELDS = ("ctx_id", "origin_registry", "created_at")
 
 #: ``AcdpError::KeyResolution``'s Display prefix
-#: (``acdp-rs/crates/acdp-primitives/src/error.rs:237``). ``verify_body_offline``
+#: (``acdp-rs/crates/acdp-primitives/src/error.rs:273``). ``verify_body_offline``
 #: raises it for any non-``did:key`` producer
-#: (``crates/acdp-verify/src/lib.rs:294-300``) — a limitation of offline
+#: (``crates/acdp-verify/src/lib.rs:402-413``) — a limitation of offline
 #: verification, not a defect in the body.
 _OFFLINE_KEY_RESOLUTION = "key resolution failed:"
 
@@ -165,13 +165,13 @@ def synthesize_retrieval_body(
     Before returning, the result round-trips through the SDK, so a caller can
     never receive a body the SDK would reject:
     :meth:`AcdpVerifier.verify_body_offline` deserializes into ``Body`` proper
-    (``acdp-rs/bindings/acdp-py/src/verifier.rs:236``) and therefore fails on a
+    (``acdp-rs/bindings/acdp-py/src/verifier.rs:241``) and therefore fails on a
     missing or malformed required field, and
     :meth:`~AcdpVerifier.verify_content_hash` recomputes the digest over the
     overlaid object — a true invariant, not a tautology, since hash coverage
     excludes all four overlaid fields. For a ``did:web`` producer
     ``verify_body_offline`` can only get as far as key resolution
-    (``crates/acdp-verify/src/lib.rs:294-300``); that one ``RuntimeError`` is
+    (``crates/acdp-verify/src/lib.rs:402-413``); that one ``RuntimeError`` is
     tolerated, every other SDK rejection propagates.
     """
     if not _MS_RFC3339.fullmatch(created_at):
