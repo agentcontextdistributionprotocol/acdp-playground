@@ -4,6 +4,16 @@ Notable changes to the ACDP stack as observed from the playground.
 Tracks cross-repo work — playground, control plane, registry, SDK —
 so operators reading any one repo can see the system-wide picture.
 
+## 2026-10-21 — Stale docs and comments corrected
+
+Fixes #97: the `railway/DEPLOY.md` verification step now counts
+`.scenarios | length` (the endpoint returns an object, so `jq 'length'` printed
+the key count) and expects 34, and the docs' "checked against" note names
+acdp-rs 0.15.1 and acdp-registry-rs 0.5.4 (re-checked; nothing else in the
+docs was stale). The real-LLM live suite's comments now say that only the 10
+LLM-backed scenarios (S1–S8, S10, S11) make billed completions, and the
+Dependabot config's header matches its monthly schedule.
+
 ## 2026-10-18 — `acdp` 0.14.5 → 0.15.1 (#96, supersedes #95)
 
 `acdp` 0.15 producers emit the RFC-ACDP-0001 §5.3 canonical `.mmmZ` form for

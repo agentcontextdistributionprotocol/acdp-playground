@@ -1,10 +1,11 @@
-# Weekly dependency PRs, grouped so they don't flood the queue.
+# Monthly dependency PRs, grouped so they don't flood the queue.
 #
 # The Python side uses the `uv` ecosystem (not `pip`) so bumps land in the
 # committed uv.lock that CI installs with `uv sync --frozen` — the pip
 # ecosystem only rewrites pyproject ranges and would leave the lock stale.
 #
-# The `acdp` SDK pin is deliberately excluded: bumping it is a semantic
+# The `acdp` SDK is deliberately excluded: its uv.lock bumps arrive as
+# automated PRs from bump-acdp.yml instead, and raising the pin is a semantic
 # change (new protocol surface, scenario work) done by hand — see the
 # annotated pin in pyproject.toml.
 version: 2

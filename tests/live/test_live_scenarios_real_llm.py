@@ -5,13 +5,16 @@ control-plane HTTP probes (:mod:`playground.conformance`) — no LLM call ever
 happens. This file is different: it runs the **real** S1-S34 scenario catalog
 through the playground's own HTTP API (``POST /runs``) against a genuinely
 running ``make up-full`` stack, with ``LLM_PROVIDER`` pointed at a real
-provider (openai/anthropic) — every agent turn is a real, billed chat
-completion, not the deterministic mock. The offline/mocked suites
+provider (openai/anthropic). The 10 scenarios that drive an agent turn
+(S1-S8, S10, S11) make real, billed chat completions instead of using the
+deterministic mock; the other 24 run their protocol paths with no model
+call. The offline/mocked suites
 (``tests/test_scenarios_offline.py``, ``tests/test_scenarios_mocked_registry.py``,
 ``tests/test_scenarios_round2.py``/``round3.py``) already pin each scenario's
 deterministic core; this file is the live-and-real counterpart that catches
-what those can't: whether a real LLM's actual output still round-trips through
-a real registry/control-plane with every protocol attribute intact.
+what those can't: whether, for the LLM-backed scenarios, a real LLM's actual
+output still round-trips through a real registry/control-plane with every
+protocol attribute intact.
 
 For each scenario this file:
 
@@ -74,9 +77,10 @@ from playground.config import Settings
 
 # tests/live/conftest.py already skips this whole package unless
 # ACDP_LIVE_STACK is set. This file additionally spends real, billed LLM API
-# calls on every scenario (at least one real chat completion each; several —
-# S3, S4, S25 — are multi-agent chains) — `make test-live` alone must never
-# silently bill an API key, so it needs its own explicit opt-in.
+# calls in the 10 LLM-backed scenarios (S1-S8, S10, S11; S11 only if its token
+# mint succeeds), with S3 (4 calls) and S4 (3) as multi-agent LLM chains —
+# `make test-live` alone must never silently bill an API key, so it needs its
+# own explicit opt-in.
 pytestmark = pytest.mark.skipif(
     not os.environ.get("ACDP_LIVE_REAL_LLM"),
     reason=(
@@ -87,9 +91,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 PLAYGROUND_URL = os.environ.get("PLAYGROUND_URL", "http://localhost:8000")
-# Real multi-agent LLM chains (S3 has 4 agents, S4 has 3, S25 has 3 by
-# default) can comfortably take over a minute end to end. Generous on
-# purpose — this suite is meant to run deep and slow, not fast.
+# The real multi-agent LLM chains (S3 has 4 LLM agents, S4 has 3) can
+# comfortably take over a minute end to end. Generous on purpose — this
+# suite is meant to run deep and slow, not fast.
 RUN_TIMEOUT_SECS = 240.0
 POLL_INTERVAL_SECS = 2.0
 
