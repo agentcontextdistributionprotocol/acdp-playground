@@ -75,8 +75,8 @@ Reach for these when you need the canonical detail:
 | **UI console** | [README](https://github.com/agentcontextdistributionprotocol/acdp-ui-console/blob/main/README.md) |
 | **Ecosystem** (`acdp-docs`) | [ecosystem map](https://github.com/agentcontextdistributionprotocol/acdp-docs/blob/main/kb/ecosystem-map.md) · [playground knowledge-base entry](https://github.com/agentcontextdistributionprotocol/acdp-docs/blob/main/kb/repos/acdp-playground.md) |
 
-These docs were last checked against **acdp-rs 0.14.5** (the SDK version in
-`uv.lock`), **acdp-registry-rs 0.4.2**, **acdp-control-plane 0.1.4** and
+These docs were last checked against **acdp-rs 0.15.1** (the SDK version in
+`uv.lock`), **acdp-registry-rs 0.5.4**, **acdp-control-plane 0.1.4** and
 **spec v0.5.0** (still a Draft line). That is a "checked against" note, not a
 compatibility promise; the spec's version matrix is the place to check which
 versions work together.
