@@ -24,6 +24,16 @@ plane / UI images each build from their own sibling repo context
 | `control-plane` | acdp-control-plane | `3001` | no | full |
 | `ui-console` | acdp-ui-console | `3000` | yes | full |
 
+The `ui-console` is a production build, so it gates its backend proxy
+(`/api/proxy/*`, `/api/stream/*`) behind an operator passphrase and answers
+503 when none is configured. The full overlay sets
+`ACDP_UI_CONSOLE_PASSWORD: ${ACDP_UI_CONSOLE_PASSWORD:-playground-console}`:
+sign in at `http://localhost:3000/login` with `playground-console`, or export
+your own value (or set it in `.env`) before `make up-full`. Use a high-entropy
+passphrase if the stack is reachable beyond localhost. The console owns this
+gate; see its
+[README](https://github.com/agentcontextdistributionprotocol/acdp-ui-console#readme).
+
 The registries store to an **ephemeral SQLite** db on a `tmpfs` mount, so state
 resets on restart. The full overlay provisions an ephemeral `db` Postgres
 service (also `tmpfs`) that the control plane requires; what the CP persists

@@ -140,7 +140,10 @@ services:
   # Next.js orchestration + observability console. Demo mode is baked OFF at
   # build time (NEXT_PUBLIC_* is inlined by Next) so the browser drives the
   # real stack; the Next server proxies to the services below by their compose
-  # DNS names. Visit http://localhost:3000.
+  # DNS names. Visit http://localhost:3000 and sign in at /login with the
+  # operator passphrase (default `playground-console`; override with
+  # ACDP_UI_CONSOLE_PASSWORD). Without one, the production console answers
+  # 503 on every /api/proxy and /api/stream call.
   ui-console:
     build:
       context: ../acdp-ui-console
@@ -154,6 +157,7 @@ services:
       REGISTRY_A_BASE_URL: http://registry-a:8100
       REGISTRY_B_BASE_URL: http://registry-b:8200
       CONTROL_PLANE_API_KEY: ${CONTROL_PLANE_ADMIN_TOKEN:-playground-cp-admin}
+      ACDP_UI_CONSOLE_PASSWORD: ${ACDP_UI_CONSOLE_PASSWORD:-playground-console}
     depends_on:
       control-plane:
         condition: service_healthy
