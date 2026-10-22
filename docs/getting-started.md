@@ -76,6 +76,10 @@ requires, and the UI console on `:3000`):
 make up-full
 ```
 
+Sign in to the console at `http://localhost:3000/login` with the passphrase
+`playground-console` (override with `ACDP_UI_CONSOLE_PASSWORD`; change it before
+exposing the stack beyond localhost).
+
 To run the API locally without Docker (registries still needed for live calls):
 
 ```bash
@@ -118,7 +122,7 @@ The SSE stream emits one `StepEvent` per protocol action — `agent.started`,
 | `make smoke-live` | Smoke checks against a running full stack |
 | `make test` | Unit suite (`pytest -q`, offline) |
 | `make cov` | Unit suite with the coverage gate CI enforces (≥ 80%) |
-| `make test-live` | Live conformance probes (needs `make up-full`); the SSE de-dup and real-LLM tests are collected but skip without their own gates |
+| `make test-live` | Live conformance probes (needs `make up-full`); the console sign-in, SSE de-dup and real-LLM tests are collected but skip without their own gates |
 | `make up` / `make down` | Playground + two registries |
 | `make up-full` / `make down-full` | Full stack incl. control plane, its `db`, and the UI console |
 | `make docker` | Build the compose images without starting them |

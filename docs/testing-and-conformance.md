@@ -270,13 +270,22 @@ run on every plain `pytest`; the live probes do not.
 ### Live gates
 
 Everything under `tests/live/` is tagged `live` by `tests/live/conftest.py` and
-skipped unless `ACDP_LIVE_STACK` is set. Two files add a second gate:
+skipped unless `ACDP_LIVE_STACK` is set. Three files add a second gate:
 
 | File | Tests | Needs | Why the extra gate |
 |------|-------|-------|--------------------|
 | `test_live_conformance.py` | 18 (one per probe) | `ACDP_LIVE_STACK=1` | — |
+| `test_live_console_auth.py` | 3 | `ACDP_LIVE_STACK=1` **and** `ACDP_LIVE_CONSOLE=1` | CI's live job never builds the UI console; checks the default passphrase signs in and proxies a backend call |
 | `test_live_sse_dedup.py` | 1 | `ACDP_LIVE_STACK=1` **and** `ACDP_LIVE_SSE=1` | The SSE de-dup bug only reproduces on a Redis `StreamHub`; the demo stack is memory-backed |
 | `test_live_scenarios_real_llm.py` | 34 (S1–S34) | `ACDP_LIVE_STACK=1` **and** `ACDP_LIVE_REAL_LLM=1` | Bills a real LLM API key |
+
+To run the console sign-in check after `make up-full` (export
+`ACDP_UI_CONSOLE_PASSWORD` too if you overrode it, since pytest doesn't read
+`.env`; `ACDP_UI_CONSOLE_URL` defaults to `http://localhost:3000`):
+
+```bash
+ACDP_LIVE_STACK=1 ACDP_LIVE_CONSOLE=1 uv run pytest tests/live/test_live_console_auth.py
+```
 
 ### Real-LLM scenario suite
 
@@ -336,8 +345,9 @@ before pushing.
 | `live` | `workflow_dispatch` / weekly schedule (Mondays 05:17 UTC) | Boots registry-a + control-plane (and the `db` it depends on) from the sibling repos, then runs `ACDP_LIVE_STACK=1 pytest -m live` + `smoke_test.py --live`; uploads compose logs as an artifact on failure |
 
 The `live` job sets only `ACDP_LIVE_STACK`, so of `tests/live/` it runs the 18
-conformance probes; the SSE de-dup check and the real-LLM suite skip there (the
-playground app itself isn't booted in that job). The weekly schedule is the
+conformance probes; the UI console sign-in check, the SSE de-dup check and the
+real-LLM suite skip there (neither the playground app nor the UI console is
+booted in that job). The weekly schedule is the
 mock-drift tripwire. Superseded pushes to the same PR cancel the in-flight run.
 
 The other workflows (`auto-merge.yml`, `bump-acdp.yml`, `deploy-images.yml`,

@@ -265,6 +265,11 @@ the playground at the control plane and wires the shared HMAC + admin secrets
 (auth nonces and revocations stay in memory, `AUTH_PERSISTENCE=memory`). S13 and S14 need the control plane
 (S11 and S12 use it optionally); the full stack gives them a real one.
 
+The console runs as a production build, so its backend proxy is gated by an
+operator passphrase: sign in at `http://localhost:3000/login` with
+`playground-console`. Set `ACDP_UI_CONSOLE_PASSWORD` to override it, and do so
+before exposing the stack beyond localhost.
+
 > **Live auth caveat.** For a `did:web` agent, the registry verifies
 > challenge signatures by resolving the agent's DID document. The
 > playground's `*.playground.local` DIDs aren't web-hosted and keys rotate
@@ -304,10 +309,11 @@ admin pinned-key reload, and that the capability DTO accepts `ecdsa-p256`
 lists each one and what it asserts.
 
 Everything in `tests/live/` is **skipped unless `ACDP_LIVE_STACK` is set**, so a
-plain `pytest` stays offline. Two files need a second gate as well, so
-`make test-live` collects but skips them: the SSE de-duplication check
-(`ACDP_LIVE_SSE=1`; the bug only reproduces on a Redis StreamHub, and the demo
-stack is memory-backed) and the opt-in **real-LLM suite**
+plain `pytest` stays offline. Three files need a second gate as well, so
+`make test-live` collects but skips them: the UI console sign-in check
+(`ACDP_LIVE_CONSOLE=1`; CI's live job never builds the console), the SSE
+de-duplication check (`ACDP_LIVE_SSE=1`; the bug only reproduces on a Redis
+StreamHub, and the demo stack is memory-backed) and the opt-in **real-LLM suite**
 (`ACDP_LIVE_REAL_LLM=1`), which runs all 34 scenarios through `POST /runs`
 against the playground at `PLAYGROUND_URL` with a real, billed provider key and
 re-verifies every context they publish. CI runs the conformance probes on
