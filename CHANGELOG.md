@@ -4,6 +4,19 @@ Notable changes to the ACDP stack as observed from the playground.
 Tracks cross-repo work — playground, control plane, registry, SDK —
 so operators reading any one repo can see the system-wide picture.
 
+## 2026-10-21 — Full-stack UI console signs in out of the box
+
+Fixes #98. `make up-full` builds the console in production mode, and its
+middleware answers 503 on every `/api/proxy` and `/api/stream` call (and on
+login) when `ACDP_UI_CONSOLE_PASSWORD` is unset. The compose file never set it,
+so the console on `:3000` couldn't reach any backend. `docker-compose.full.yml`
+now sets `ACDP_UI_CONSOLE_PASSWORD: ${ACDP_UI_CONSOLE_PASSWORD:-playground-console}`:
+sign in at `http://localhost:3000/login` with `playground-console`, or override
+it. A new live check, `tests/live/test_live_console_auth.py`, is gated on
+`ACDP_LIVE_CONSOLE=1` because CI's live job doesn't build the console. It proves
+that sign-in and a proxied backend call work, and that the gate still answers
+401 to a caller with no session or the wrong passphrase.
+
 ## 2026-10-21 — Stale docs and comments corrected
 
 Fixes #97: the `railway/DEPLOY.md` verification step now counts
