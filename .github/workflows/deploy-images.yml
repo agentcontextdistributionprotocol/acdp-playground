@@ -100,8 +100,13 @@ jobs:
             echo "::error::RAILWAY_TOKEN secret is not set; image pushed but prod was not redeployed"
             exit 1
           fi
-          npm install -g @railway/cli@4.37.2
-          railway redeploy --service acdp-playground --yes
+          npm install -g @railway/cli@5.70.0
+          # --from-source re-pulls the `latest` image; a plain redeploy would
+          # reuse the previous deployment's digest.
+          railway redeploy --from-source --yes \
+            --project a280cc74-7393-431c-80e0-fd22ba66c4c6 \
+            --environment production \
+            --service acdp-playground
 
       - name: Summary
         run: |

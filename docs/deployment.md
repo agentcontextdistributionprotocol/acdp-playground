@@ -121,7 +121,7 @@ and [UPGRADING.md](https://github.com/agentcontextdistributionprotocol/acdp-regi
 pushes it to `ghcr.io/<owner>/acdp-playground` on every merge to `main`, on a
 `v*` tag, or on manual dispatch (the `acdp` SDK comes from PyPI, so no sibling
 checkout is required). **Production redeploys automatically on merge:** after a
-push to `main` the workflow runs `railway redeploy --service acdp-playground`,
+push to `main` the workflow runs `railway redeploy --from-source --service acdp-playground`,
 authenticated by the `RAILWAY_TOKEN` repo secret (a project token for the
 `acdp-runner` project's `production` environment). The other
 stack images are published by their own repos to
