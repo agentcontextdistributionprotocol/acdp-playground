@@ -7,7 +7,7 @@ tag (this repo builds `acdp-playground`); Railway runs them.
 
 **The production playground redeploys automatically on every merge to `main`:**
 `deploy-images.yml` rebuilds `acdp-playground:latest` and then runs
-`railway redeploy --service acdp-playground`, which re-pulls the image (see
+`railway redeploy --from-source --service acdp-playground`, which re-pulls the image (see
 [Auto-redeploy on merge](#auto-redeploy-on-merge)).
 
 ```
@@ -65,7 +65,7 @@ git tag v0.1.0 && git push origin v0.1.0      # tag-triggered
 Every push to `main` (that is, every merged PR) runs `deploy-images.yml`, which:
 
 1. builds and pushes `acdp-playground:latest` plus `acdp-playground:sha-<short>`
-2. runs `railway redeploy --service acdp-playground --yes` so the prod service
+2. runs `railway redeploy --from-source --service acdp-playground` so the prod service
    re-pulls `latest`
 
 The redeploy step authenticates with the `RAILWAY_TOKEN` repo secret, a Railway
