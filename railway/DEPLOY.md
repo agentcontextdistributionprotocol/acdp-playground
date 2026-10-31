@@ -176,7 +176,14 @@ CONTROL_PLANE_BASE_URL=http://control-plane.railway.internal:3001
 REGISTRY_A_BASE_URL=http://registry-a.railway.internal:8100
 REGISTRY_B_BASE_URL=http://registry-b.railway.internal:8200
 CONTROL_PLANE_API_KEY=<cp-admin-key>
+ACDP_UI_CONSOLE_PASSWORD=<console-passphrase>
 ```
+
+> `ACDP_UI_CONSOLE_PASSWORD` is the operator passphrase for the console's
+> `/login`. Without it the production console answers **503** on every
+> `/api/proxy` and `/api/stream` call. The compose stack defaults it to
+> `playground-console`; on a public Railway domain pick your own (e.g.
+> `openssl rand -base64 24`).
 
 ---
 
