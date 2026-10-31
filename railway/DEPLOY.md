@@ -5,6 +5,11 @@ ui-console** — to [Railway](https://railway.com), pulling images from GitHub
 Container Registry (ghcr.io). Each repo publishes its **own** image on a `v*`
 tag (this repo builds `acdp-playground`); Railway runs them.
 
+**The production playground redeploys automatically on every merge to `main`:**
+`deploy-images.yml` rebuilds `acdp-playground:latest` and then runs
+`railway redeploy --service acdp-playground`, which re-pulls the image (see
+[Auto-redeploy on merge](#auto-redeploy-on-merge)).
+
 ```
                          ┌─────────────────────────────┐
    public ── ui-console ─┤  (Next.js UI, public domain) │
@@ -54,6 +59,23 @@ Publish this repo's image (pick one):
 git tag v0.1.0 && git push origin v0.1.0      # tag-triggered
 # or: Actions → "Build & push playground image (ghcr)" → Run workflow (manual)
 ```
+
+### Auto-redeploy on merge
+
+Every push to `main` (that is, every merged PR) runs `deploy-images.yml`, which:
+
+1. builds and pushes `acdp-playground:latest` plus `acdp-playground:sha-<short>`
+2. runs `railway redeploy --service acdp-playground --yes` so the prod service
+   re-pulls `latest`
+
+The redeploy step authenticates with the `RAILWAY_TOKEN` repo secret, a Railway
+**project token** scoped to the `acdp-runner` project's `production`
+environment (Project → *Settings → Tokens*). If the secret is missing, the step
+fails loudly: the image still gets pushed, but prod isn't redeployed. Tags and
+manual dispatches publish images without redeploying. Publishes are serialised,
+so two quick merges can't race each other. Only the playground service
+redeploys this way; the other stack images follow their own repos' release
+flow.
 
 Tag the sibling repos the same way to publish the rest. Then make each package
 **public** (or grant Railway access): GitHub → the org's *Packages* → each

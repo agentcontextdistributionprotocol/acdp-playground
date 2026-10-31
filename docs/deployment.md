@@ -118,8 +118,12 @@ and [UPGRADING.md](https://github.com/agentcontextdistributionprotocol/acdp-regi
 ## Railway
 
 `.github/workflows/deploy-images.yml` builds this repo's playground image and
-pushes it to `ghcr.io/<owner>/acdp-playground` on a `v*` tag or manual dispatch
-(the `acdp` SDK comes from PyPI, so no sibling checkout is required). The other
+pushes it to `ghcr.io/<owner>/acdp-playground` on every merge to `main`, on a
+`v*` tag, or on manual dispatch (the `acdp` SDK comes from PyPI, so no sibling
+checkout is required). **Production redeploys automatically on merge:** after a
+push to `main` the workflow runs `railway redeploy --service acdp-playground`,
+authenticated by the `RAILWAY_TOKEN` repo secret (a project token for the
+`acdp-runner` project's `production` environment). The other
 stack images are published by their own repos to
 `ghcr.io/<owner>/acdp-{registry,control-plane,ui-console}`. The playground image
 binds Railway's dynamic `$PORT`/`$HOST`.
@@ -140,7 +144,7 @@ wiring. Key points:
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
 | `ci.yml` | push to `main` / PR / `workflow_dispatch` / weekly schedule | `test`: `ruff check` + `ruff format --check`, the offline unit suite with an 80% coverage gate on Python 3.12 + 3.13, smoke test (every trigger except the schedule); `docker`: PRs build the playground image (no push); `live`: conformance on manual `workflow_dispatch` **or the weekly schedule** (boots registry-a + control-plane, uploads compose logs on failure). See [What CI runs](testing-and-conformance.md#what-ci-runs) |
-| `deploy-images.yml` | `v*` tag / dispatch | Build + push the **playground** image only to `ghcr.io/<owner>/acdp-playground` (`latest` + the tag); every other stack image is published by its own repo |
+| `deploy-images.yml` | push to `main` / `v*` tag / dispatch | Build + push the **playground** image only to `ghcr.io/<owner>/acdp-playground` (`latest` + the tag, or `sha-<short>` on `main`). On a push to `main` it then redeploys the prod Railway `acdp-playground` service (`RAILWAY_TOKEN` secret). Every other stack image is published by its own repo |
 | `auto-merge.yml` | every PR | Calls the shared `acdp-ci` auto-merge workflow, which arms GitHub auto-merge for patch/minor **Dependabot** PRs once required checks pass (it never bypasses CI) |
 | `bump-acdp.yml` | `repository_dispatch` `acdp-released` / dispatch | Calls the shared `acdp-ci` `bump-consume.yml` to open a `uv.lock` bump PR for a new `acdp` release — see [SDK bumps](testing-and-conformance.md#sdk-bumps) |
 | `notify-website.yml` | push to `main` touching `docs/**` or `README.md`, or dispatch | Dispatch a `docs-updated` event to `acdp-website` |

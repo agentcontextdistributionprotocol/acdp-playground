@@ -340,8 +340,10 @@ image), and the UI console (built from `../acdp-ui-console`).
 ## Deploying to Railway
 
 `.github/workflows/deploy-images.yml` builds this repo's playground image and
-pushes it to `ghcr.io/<owner>/acdp-playground` on a `v*` tag or manual dispatch
-(the `acdp` SDK comes from PyPI — no sibling checkout required). The other stack
+pushes it to `ghcr.io/<owner>/acdp-playground` on every merge to `main`, a `v*`
+tag, or a manual dispatch (the `acdp` SDK comes from PyPI — no sibling checkout
+required). **Production redeploys automatically on merge:** after a push to
+`main` the workflow redeploys the prod Railway `acdp-playground` service. The other stack
 images are published by their own repos. The playground image binds Railway's
 dynamic `$PORT`/`$HOST`.
 **See [`railway/DEPLOY.md`](railway/DEPLOY.md)** for the full deploy — service
