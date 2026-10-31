@@ -17,6 +17,9 @@ name: Build & push playground image (ghcr)
 
 on:
   push:
+    # A merge to main rebuilds `latest` and redeploys the prod Railway service;
+    # a `v*` tag also publishes a versioned image.
+    branches: [main]
     tags: ['v*']
   workflow_dispatch:
     inputs:
@@ -28,6 +31,11 @@ on:
 permissions:
   contents: read
   packages: write
+
+# Serialise publishes so two quick merges can't race the redeploy.
+concurrency:
+  group: deploy-images
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
@@ -58,8 +66,10 @@ jobs:
       - name: Compute extra tag
         id: meta
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "${{ github.ref_type }}" = "tag" ]; then
             echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           else
             echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
           fi
@@ -76,6 +86,22 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.OWNER }}/acdp-playground:${{ steps.meta.outputs.tag }}
           cache-from: type=gha,scope=playground
           cache-to: type=gha,scope=playground,mode=max
+
+      # Railway runs the `latest` image; redeploying the service re-pulls it.
+      # RAILWAY_TOKEN is a project token scoped to the acdp-runner project's
+      # production environment. Runs on merges to main only, not on tags or
+      # manual dispatches.
+      - name: Redeploy prod Railway service
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::error::RAILWAY_TOKEN secret is not set; image pushed but prod was not redeployed"
+            exit 1
+          fi
+          npm install -g @railway/cli@4.37.2
+          railway redeploy --service acdp-playground --yes
 
       - name: Summary
         run: |
