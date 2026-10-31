@@ -81,6 +81,9 @@ dependencies = [
     # (verify_body_value_offline) rather than a typed re-serialization.
     # (4) Wheels are now cp310-abi3 (pyo3 abi3-py310, requires-python >=3.10),
     # well under this project's >=3.12 floor.
+    # 0.16.0–0.19.0: lock-only; the floor stays at 0.15.0. The playground calls
+    # no API added since 0.15 (no keyless, no chain), and the offline suite,
+    # smoke and tests/test_sdk_surface.py pass unchanged on 0.19.0.
     "acdp>=0.15.0",
 ]
 
