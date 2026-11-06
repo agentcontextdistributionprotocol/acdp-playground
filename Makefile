@@ -1,4 +1,4 @@
-.PHONY: dev dev-local build-sdk run test test-live cov smoke smoke-live docker up down up-full down-full fmt lint clean
+.PHONY: dev dev-local build-sdk run test test-live cov smoke smoke-live docker up down up-full down-full fmt lint clean a2a-demo
 
 PYTHON ?= python
 UV ?= uv
@@ -68,3 +68,9 @@ lint:
 
 clean:
 	rm -rf .venv .pytest_cache __pycache__ */__pycache__ */*/__pycache__
+
+# RFC-ACDP-0022 demo (a2a/, its own uv project): build the acdp-a2a sidecar,
+# boot a local registry-a, run pass / tamper / retraction, tear down.
+a2a-demo:
+	$(MAKE) -C a2a dev up
+	$(MAKE) -C a2a demo; rc=$$?; $(MAKE) -C a2a down; exit $$rc

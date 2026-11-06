@@ -28,3 +28,5 @@ plans/
 temp/
 CLAUDE.md
 .claude/
+# RFC-0022 A2A demo: the sidecar's cargo build
+a2a/sidecar/target/

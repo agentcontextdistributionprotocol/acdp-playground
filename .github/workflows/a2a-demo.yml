@@ -1,0 +1,97 @@
+name: A2A provenance demo
+
+# RFC-ACDP-0022 end to end: two a2a-sdk agents against a local registry-a
+# (pass, tamper, retraction). The demo is its own uv project under a2a/ and
+# never touches the deployed playground app or a production registry.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'a2a/**'
+      - 'config/registry-a.toml'
+      - '.github/workflows/a2a-demo.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'a2a/**'
+      - 'config/registry-a.toml'
+      - '.github/workflows/a2a-demo.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: a2a-demo-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: a2a
+
+jobs:
+  demo:
+    name: a2a demo (pass / tamper / retraction)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Boot the local registry (registry-a + throwaway Postgres)
+        # Started first so the image pull overlaps the sidecar build.
+        run: docker compose -p acdp-a2a up -d
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2.9.1
+        with:
+          workspaces: a2a/sidecar
+
+      - name: Build the acdp-a2a sidecar
+        working-directory: a2a/sidecar
+        run: |
+          cargo fmt --check
+          cargo clippy --release --locked -- -D warnings
+          cargo build --release --locked
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: a2a/uv.lock
+
+      - name: Install the demo project
+        run: uv sync --frozen
+        env:
+          UV_LINK_MODE: copy
+
+      - name: Lint and unit tests
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run pytest -q
+
+      - name: Wait for the registry
+        run: docker compose -p acdp-a2a up -d --wait
+
+      - name: Run the demo (pass, tamper, retraction)
+        run: uv run python -m acdp_a2a_demo.demo --json demo-outcome.json
+
+      - name: Upload the demo outcome
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: a2a-demo-outcome
+          path: a2a/demo-outcome.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Registry logs (on failure)
+        if: failure()
+        run: docker compose -p acdp-a2a logs --no-color registry-a | tail -200
+
+      - name: Tear down
+        if: always()
+        run: docker compose -p acdp-a2a down -v

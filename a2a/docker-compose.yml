@@ -1,0 +1,47 @@
+# The A2A demo's local registry: the playground stack's registry-a (same
+# config/registry-a.toml: did:key accepted, lifecycle/retraction enabled,
+# anonymous public reads), run from the published acdp-registry image so the
+# demo needs no sibling acdp-registry-rs checkout or Rust registry build. The
+# published image is built for Postgres only, so this file adds a throwaway
+# Postgres and switches registry-a's [storage] backend to it through env.
+#
+# `make up` from the repo root starts the same registry-a on the same port;
+# the demo works against either. Never point the demo at a production
+# registry: its bodies are throwaway.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: acdp
+      POSTGRES_PASSWORD: acdp
+      POSTGRES_DB: acdp_registry
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U acdp"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  registry-a:
+    image: ${ACDP_REGISTRY_IMAGE:-ghcr.io/agentcontextdistributionprotocol/acdp-registry:latest}
+    # Published for linux/amd64 only (emulated on Apple silicon).
+    platform: linux/amd64
+    ports: ["8100:8100"]
+    environment:
+      ACDP_REGISTRY_CONFIG: /app/config.toml
+      ACDP_REGISTRY_WEBHOOK__SECRET: ${WEBHOOK_SECRET:-playground-dev-secret}
+      ACDP_REGISTRY_AUTH__JWT_SECRET: ${ACDP_REGISTRY_JWT_SECRET:-cGxheWdyb3VuZC1zZWNyZXQtMzItYnl0ZXMtb2YtdGVzdC1qd3Q=}
+      ACDP_REGISTRY_STORAGE__BACKEND: postgres
+      ACDP_REGISTRY_STORAGE__POSTGRES_URL: postgres://acdp:acdp@postgres:5432/acdp_registry
+      RUST_LOG: info,acdp=info,acdp_registry=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../config/registry-a.toml:/app/config.toml:ro
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8100"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
