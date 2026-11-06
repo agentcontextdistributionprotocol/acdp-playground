@@ -20,6 +20,11 @@ build/
 .env
 
 plans/
+# Local session trackers (agent planning state, never committed)
+/ASSUMPTIONS.md
+/DECISIONS.md
+/DEFERRED.md
+/PROGRESS.md
 temp/
 CLAUDE.md
 .claude/
