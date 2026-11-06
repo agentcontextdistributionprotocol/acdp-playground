@@ -53,6 +53,7 @@ config/                       # registry-a.toml, registry-b.toml
 docker-compose.yml            # playground + two registries
 docker-compose.full.yml       # overlay adding db (Postgres) + control plane + ui-console (make up-full)
 tests/                        # offline unit suite; tests/live/ = opt-in live-stack suites
+a2a/                          # RFC-ACDP-0022 demo: two a2a-sdk agents (own uv project, not in the app image)
 ```
 
 ## Quickstart
@@ -204,6 +205,17 @@ full table, including the infrastructure each scenario needs.
 > `base64`), is independent of the DataRef-root `content_hash`, and a tampered
 > byte fails closed on both the publish and retrieval paths. The live half
 > round-trips the refs through registry-a, degrading gracefully without one.
+
+## A2A artifact provenance demo
+
+[`a2a/`](a2a/README.md) runs
+[RFC-ACDP-0022](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0022-a2a-artifact-provenance.md)
+end to end with two agents built on the official A2A Python SDK. The producer
+signs each completed artifact through acdp-rs's `acdp-a2a`. The client verifies
+what it holds with acdp-verifier-py's holder. The demo has three runs against a
+local registry: pass, tamper and retraction. It is a separate project, so the
+deployed playground app does not include it. Run it with
+`make a2a-demo` (Docker, Rust and `uv`).
 
 ## Protocol features exercised
 

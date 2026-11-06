@@ -1,0 +1,20 @@
+[package]
+name        = "acdp-a2a-sidecar"
+version     = "0.1.0"
+edition     = "2021"
+publish     = false
+description = "JSON-lines bridge from a Python a2a-sdk agent to acdp-rs's acdp-a2a producer (RFC-ACDP-0022). No protocol logic of its own."
+license     = "Apache-2.0"
+
+[[bin]]
+name = "acdp-a2a-sidecar"
+path = "src/main.rs"
+
+[dependencies]
+# acdp-rs at the commit that landed acdp-a2a (#548) plus the 4bd7aef spec
+# pin (#551). Switch to the crates.io release once acdp-a2a 0.21.2 is out.
+acdp       = { git = "https://github.com/agentcontextdistributionprotocol/acdp-rs", rev = "4e99bfe", default-features = false, features = ["client"] }
+acdp-a2a   = { git = "https://github.com/agentcontextdistributionprotocol/acdp-rs", rev = "4e99bfe" }
+tokio      = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "io-std"] }
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+hex        = "0.4"

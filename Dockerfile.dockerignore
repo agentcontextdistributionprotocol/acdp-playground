@@ -14,3 +14,6 @@
 plans
 .claude
 .env
+# The RFC-0022 A2A demo is its own project (own deps, a Rust sidecar build
+# under a2a/sidecar/target); the deployed playground image never ships it.
+a2a
