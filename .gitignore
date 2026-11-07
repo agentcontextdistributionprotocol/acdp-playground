@@ -25,6 +25,7 @@ plans/
 /DECISIONS.md
 /DEFERRED.md
 /PROGRESS.md
+.drive.lock
 temp/
 CLAUDE.md
 .claude/

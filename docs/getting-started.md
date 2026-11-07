@@ -62,6 +62,8 @@ errors, and the reserved-tenant guard. No API keys or running registry required.
 # Two registries + the playground
 cp .env.example .env
 # edit .env: set OPENAI_API_KEY=... (or LLM_PROVIDER=mock for offline runs)
+# or skip .env and use Doppler: doppler setup --project acdp-playground --config dev,
+# then prefix commands with `doppler run --` (see configuration.md)
 make up
 ```
 
