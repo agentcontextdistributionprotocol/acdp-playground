@@ -25,8 +25,9 @@ package = false
 [tool.uv.sources]
 acdp-playground = { path = "..", editable = true }
 # Deliberately not on PyPI (see its README "Distribution"): consumed from git,
-# pinned to the commit that merged the RFC-0022 holder (#116).
-acdp-verifier = { git = "https://github.com/agentcontextdistributionprotocol/acdp-verifier-py", rev = "9d967c10e80c418df6df4410a2e8be6bac315a8f" }
+# pinned to 9267a62 (#127: wrong DID document Content-Type is a permanent
+# key_resolution_failed, RFC-0001 §5.11).
+acdp-verifier = { git = "https://github.com/agentcontextdistributionprotocol/acdp-verifier-py", rev = "9267a62c2d23f9d3ec059974ad786c649874ea7d" }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

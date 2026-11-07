@@ -33,14 +33,14 @@ http-server = [
 
 [[package]]
 name = "acdp"
-version = "0.21.1"
+version = "0.21.4"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/2f/e9/829b142b91e732b07dfe8b3cca2fa5f368b70a40636c7e8a39facd799797/acdp-0.21.1.tar.gz", hash = "sha256:6adba8174947b55e8094e514c5ed1fd9c787b76d9efc51a685fe29f953be3176", size = 1134736, upload-time = "2026-11-06T17:11:03.619Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/f4/de9c0d7714a28a11321fd0f89cc861d0150815f7644b989f65d98a103138/acdp-0.21.4.tar.gz", hash = "sha256:7d9749b0bca275e74c3d5f10d03d27b257997c56a86b95d8537e45260a739592", size = 1137150, upload-time = "2026-11-07T04:51:54.912Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7e/23/b1feba17dd6d3ca58a5910c412fd03a5882e2a5d3f167211ccad77e9254a/acdp-0.21.1-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:a8f0d45044f1a0855c3d451cc3567fce363f4c86a0faa1a374a2d63727e0aa7f", size = 1072878, upload-time = "2026-11-06T17:10:55.04Z" },
-    { url = "https://files.pythonhosted.org/packages/28/91/e97e51f39586b88b2c33f422ea5007f39a58557bef368cee04bf21ed0126/acdp-0.21.1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:d45d95fb192b64fa0f614c22d800cabb8af11434700cf50f738502281ed52ee6", size = 1004322, upload-time = "2026-11-06T17:10:56.632Z" },
-    { url = "https://files.pythonhosted.org/packages/dc/b0/16da30b678d60ce2b6027d00dd4d1bfc0d87a328c76653f54f9f303a2adb/acdp-0.21.1-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:cc8d53cd0a33f5fcaf5477d39e1c06169ae3b7e757679b246f5661b0175e6e28", size = 1027760, upload-time = "2026-11-06T17:10:59.984Z" },
-    { url = "https://files.pythonhosted.org/packages/b0/d7/4409641a858f6f3ab8004336e4228c3f16837b78e2bc9d9fc836ffa003d4/acdp-0.21.1-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:01511e39b58fba69362605910fd3661a5c6312f5d0a4ae54328ce2d50954b7dc", size = 1117422, upload-time = "2026-11-06T17:11:01.969Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/a3/712a4a07ca89f0fa1f1ebb2c8b3fd894440a81e54e9c220aa079470f6cd6/acdp-0.21.4-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:52c010d30c2c62c623e3571a0aab8c29cdf3573ddf517080dc8b08bb8672304f", size = 1072754, upload-time = "2026-11-07T04:51:47.303Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/43/1aaae133637da32c285528a1df56a9a71054686b03d31da9ba253a9179ba/acdp-0.21.4-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:0b3d6e193a4f71b339a1673fd29f56c6b52a8e2a8142379181d1dce59b75b79a", size = 1004350, upload-time = "2026-11-07T04:51:49.488Z" },
+    { url = "https://files.pythonhosted.org/packages/88/f1/b9a5f4fd934c89e9295a48443acf209cad8ec55d17ff7a5e44cfe7548c03/acdp-0.21.4-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:571864eee32df15f04d76f176a9cfd06d79791a31fd6e804fff53c059be7defb", size = 1027723, upload-time = "2026-11-07T04:51:51.477Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/0f/09368ad368dbfd5b267bf8686de4a72d08b60d34cc56ca714b085b44e91b/acdp-0.21.4-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:b6447904b663d9304943754cabbeba60c610b356f667eb18bbf239c27d7437ac", size = 1117333, upload-time = "2026-11-07T04:51:53.239Z" },
 ]
 
 [[package]]
@@ -66,7 +66,7 @@ dev = [
 requires-dist = [
     { name = "a2a-sdk", extras = ["http-server"], specifier = "==1.3.0" },
     { name = "acdp-playground", editable = "../" },
-    { name = "acdp-verifier", git = "https://github.com/agentcontextdistributionprotocol/acdp-verifier-py?rev=9d967c10e80c418df6df4410a2e8be6bac315a8f" },
+    { name = "acdp-verifier", git = "https://github.com/agentcontextdistributionprotocol/acdp-verifier-py?rev=9267a62c2d23f9d3ec059974ad786c649874ea7d" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
@@ -118,7 +118,7 @@ provides-extras = ["llm", "multiagent", "dev"]
 [[package]]
 name = "acdp-verifier"
 version = "0.1.0"
-source = { git = "https://github.com/agentcontextdistributionprotocol/acdp-verifier-py?rev=9d967c10e80c418df6df4410a2e8be6bac315a8f#9d967c10e80c418df6df4410a2e8be6bac315a8f" }
+source = { git = "https://github.com/agentcontextdistributionprotocol/acdp-verifier-py?rev=9267a62c2d23f9d3ec059974ad786c649874ea7d#9267a62c2d23f9d3ec059974ad786c649874ea7d" }
 dependencies = [
     { name = "cryptography" },
 ]
