@@ -9,14 +9,14 @@ resolution-markers = [
 
 [[package]]
 name = "acdp"
-version = "0.21.3"
+version = "0.21.4"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/72/13/38d648c00bb7ab539caa649d71e22b3f97d91f74a63a7f9a977d92345970/acdp-0.21.3.tar.gz", hash = "sha256:8831e02bdc0669697cb651f70d1740b2bd89385750b4944a7e25e9133e8c7738", size = 1135104, upload-time = "2026-11-07T02:10:57.86Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/f4/de9c0d7714a28a11321fd0f89cc861d0150815f7644b989f65d98a103138/acdp-0.21.4.tar.gz", hash = "sha256:7d9749b0bca275e74c3d5f10d03d27b257997c56a86b95d8537e45260a739592", size = 1137150, upload-time = "2026-11-07T04:51:54.912Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/27/18/d40831d93f8e0834082e86091e65e4fdd967d42e1da1c0eedff10e5b50c5/acdp-0.21.3-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:898796f6cfe6e0ad25200aae5893101681324bb309a3c7af7f55cb1081dcb2b5", size = 1072867, upload-time = "2026-11-07T02:10:50.494Z" },
-    { url = "https://files.pythonhosted.org/packages/c7/f8/cbd705c5b93d1982f84a8cd776521c8fafde4d6beb02e8e1be894e561738/acdp-0.21.3-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:08a9df1b65108ec067dc8d3b7c09912ca06ed2f1b8a6154c1780e9a56818c3a3", size = 1004123, upload-time = "2026-11-07T02:10:52.571Z" },
-    { url = "https://files.pythonhosted.org/packages/91/45/b01eb228cbbddad95c8d4a0c078825a0c3cc98e9386d5f264784c4e2b4e4/acdp-0.21.3-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:a6fcdb1a4ed6155fee007631278bb57e1ddc6b3c89e145e86deab1c864220d29", size = 1027529, upload-time = "2026-11-07T02:10:54.27Z" },
-    { url = "https://files.pythonhosted.org/packages/25/49/a0c1d9abbdce0f61ae04617c145a53a2ef984cfe6ea0440da7a2ffab08da/acdp-0.21.3-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:4ed0db195cb54fc46c608a1efdc0b2cf027dbb8a1cfa026cfd17d601513bc8c0", size = 1116780, upload-time = "2026-11-07T02:10:56.212Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/a3/712a4a07ca89f0fa1f1ebb2c8b3fd894440a81e54e9c220aa079470f6cd6/acdp-0.21.4-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:52c010d30c2c62c623e3571a0aab8c29cdf3573ddf517080dc8b08bb8672304f", size = 1072754, upload-time = "2026-11-07T04:51:47.303Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/43/1aaae133637da32c285528a1df56a9a71054686b03d31da9ba253a9179ba/acdp-0.21.4-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:0b3d6e193a4f71b339a1673fd29f56c6b52a8e2a8142379181d1dce59b75b79a", size = 1004350, upload-time = "2026-11-07T04:51:49.488Z" },
+    { url = "https://files.pythonhosted.org/packages/88/f1/b9a5f4fd934c89e9295a48443acf209cad8ec55d17ff7a5e44cfe7548c03/acdp-0.21.4-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:571864eee32df15f04d76f176a9cfd06d79791a31fd6e804fff53c059be7defb", size = 1027723, upload-time = "2026-11-07T04:51:51.477Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/0f/09368ad368dbfd5b267bf8686de4a72d08b60d34cc56ca714b085b44e91b/acdp-0.21.4-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:b6447904b663d9304943754cabbeba60c610b356f667eb18bbf239c27d7437ac", size = 1117333, upload-time = "2026-11-07T04:51:53.239Z" },
 ]
 
 [[package]]
