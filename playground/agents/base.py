@@ -293,12 +293,21 @@ def response_text(resp: Any) -> str:
 
 
 def llm_for_settings() -> Any:
-    """Build the chat model the playground settings select."""
+    """Build the chat model the playground settings select.
+
+    A real provider comes wrapped in :class:`QuotaGuardedLLM`, so every call
+    is charged to the LLM quotas (and answered by the mock once they run
+    out). Every agent the scenario factory builds takes this path;
+    ``CrewAIAgent`` builds its own model and charges at ``call_llm``.
+    """
     from playground.config import get_settings
+    from playground.quota import QuotaGuardedLLM
 
     s = get_settings()
+    if s.llm_provider == "mock":
+        return _MockLLM()
     api_key = s.openai_api_key if s.llm_provider == "openai" else s.anthropic_api_key
-    return build_llm(s.llm_provider, s.llm_model, api_key=api_key)
+    return QuotaGuardedLLM(build_llm(s.llm_provider, s.llm_model, api_key=api_key), _MockLLM())
 
 
 def build_llm(provider: str, model: str, *, api_key: str = "") -> Any:

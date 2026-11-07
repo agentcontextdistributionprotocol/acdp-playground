@@ -7,7 +7,7 @@
 //   railway config apply
 // Variables are unmanaged: they stay on the service and are never read or written here.
 // Deploys still go through .github/workflows/deploy-images.yml (`railway redeploy --from-source`).
-import { defineRailway, image, project, service } from "railway/iac";
+import { defineRailway, image, postgres, project, service } from "railway/iac";
 // This repository manages only its own resources in the environment. Other
 // repositories export their own partial name.
 // See https://docs.railway.com/infrastructure-as-code#multi-repo-projects
@@ -30,8 +30,14 @@ export default defineRailway(() => {
     replicas: { "us-west2": 1 },
   });
 
+  // Durable LLM-quota counters (playground/quota.py). The playground's own
+  // database, not the control plane's. The service reads it through the
+  // Railway-managed reference DATABASE_URL=${{playground-db.DATABASE_URL}}
+  // (variables are unmanaged here, so that reference lives on the service).
+  const playgroundDb = postgres("playground-db");
+
   return project("acdp-runner", {
     variables: { managed: false },
-    resources: [acdpPlayground],
+    resources: [acdpPlayground, playgroundDb],
   });
 });

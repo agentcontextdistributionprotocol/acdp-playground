@@ -4,7 +4,71 @@ The playground exposes a small FastAPI surface. The base URL is
 `http://localhost:8000` by default. Interactive docs are available at `/docs`
 (Swagger) and `/redoc`, and the raw schema at `/openapi.json`, when the server
 is running. CORS is wide open (`allow_origins=["*"]`, all methods and headers —
-`playground/main.py`), which suits a local demo harness, not a public deployment.
+`playground/main.py`); access control is the API key below, not CORS.
+
+## Authentication: `x-api-key`
+
+Every route except `GET /healthz` and `POST /webhooks/acdp` sits behind a shared
+key sent as the **`x-api-key`** header (`playground/security.py`). That covers
+`/`, `/readyz`, `/docs`, `/redoc`, `/openapi.json`, `/scenarios*`, `/runs*`
+including the SSE stream, `/contexts/*`, `/registries/*`, and any unknown path.
+`/webhooks/acdp` authenticates each delivery with its own HMAC signature.
+
+| `PLAYGROUND_REQUIRE_API_KEY` | Missing or wrong key | Valid key |
+|------------------------------|----------------------|-----------|
+| `false` (default) | request proceeds (a wrong key is logged and treated as absent) | request proceeds, trusted |
+| `true` | **401** `{"detail": "missing or invalid x-api-key"}` | request proceeds, trusted |
+
+With `PLAYGROUND_REQUIRE_API_KEY=true` and no `PLAYGROUND_API_KEY`, the service
+refuses to start; so does `true` with an empty `WEBHOOK_SECRET`, since
+`/webhooks/acdp` skips the key only because its signature authenticates it.
+Browser CORS preflights are answered before the gate.
+
+**Client IP.** A trusted (valid-key) caller that fronts end users, such as the UI
+console, forwards the user's address in **`X-ACDP-Client-IP`**: a single IPv4
+or IPv6 address, not an `X-Forwarded-For`-style list. The header is honoured
+only alongside a valid key; otherwise the client IP is the socket peer, so a
+caller can't choose its own rate-limit bucket. Limits are kept per IPv4 address
+and per IPv6 /64 (an IPv4-mapped IPv6 address counts as its IPv4). A keyed request with the header
+missing or unparsable is charged to the socket peer too, which behind the
+console means every user shares one bucket, so send the key and the header
+together.
+
+## Limits
+
+| Limit | Default | Env var | Scope | When exceeded |
+|-------|---------|---------|-------|---------------|
+| Run launches per client IP | 5 per 600 s | `RUN_RATE_LIMIT_PER_IP`, `RUN_RATE_LIMIT_WINDOW_SECONDS` | `POST /runs`, sliding window, in memory | **429** `run_rate_limited` + `Retry-After` |
+| Concurrent runs | 3 | `MAX_CONCURRENT_RUNS` | whole service, in memory | **429** `max_concurrent_runs` + `Retry-After: 10` |
+| Run duration | 600 s | `RUN_TIMEOUT_SECONDS` | each run | run ends with `run.error` (`RUN_TIMEOUT_SECONDS`) and frees its slot |
+| LLM calls per client IP per UTC day / month | 30 / 300 | `LLM_QUOTA_PER_IP_PER_DAY`, `LLM_QUOTA_PER_IP_PER_MONTH` | each real LLM call, Postgres | run continues on the mock LLM, marked `llm_quota_exceeded` |
+| LLM calls, global, per UTC day / month | 1,000 / 10,000 | `LLM_QUOTA_GLOBAL_PER_DAY`, `LLM_QUOTA_GLOBAL_PER_MONTH` | each real LLM call, Postgres | same |
+
+Per-IP limits (both rows) apply to requests with a valid key. They apply to
+keyless requests only once `PLAYGROUND_REQUIRE_API_KEY=true`, when such requests
+get 401 anyway. During the rollout, before callers send the key, a keyless
+request's socket peer is the platform's edge proxy, shared by every user, so a
+per-IP bucket would throttle everyone together. The global quotas and the
+concurrency cap apply to every request from the start.
+
+A 429 body is `{"detail": {"code", "limit", "retry_after", "detail"}}`. An LLM
+quota hit never fails the run or falls back silently. The run emits one
+`llm.quota_exceeded` event (`quota`, `limit`, `resets_at`), and both the
+`run.complete` event and `RunResult.summary` carry:
+
+```json
+{
+  "llm_quota_exceeded": true,
+  "llm_quota": {"quota": "per_ip_daily", "limit": 30, "resets_at": "2026-11-08T00:00:00Z"},
+  "llm_calls_on_mock": 2
+}
+```
+
+`quota` is `per_ip_daily`, `per_ip_monthly`, `global_daily`, `global_monthly`, or
+`quota_store_unavailable` (the counter store errored or didn't answer within 10 s, so the call was refused
+rather than spent uncounted; `limit`/`resets_at` are then null). Counters live in
+Postgres (`DATABASE_URL`, table `playground_llm_usage`) so they survive
+redeploys; without `DATABASE_URL` they are in memory and reset on restart.
 
 ## Route summary
 
@@ -15,10 +79,11 @@ is running. CORS is wide open (`allow_origins=["*"]`, all methods and headers �
 | `GET` | `/readyz` | 200 | Readiness — pings registry-a and registry-b (always 200; read `ok`) |
 | `GET` | `/scenarios` | 200 | List the scenario catalog |
 | `GET` | `/scenarios/{id}` | 200 / 404 | One scenario's metadata |
-| `POST` | `/runs` | 202 / 404 / 422 | Start a scenario run (404: unknown scenario; 422: body fails validation, e.g. a bad `registry_mode`) |
+| `POST` | `/runs` | 202 / 404 / 422 / 429 | Start a scenario run (404: unknown scenario; 422: body fails validation, e.g. a bad `registry_mode`; 429: a [launch limit](#limits)) |
 | `GET` | `/runs/{id}` | 200 / 404 | Poll run status + result |
 | `GET` | `/runs/{id}/events` | 200 / 404 | SSE stream of run events (404: no live queue and no persisted result) |
 | `GET` | `/contexts/{ctx_id}` | 200 / 404 / 502 / *registry status* | Retrieve a context from the right registry (502: the registry served a body not bound to the requested id; other registry errors pass through with the registry's status) |
+| `GET` | `/registries/{a\|b}/{path}` | *registry status* / 404 / 422 / 502 | Allow-listed read-only [registry passthrough](#registry-passthrough) |
 | `POST` | `/webhooks/acdp` | 204 / 400 / 401 | Registry → playground webhook ingestion (400: bad JSON; 401: missing/invalid signature when `WEBHOOK_SECRET` is set) |
 
 ## Health
@@ -172,7 +237,8 @@ Behavior:
 **Event types:** `agent.started`, `llm.thinking`, `acdp.publish`,
 `acdp.retrieve`, `acdp.search`, `acdp.verify`, `acdp.retract`, `acdp.republish`
 ([RFC-ACDP-0013](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0013-lifecycle-events.md) lifecycle), `auth.token`, `auth.revoke`, `policy.check`,
-`scenario.note`, `run.started`, `run.complete`, `run.error`, and
+`scenario.note`, `llm.quota_exceeded` (see [Limits](#limits)), `run.started`,
+`run.complete`, `run.error`, and
 `webhook.received` — the fallback for a registry webhook whose type validates
 but has no `acdp.*` mapping (`context_published`/`_retrieved`/`_retracted`/
 `_republished` and `search_executed` map to the `acdp.*` types).
@@ -210,6 +276,32 @@ through this host — and the detail names which way it failed:
 not deserialize), or `unverifiable` (a body was served carrying no `ctx_id`, so
 the check cannot run). It is a **502**, not a 4xx: the fault is the upstream
 registry's.
+
+## Registry passthrough
+
+### `GET /registries/{registry}/{path}`
+
+Read-only passthrough to registry-a (`a`) or registry-b (`b`), using the
+configured `REGISTRY_A_URL` / `REGISTRY_B_URL` (the private network in
+production), so callers never need the registries' public domains. Only these
+paths are forwarded; anything else is **404** before any upstream request:
+
+| Path | Registry route |
+|------|----------------|
+| `/registries/{a\|b}/healthz` | `GET /healthz` |
+| `/registries/{a\|b}/contexts/search?...` | `GET /contexts/search` (query string forwarded as-is) |
+| `/registries/{a\|b}/lineages/{lineage_id}` | `GET /lineages/{lineage_id}` |
+| `/registries/{a\|b}/lineages/{lineage_id}/current` | `GET /lineages/{lineage_id}/current` |
+| `/registries/{a\|b}/.well-known/acdp.json` | capabilities |
+| `/registries/{a\|b}/.well-known/jwks.json` | JWKS |
+| `/registries/{a\|b}/.well-known/did.json` | the registry's own DID document |
+
+The registry's status and body pass through, with `content-type`,
+`cache-control`, `etag`, `last-modified`, `retry-after` and `vary`. Only `Accept`
+and `If-None-Match` are forwarded upstream; the caller's `x-api-key` never is.
+Redirects are not followed. Other registry names are **422**, other methods
+**405**, and an unreachable registry is **502** `registry_unreachable`. The list
+mirrors the UI console's registry allowlist.
 
 ## Webhooks
 

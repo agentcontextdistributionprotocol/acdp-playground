@@ -4,6 +4,25 @@ Notable changes to the ACDP stack as observed from the playground.
 Tracks cross-repo work — playground, control plane, registry, SDK —
 so operators reading any one repo can see the system-wide picture.
 
+## 2026-11-07 — Backend key gate, registry passthrough, LLM quotas and run limits
+
+- **`x-api-key` gate** on every route except `/healthz` and the HMAC-checked
+  `/webhooks/acdp`, including `/docs`, `/openapi.json` and the SSE streams.
+  `PLAYGROUND_REQUIRE_API_KEY` defaults to `false` so callers can send the key
+  before it is enforced; `true` without `PLAYGROUND_API_KEY` refuses to start.
+  A keyed caller may forward its user's IP in `X-ACDP-Client-IP`.
+- **`GET /registries/{a|b}/...`**: allow-listed, read-only passthrough to the
+  registries over the private network (the console's registry reads).
+- **LLM-call quotas** per real LLM call: per client IP 30/day and 300/month,
+  global 1,000/day and 10,000/month. Counted in Postgres (`playground-db` on
+  Railway). Over quota, the run finishes on the mock LLM and says so
+  (`llm.quota_exceeded`, `RunResult.summary.llm_quota_exceeded`).
+- **Run launch limits**: 5 per client IP per 10 minutes and 3 concurrent runs,
+  429 with `Retry-After`.
+- During the rollout, per-IP limits apply only to keyed requests (keyless
+  traffic shares the edge proxy's address); they cover everyone once the key
+  is required.
+
 ## 2026-11-07 — Anthropic-backed agents no longer crash
 
 With `LLM_PROVIDER=anthropic`, every agent turn failed with `'list' object is

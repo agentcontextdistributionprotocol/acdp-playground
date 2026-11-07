@@ -123,6 +123,11 @@ Deploy* (`/healthz` for registry/CP/playground, `/` for ui-console).
 > compares sha256 hashes of the managed set and redeploys only when a value
 > actually changed. Don't edit these keys in the Railway dashboard: the next
 > sync would overwrite the edit.
+>
+> The playground's LLM-quota counters live in the **`playground-db`** Postgres
+> service (declared in `.railway/railway.ts`), read through the Railway-managed
+> reference `DATABASE_URL=${{playground-db.DATABASE_URL}}` on `acdp-playground`.
+> It is the playground's own database; don't point it at the control plane's.
 
 Generate the shared secrets **once** and reuse them consistently:
 

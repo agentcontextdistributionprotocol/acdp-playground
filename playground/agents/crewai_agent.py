@@ -50,11 +50,21 @@ class CrewAIAgent(BasePlaygroundAgent):
             backstory=self._backstory,
             llm=llm,
             allow_delegation=False,
+            max_iter=1,
         )
         return self._agent
 
     async def call_llm(self, prompt: str) -> str:
         import asyncio
+
+        from playground.agents.base import _MockLLM, response_text
+        from playground.quota import check_llm_quota
+
+        # CrewAI drives the model itself, so the quota is charged here. The
+        # agent is built with max_iter=1 and no tools, so one task is one
+        # model request and one unit is one real call.
+        if get_settings().llm_provider == "mock" or await check_llm_quota() is not None:
+            return response_text(await _MockLLM().ainvoke(prompt))
 
         from crewai import Task  # type: ignore
 

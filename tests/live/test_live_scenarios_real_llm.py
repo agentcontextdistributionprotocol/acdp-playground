@@ -124,8 +124,11 @@ def settings() -> Settings:
 
 
 @pytest_asyncio.fixture
-async def http() -> httpx.AsyncClient:
-    async with httpx.AsyncClient(timeout=30.0) as client:
+async def http(settings: Settings) -> httpx.AsyncClient:
+    # Send the backend key when one is configured, so the suite also runs
+    # against a playground with PLAYGROUND_REQUIRE_API_KEY=true.
+    headers = {"x-api-key": settings.playground_api_key} if settings.playground_api_key else {}
+    async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
         yield client
 
 

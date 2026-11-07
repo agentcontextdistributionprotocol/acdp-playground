@@ -248,6 +248,28 @@ Set `LLM_PROVIDER` in `.env` to one of:
 - `anthropic` — needs `ANTHROPIC_API_KEY`
 - `mock` — deterministic offline echo (for smoke / CI runs without API keys)
 
+## Access and limits
+
+Every route except `/healthz` and `/webhooks/acdp` takes the shared key in the
+`x-api-key` header (`PLAYGROUND_API_KEY`). It is enforced once
+`PLAYGROUND_REQUIRE_API_KEY=true` (default `false`, so callers can start sending
+it first). A keyed caller can forward its user's IP in `X-ACDP-Client-IP`.
+`GET /registries/{a|b}/...` proxies the console's allow-listed registry reads.
+
+| Limit | Default | Env var | When exceeded |
+|-------|---------|---------|---------------|
+| Run launches per client IP | 5 / 10 min | `RUN_RATE_LIMIT_PER_IP`, `RUN_RATE_LIMIT_WINDOW_SECONDS` | 429 + `Retry-After` |
+| Concurrent runs | 3 | `MAX_CONCURRENT_RUNS` | 429 + `Retry-After` |
+| LLM calls per client IP | 30 / day, 300 / month | `LLM_QUOTA_PER_IP_PER_DAY`, `LLM_QUOTA_PER_IP_PER_MONTH` | run finishes on the mock LLM, marked `llm_quota_exceeded` |
+| LLM calls, global | 1,000 / day, 10,000 / month | `LLM_QUOTA_GLOBAL_PER_DAY`, `LLM_QUOTA_GLOBAL_PER_MONTH` | same |
+
+LLM quotas count each real LLM call, in Postgres (`DATABASE_URL`). **Rollout
+note:** per-IP limits apply to keyed requests now, and to keyless ones only once
+`PLAYGROUND_REQUIRE_API_KEY=true`. Until then a keyless request's peer is the
+shared edge proxy, so a per-IP bucket would throttle all users together. Global
+quotas and the concurrency cap apply from the start. Details:
+[docs/http-api.md](docs/http-api.md#limits).
+
 ## Control plane
 
 `acdp-control-plane` is a separate sibling project — now fully
