@@ -269,6 +269,38 @@ class BasePlaygroundAgent:
 # ── LLM factory ──────────────────────────────────────────────────────────
 
 
+def response_text(resp: Any) -> str:
+    """Return the text of a chat-model response.
+
+    LangChain's OpenAI client returns ``content`` as a string, but its
+    Anthropic client returns a list of content blocks (``{"type": "text",
+    "text": ...}``, plus ``tool_use``/``thinking`` blocks). Text blocks are
+    joined in order, matching ``AIMessage.text``; non-text blocks are
+    dropped. Objects without ``content`` fall back to ``str()``.
+    """
+    content = getattr(resp, "content", resp)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+        return "".join(parts)
+    return str(content)
+
+
+def llm_for_settings() -> Any:
+    """Build the chat model the playground settings select."""
+    from playground.config import get_settings
+
+    s = get_settings()
+    api_key = s.openai_api_key if s.llm_provider == "openai" else s.anthropic_api_key
+    return build_llm(s.llm_provider, s.llm_model, api_key=api_key)
+
+
 def build_llm(provider: str, model: str, *, api_key: str = "") -> Any:
     """Return a langchain chat model (or a deterministic mock).
 
