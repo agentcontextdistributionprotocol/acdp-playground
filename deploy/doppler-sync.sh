@@ -42,7 +42,7 @@ case "$target" in
   playground) RAILWAY_SERVICE=acdp-playground; DOPPLER_PROJECT=acdp-playground ;;
   registry-a) RAILWAY_SERVICE=registry-a; DOPPLER_PROJECT=acdp-registry-a ;;
   registry-b) RAILWAY_SERVICE=registry-b; DOPPLER_PROJECT=acdp-registry-b ;;
-  -h|--help) sed -n '2,31p' "$0"; exit 0 ;;
+  -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
   *) echo "usage: $0 <playground|registry-a|registry-b> [--apply] [--no-redeploy]" >&2; exit 2 ;;
 esac
 shift
@@ -54,7 +54,7 @@ while [ $# -gt 0 ]; do
     --dry-run) mode=dry-run ;;
     --apply) mode=apply ;;
     --no-redeploy) redeploy=0 ;;
-    -h|--help) sed -n '2,31p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
