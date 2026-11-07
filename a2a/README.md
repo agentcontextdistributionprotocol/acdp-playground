@@ -2,7 +2,7 @@
 
 Two agents built on the official [A2A Python SDK](https://github.com/a2aproject/a2a-python) (`a2a-sdk` 1.3.0, A2A protocol 1.0) show [RFC-ACDP-0022](https://github.com/agentcontextdistributionprotocol/agentcontextdistributionprotocol/blob/main/rfcs/RFC-ACDP-0022-a2a-artifact-provenance.md) end to end against a local ACDP registry:
 
-- The **producer agent** signs each artifact it completes as an ACDP body under its own `did:key`. It returns the link in `Artifact.metadata["io.acdp/provenance"]`.
+- The **producer agent** signs each artifact it completes as an ACDP body under its own `did:key`. It returns the link in `Artifact.metadata["io.agentcontextdistributionprotocol/provenance"]`.
 - The **client agent** calls the producer, then verifies what it holds, as RFC-0022 §8 describes.
 
 The signature proves authorship only: *this key published exactly these parts*. It does not mean anyone accepted the result.
@@ -30,7 +30,7 @@ sequenceDiagram
     participant R as registry-a (local)
     C->>R: publish two input datasets (client did:key)
     C->>P: GET /.well-known/agent-card.json
-    C->>P: SendMessage, metadata io.acdp/inputs = [ctx_id, ctx_id]
+    C->>P: SendMessage, metadata io.agentcontextdistributionprotocol/inputs = [ctx_id, ctx_id]
     P->>S: message → cited inputs
     P->>R: retrieve and verify each input (§7 step 3)
     P->>S: verified_inputs
@@ -38,7 +38,7 @@ sequenceDiagram
     S-->>P: emit unchanged
     P->>S: chunk 2 (append true, lastChunk true)
     S->>R: publish signed body (Idempotency-Key acdp-a2a-…)
-    S-->>P: chunk carrying io.acdp/provenance
+    S-->>P: chunk carrying io.agentcontextdistributionprotocol/provenance
     P-->>C: final Task, artifact with its link
     C->>R: retrieve the body the link names
     C->>C: acdp_verifier.a2a.verify_artifact (§8 steps 1–6)

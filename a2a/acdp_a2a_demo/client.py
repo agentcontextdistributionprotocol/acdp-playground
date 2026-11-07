@@ -44,8 +44,8 @@ from acdp_verifier.a2a import (
 from acdp_verifier.errors import AcdpError
 from google.protobuf.json_format import MessageToDict, ParseDict
 
-LINK_KEY = "io.acdp/provenance"
-INPUTS_KEY = "io.acdp/inputs"
+LINK_KEY = "io.agentcontextdistributionprotocol/provenance"
+INPUTS_KEY = "io.agentcontextdistributionprotocol/inputs"
 TERMINAL = {
     TaskState.TASK_STATE_COMPLETED,
     TaskState.TASK_STATE_FAILED,
@@ -278,7 +278,10 @@ class Holder:
         """§8 step 6 again, later: re-retrieve and re-derive. Nothing is pushed to holders."""
         raw = await self._retrieve(ctx_id)
         return artifact_status(
-            ctx_id, registry_state=raw.get("registry_state"), evidence=self.evidence_from(raw)
+            ctx_id,
+            registry_state=raw.get("registry_state"),
+            evidence=self.evidence_from(raw),
+            body=raw["body"],
         )
 
 

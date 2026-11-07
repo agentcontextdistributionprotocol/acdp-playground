@@ -109,7 +109,7 @@ async def test_holder_refuses_a_registry_off_its_allowlist():
         "artifactId": "a",
         "parts": [{"text": "x"}],
         "metadata": {
-            "io.acdp/provenance": {
+            "io.agentcontextdistributionprotocol/provenance": {
                 "ctx_id": "acdp://evil.example/00000000-0000-4000-8000-000000000001"
             }
         },
@@ -132,7 +132,7 @@ async def test_holder_reports_a_missing_link_at_step_1():
 def test_demo_refuses_a_remote_registry(monkeypatch):
     monkeypatch.delenv("ACDP_A2A_ALLOW_REMOTE_REGISTRY", raising=False)
     with pytest.raises(SystemExit):
-        demo._guard_local("https://registry.acdp.io")
+        demo._guard_local("https://registry.agentcontextdistributionprotocol.io")
     demo._guard_local("http://localhost:8100")
 
 
@@ -154,7 +154,10 @@ async def test_sidecar_identity_and_card_match_the_python_sdk():
         did = AcdpProducer.from_seed_did_key(seed).agent_did
         assert ident["agent_id"] == did
         ext = ident["card_extension"]
-        assert ext["uri"] == "https://acdp.io/ext/a2a/v1" and ext["required"] is False
+        assert (
+            ext["uri"] == "https://agentcontextdistributionprotocol.io/ext/a2a/v1"
+            and ext["required"] is False
+        )
         pointer = card_pointer([ext])
         assert pointer is not None and pointer.agent_id == did
         assert pointer.registry == "registry-a.playground.local"
@@ -168,7 +171,7 @@ async def test_sidecar_identity_and_card_match_the_python_sdk():
                 "role": "ROLE_USER",
                 "messageId": "m",
                 "parts": [{"text": "hi"}],
-                "metadata": {"io.acdp/inputs": [CTX]},
+                "metadata": {"io.agentcontextdistributionprotocol/inputs": [CTX]},
             },
         )
         assert noted["cited"] == [CTX]
@@ -208,7 +211,7 @@ async def test_sidecar_fails_open_when_the_registry_is_unreachable():
             "artifact": {"artifactId": "a", "parts": [{"text": "done"}]},
         }
         out = await sc.call("chunk", task_id="t", chunk=chunk)
-        link = out["emit"]["artifact"]["metadata"]["io.acdp/provenance"]
+        link = out["emit"]["artifact"]["metadata"]["io.agentcontextdistributionprotocol/provenance"]
         assert link["failed"] is True
         assert out["emit"]["artifact"]["parts"] == [{"text": "done"}]
     finally:
