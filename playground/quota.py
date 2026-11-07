@@ -153,6 +153,8 @@ RETURNING calls
 """
 # Monthly rows need to outlive the month they count; anything older is dead.
 _PRUNE = "DELETE FROM playground_llm_usage WHERE window_start < $1"
+_CONNECT_TIMEOUT_S = 5.0
+QUOTA_CHECK_TIMEOUT_S = 10.0
 
 
 class _OverLimit(Exception):
@@ -180,11 +182,19 @@ class PostgresQuotaStore:
                 if self._pool is None:
                     import asyncpg
 
-                    pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=5)
-                    async with pool.acquire() as conn:
-                        await conn.execute(_SCHEMA)
-                        cutoff = datetime.now(UTC).date().replace(day=1) - timedelta(days=62)
-                        await conn.execute(_PRUNE, cutoff)
+                    # A short connect timeout: an unreachable database refuses
+                    # the call (fail closed) in seconds, not asyncpg's default 60.
+                    pool = await asyncpg.create_pool(
+                        self._dsn, min_size=1, max_size=5, timeout=_CONNECT_TIMEOUT_S
+                    )
+                    try:
+                        async with pool.acquire() as conn:
+                            await conn.execute(_SCHEMA)
+                            cutoff = datetime.now(UTC).date().replace(day=1) - timedelta(days=62)
+                            await conn.execute(_PRUNE, cutoff)
+                    except BaseException:
+                        await pool.close()
+                        raise
                     self._pool = pool
         return self._pool
 
@@ -264,7 +274,9 @@ async def check_llm_quota() -> QuotaDenial | None:
     ctx = current_run.get()
     counters = counters_for(ctx.client_ip if ctx else None, get_settings(), datetime.now(UTC))
     try:
-        denial = await get_quota_store().consume(counters)
+        # A deadline, so a wedged database connection refuses the call
+        # instead of holding the run (and its concurrency slot) forever.
+        denial = await asyncio.wait_for(get_quota_store().consume(counters), QUOTA_CHECK_TIMEOUT_S)
     except Exception:
         log.exception("LLM quota store failed; refusing the call (fail closed)")
         denial = QuotaDenial("quota_store_unavailable", None, None)

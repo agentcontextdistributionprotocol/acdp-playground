@@ -105,13 +105,14 @@ them has no effect on a run today.
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `PLAYGROUND_API_KEY` | *(empty)* | Shared secret callers send as `x-api-key` |
-| `PLAYGROUND_REQUIRE_API_KEY` | `false` | `true` → 401 without a valid key; startup fails if the key is empty |
+| `PLAYGROUND_REQUIRE_API_KEY` | `false` | `true` → 401 without a valid key; startup fails if the key or `WEBHOOK_SECRET` is empty |
 | `DATABASE_URL` | *(empty)* | Postgres DSN for durable LLM-quota counters; empty → in memory |
 | `LLM_QUOTA_PER_IP_PER_DAY` / `_PER_MONTH` | `30` / `300` | Real LLM calls per client IP per UTC day / month |
 | `LLM_QUOTA_GLOBAL_PER_DAY` / `_PER_MONTH` | `1000` / `10000` | Real LLM calls, all callers |
 | `RUN_RATE_LIMIT_PER_IP` | `5` | `POST /runs` per client IP per window |
 | `RUN_RATE_LIMIT_WINDOW_SECONDS` | `600` | Sliding window for the line above |
 | `MAX_CONCURRENT_RUNS` | `3` | Runs in flight at once |
+| `RUN_TIMEOUT_SECONDS` | `600` | Wall-clock cap on one run; past it the run errors and frees its slot |
 | `REGISTRY_PROXY_TIMEOUT_SECONDS` | `10` | Upstream timeout for `/registries/*` |
 
 All limits must be positive integers. Semantics, the client-IP header and the

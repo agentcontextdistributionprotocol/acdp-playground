@@ -297,7 +297,8 @@ def llm_for_settings() -> Any:
 
     A real provider comes wrapped in :class:`QuotaGuardedLLM`, so every call
     is charged to the LLM quotas (and answered by the mock once they run
-    out). This is the only path scenarios take to a real model.
+    out). Every agent the scenario factory builds takes this path;
+    ``CrewAIAgent`` builds its own model and charges at ``call_llm``.
     """
     from playground.config import get_settings
     from playground.quota import QuotaGuardedLLM

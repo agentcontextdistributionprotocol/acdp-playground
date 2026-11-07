@@ -34,6 +34,7 @@ services:
       RUN_RATE_LIMIT_PER_IP: ${RUN_RATE_LIMIT_PER_IP:-5}
       RUN_RATE_LIMIT_WINDOW_SECONDS: ${RUN_RATE_LIMIT_WINDOW_SECONDS:-600}
       MAX_CONCURRENT_RUNS: ${MAX_CONCURRENT_RUNS:-3}
+      RUN_TIMEOUT_SECONDS: ${RUN_TIMEOUT_SECONDS:-600}
     depends_on:
       registry-a:
         condition: service_healthy

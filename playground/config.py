@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     run_rate_limit_per_ip: int = Field(5, gt=0)
     run_rate_limit_window_seconds: int = Field(600, gt=0)
     max_concurrent_runs: int = Field(3, gt=0)
+    # Wall-clock cap on one run, so a hung provider or store can't hold a
+    # concurrency slot indefinitely.
+    run_timeout_seconds: float = Field(600.0, gt=0)
 
     # Registry passthrough (GET /registries/{a|b}/...) upstream timeout.
     registry_proxy_timeout_seconds: float = Field(10.0, gt=0)
@@ -100,6 +103,10 @@ class Settings(BaseSettings):
         # tempt a fallback that lets everyone in). Refuse to start instead.
         if self.playground_require_api_key and not self.playground_api_key:
             raise ValueError("PLAYGROUND_REQUIRE_API_KEY=true but PLAYGROUND_API_KEY is empty")
+        # /webhooks/acdp is exempt from the key because its HMAC signature
+        # authenticates it; without WEBHOOK_SECRET it would be an open write.
+        if self.playground_require_api_key and not self.webhook_secret:
+            raise ValueError("PLAYGROUND_REQUIRE_API_KEY=true but WEBHOOK_SECRET is empty")
         return self
 
     # ── derived ──────────────────────────────────────────────────────────

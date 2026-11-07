@@ -69,9 +69,17 @@ def _parse_ip(value: str | None) -> str | None:
     if not value:
         return None
     try:
-        return str(ipaddress.ip_address(value.strip()))
+        ip = ipaddress.ip_address(value.strip())
     except ValueError:
         return None
+    # One bucket per subscriber: an IPv4-mapped address is its IPv4 address,
+    # and an IPv6 address counts as its /64 (one end site's allocation), so a
+    # user can't rotate through their prefix to get fresh limits.
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped is not None:
+            return str(ip.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{ip}/64", strict=False))
+    return str(ip)
 
 
 def resolve_client_ip(scope: Scope, *, trusted: bool) -> str:

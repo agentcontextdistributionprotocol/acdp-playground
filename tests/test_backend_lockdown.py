@@ -74,6 +74,7 @@ def _settings(monkeypatch: pytest.MonkeyPatch, **env: Any) -> Settings:
 
 
 def _enforced(monkeypatch: pytest.MonkeyPatch, **env: Any) -> Settings:
+    env.setdefault("webhook_secret", "test-webhook-secret")
     return _settings(monkeypatch, playground_api_key=KEY, playground_require_api_key="true", **env)
 
 
@@ -194,7 +195,7 @@ def test_client_ip_header_trusted_only_with_the_key(monkeypatch):
         keyed = c.get("/echo", headers={**spoof, "x-api-key": KEY}).json()
         assert keyed == {"ip": "203.0.113.9", "keyed": True, "per_ip": True}
         v6 = c.get("/echo", headers={"x-acdp-client-ip": "2001:DB8::1", "x-api-key": KEY}).json()
-        assert v6["ip"] == "2001:db8::1"
+        assert v6["ip"] == "2001:db8::/64"  # IPv6 is bucketed per /64
         junk = c.get("/echo", headers={"x-acdp-client-ip": "not-an-ip", "x-api-key": KEY})
         assert junk.json()["ip"] == "testclient"
 
@@ -571,3 +572,102 @@ def test_passthrough_is_behind_the_gate(upstream, monkeypatch):
         assert c.get("/registries/a/healthz").status_code == 401
         assert c.get("/registries/a/healthz", headers={"x-api-key": KEY}).status_code == 200
     assert len(upstream) == 1
+
+
+async def test_postgres_store_closes_pool_when_schema_setup_fails(monkeypatch):
+    """A failed schema step must not leak the pool, and the call fails (closed)."""
+    import asyncpg
+
+    from playground.quota import PostgresQuotaStore
+
+    closed: list[bool] = []
+    seen: dict = {}
+
+    class _Conn:
+        async def execute(self, *a):
+            raise RuntimeError("schema failed")
+
+    class _Acq:
+        async def __aenter__(self):
+            return _Conn()
+
+        async def __aexit__(self, *a):
+            return False
+
+    class _Pool:
+        def acquire(self):
+            return _Acq()
+
+        async def close(self):
+            closed.append(True)
+
+    async def fake_create_pool(dsn, **kw):
+        seen.update(kw)
+        return _Pool()
+
+    monkeypatch.setattr(asyncpg, "create_pool", fake_create_pool)
+    store = PostgresQuotaStore("postgresql://unused")
+    with pytest.raises(RuntimeError):
+        await store.consume([])
+    assert closed == [True]
+    assert store._pool is None
+    assert seen["timeout"] <= 10
+
+
+def test_enforcement_without_a_webhook_secret_refuses_to_start(monkeypatch):
+    """The webhook route skips the key gate on the strength of its HMAC; no secret, no start."""
+    monkeypatch.setenv("PLAYGROUND_REQUIRE_API_KEY", "true")
+    monkeypatch.setenv("PLAYGROUND_API_KEY", KEY)
+    monkeypatch.setenv("WEBHOOK_SECRET", "")
+    get_settings.cache_clear()
+    with pytest.raises(ValidationError, match="WEBHOOK_SECRET is empty"):
+        get_settings()
+
+
+@pytest.mark.parametrize(
+    ("raw", "bucket"),
+    [
+        ("203.0.113.9", "203.0.113.9"),
+        ("::ffff:203.0.113.9", "203.0.113.9"),
+        ("2001:db8:1:2:aaaa::1", "2001:db8:1:2::/64"),
+        ("2001:db8:1:2:ffff:ffff:ffff:ffff", "2001:db8:1:2::/64"),
+        ("203.0.113.9, 10.0.0.1", None),
+        ("garbage", None),
+    ],
+)
+def test_client_ip_buckets_normalise(raw, bucket):
+    from playground.security import _parse_ip
+
+    assert _parse_ip(raw) == bucket
+
+
+async def test_wedged_quota_store_refuses_the_call_after_a_deadline(monkeypatch):
+    """A store that never answers must not hold the run: the call is refused, fail closed."""
+    from playground.quota import check_llm_quota
+
+    class _Wedged:
+        async def consume(self, counters):
+            await asyncio.Event().wait()
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(quota_mod, "_store", _Wedged())
+    monkeypatch.setattr(quota_mod, "QUOTA_CHECK_TIMEOUT_S", 0.05)
+    denial = await check_llm_quota()
+    assert denial is not None and denial.quota == "quota_store_unavailable"
+
+
+async def test_run_past_its_deadline_errors_and_frees_the_run(monkeypatch):
+    from playground.scenarios.runner import execute
+
+    _settings(monkeypatch, run_timeout_seconds="0.05")
+
+    async def _hang(spec, events):
+        await asyncio.Event().wait()
+
+    scenario = ScenarioDef(id="hang", name="hang", description="", run=_hang)
+    events: asyncio.Queue = asyncio.Queue()
+    result = await execute(scenario, RunSpec(run_id="r-hang", scenario_id="hang"), events)
+    assert result.status == "failed"
+    assert "RUN_TIMEOUT_SECONDS" in (result.error or "")

@@ -20,12 +20,19 @@ including the SSE stream, `/contexts/*`, `/registries/*`, and any unknown path.
 | `true` | **401** `{"detail": "missing or invalid x-api-key"}` | request proceeds, trusted |
 
 With `PLAYGROUND_REQUIRE_API_KEY=true` and no `PLAYGROUND_API_KEY`, the service
-refuses to start. Browser CORS preflights are answered before the gate.
+refuses to start; so does `true` with an empty `WEBHOOK_SECRET`, since
+`/webhooks/acdp` skips the key only because its signature authenticates it.
+Browser CORS preflights are answered before the gate.
 
 **Client IP.** A trusted (valid-key) caller that fronts end users, such as the UI
-console, forwards the user's address in **`X-ACDP-Client-IP`** (IPv4 or IPv6).
-The header is honoured only alongside a valid key; otherwise the client IP is
-the socket peer, so a caller can't choose its own rate-limit bucket.
+console, forwards the user's address in **`X-ACDP-Client-IP`**: a single IPv4
+or IPv6 address, not an `X-Forwarded-For`-style list. The header is honoured
+only alongside a valid key; otherwise the client IP is the socket peer, so a
+caller can't choose its own rate-limit bucket. Limits are kept per IPv4 address
+and per IPv6 /64 (an IPv4-mapped IPv6 address counts as its IPv4). A keyed request with the header
+missing or unparsable is charged to the socket peer too, which behind the
+console means every user shares one bucket, so send the key and the header
+together.
 
 ## Limits
 
@@ -33,6 +40,7 @@ the socket peer, so a caller can't choose its own rate-limit bucket.
 |-------|---------|---------|-------|---------------|
 | Run launches per client IP | 5 per 600 s | `RUN_RATE_LIMIT_PER_IP`, `RUN_RATE_LIMIT_WINDOW_SECONDS` | `POST /runs`, sliding window, in memory | **429** `run_rate_limited` + `Retry-After` |
 | Concurrent runs | 3 | `MAX_CONCURRENT_RUNS` | whole service, in memory | **429** `max_concurrent_runs` + `Retry-After: 10` |
+| Run duration | 600 s | `RUN_TIMEOUT_SECONDS` | each run | run ends with `run.error` (`RUN_TIMEOUT_SECONDS`) and frees its slot |
 | LLM calls per client IP per UTC day / month | 30 / 300 | `LLM_QUOTA_PER_IP_PER_DAY`, `LLM_QUOTA_PER_IP_PER_MONTH` | each real LLM call, Postgres | run continues on the mock LLM, marked `llm_quota_exceeded` |
 | LLM calls, global, per UTC day / month | 1,000 / 10,000 | `LLM_QUOTA_GLOBAL_PER_DAY`, `LLM_QUOTA_GLOBAL_PER_MONTH` | each real LLM call, Postgres | same |
 
@@ -57,7 +65,7 @@ quota hit never fails the run or falls back silently. The run emits one
 ```
 
 `quota` is `per_ip_daily`, `per_ip_monthly`, `global_daily`, `global_monthly`, or
-`quota_store_unavailable` (the counter store errored, so the call was refused
+`quota_store_unavailable` (the counter store errored or didn't answer within 10 s, so the call was refused
 rather than spent uncounted; `limit`/`resets_at` are then null). Counters live in
 Postgres (`DATABASE_URL`, table `playground_llm_usage`) so they survive
 redeploys; without `DATABASE_URL` they are in memory and reset on restart.

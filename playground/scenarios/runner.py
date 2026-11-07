@@ -73,8 +73,10 @@ async def _execute(
 
     try:
         assert scenario.run is not None
-        result = await scenario.run(spec, events)
-    except Exception as e:  # we surface the error in the result
+        result = await asyncio.wait_for(scenario.run(spec, events), settings.run_timeout_seconds)
+    except Exception as e:  # we surface the error in the result (TimeoutError included)
+        if isinstance(e, TimeoutError):
+            e = TimeoutError(f"run exceeded RUN_TIMEOUT_SECONDS={settings.run_timeout_seconds:g}")
         tb = traceback.format_exc()
         log.exception("scenario %s failed", scenario.id)
         result = RunResult(
