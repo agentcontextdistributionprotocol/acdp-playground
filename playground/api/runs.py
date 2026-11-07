@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
 from playground.events import create_queue, drop_queue, get_queue
+from playground.rate_limit import RunLimitExceeded, run_limiter
 from playground.scenarios import (
     RunRequest,
     execute,
@@ -22,12 +23,33 @@ from playground.scenarios.runner import get_result
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/runs", tags=["runs"])
 
+# Strong references to in-flight run tasks (the event loop only keeps weak ones).
+_tasks: set[asyncio.Task] = set()
+
+
+def _charged_ip(request: Request) -> str | None:
+    """The IP per-IP limits charge, or None when they don't apply (playground/security.py)."""
+    state = request.state
+    if not getattr(state, "per_ip_limits", True):
+        return None
+    return getattr(state, "client_ip", None) or (request.client.host if request.client else None)
+
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED)
-async def start_run(req: RunRequest) -> dict:
+async def start_run(req: RunRequest, request: Request) -> dict:
     scenario = get_scenario(req.scenario_id)
     if scenario is None:
         raise HTTPException(404, f"unknown scenario: {req.scenario_id}")
+
+    client_ip = _charged_ip(request)
+    try:
+        run_limiter.acquire(client_ip)
+    except RunLimitExceeded as e:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            {"code": e.code, "limit": e.limit, "retry_after": e.retry_after, "detail": e.message},
+            headers={"Retry-After": str(e.retry_after)},
+        ) from None
 
     run_id = str(uuid4())
     spec = RunSpec(
@@ -37,13 +59,20 @@ async def start_run(req: RunRequest) -> dict:
         registry_mode=req.registry_mode or scenario.registry_mode,
     )
 
-    queue = create_queue(run_id)
+    try:
+        queue = create_queue(run_id)
+    except BaseException:
+        run_limiter.release()
+        raise
     # `execute` notifies the control plane of the run start (awaited) before it
     # runs the scenario and before the matching run-complete notification, so
     # the start/complete pair stays strictly ordered. Firing run-started here as
     # an independent task instead would race the completion for fast,
     # publish-nothing runs (the completion could land first and 404 at the CP).
-    asyncio.create_task(execute(scenario, spec, queue))
+    task = asyncio.create_task(execute(scenario, spec, queue, client_ip=client_ip))
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    task.add_done_callback(lambda _t: run_limiter.release())
 
     return {
         "run_id": run_id,

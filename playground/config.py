@@ -5,6 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -57,6 +58,31 @@ class Settings(BaseSettings):
     # needs to); surfaced so scenarios can branch/report.
     jwt_signing_alg: Literal["HS256", "EdDSA"] = "HS256"
 
+    # ── Backend access gate (see playground/security.py) ─────────────────
+    # Shared secret callers send as `x-api-key`. Every route except /healthz
+    # and the HMAC-checked /webhooks/acdp is gated once enforcement is on.
+    playground_api_key: str = ""
+    # Off by default so callers can start sending the key before it is
+    # required. When true, PLAYGROUND_API_KEY must be set or startup fails.
+    playground_require_api_key: bool = False
+
+    # ── LLM-call quotas (per real LLM call; see playground/quota.py) ─────
+    # Postgres DSN for durable counters. Empty => in-process counters that
+    # reset on restart (local development and tests).
+    database_url: str = ""
+    llm_quota_per_ip_per_day: int = Field(30, gt=0)
+    llm_quota_per_ip_per_month: int = Field(300, gt=0)
+    llm_quota_global_per_day: int = Field(1000, gt=0)
+    llm_quota_global_per_month: int = Field(10000, gt=0)
+
+    # ── Run launch limits (POST /runs) ───────────────────────────────────
+    run_rate_limit_per_ip: int = Field(5, gt=0)
+    run_rate_limit_window_seconds: int = Field(600, gt=0)
+    max_concurrent_runs: int = Field(3, gt=0)
+
+    # Registry passthrough (GET /registries/{a|b}/...) upstream timeout.
+    registry_proxy_timeout_seconds: float = Field(10.0, gt=0)
+
     # Logging
     log_format: Literal["pretty", "json"] = "pretty"
     log_level: str = "INFO"
@@ -67,6 +93,14 @@ class Settings(BaseSettings):
         extra="ignore",
         case_sensitive=False,
     )
+
+    @model_validator(mode="after")
+    def _fail_closed_on_missing_api_key(self) -> Settings:
+        # Enforcement without a key would lock every caller out (or, worse,
+        # tempt a fallback that lets everyone in). Refuse to start instead.
+        if self.playground_require_api_key and not self.playground_api_key:
+            raise ValueError("PLAYGROUND_REQUIRE_API_KEY=true but PLAYGROUND_API_KEY is empty")
+        return self
 
     # ── derived ──────────────────────────────────────────────────────────
 

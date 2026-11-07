@@ -323,6 +323,7 @@ StepEventType = Literal[
     "auth.revoke",
     "policy.check",
     "scenario.note",
+    "llm.quota_exceeded",
     "run.started",
     "run.complete",
     "run.error",

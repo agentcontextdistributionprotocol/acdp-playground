@@ -11,6 +11,7 @@ from typing import Final
 from acdp_client.models import StepEvent
 from playground.config import get_settings
 from playground.control_plane import get_control_plane
+from playground.quota import RunQuotaContext, current_run
 from playground.scenarios.models import RunResult, RunSpec, ScenarioDef
 
 log = logging.getLogger(__name__)
@@ -31,6 +32,23 @@ async def execute(
     scenario: ScenarioDef,
     spec: RunSpec,
     events: asyncio.Queue[StepEvent],
+    *,
+    client_ip: str | None = None,
+) -> RunResult:
+    """Run one scenario. ``client_ip`` is charged for per-IP LLM quotas (None: global only)."""
+    quota = RunQuotaContext(run_id=spec.run_id, events=events, client_ip=client_ip)
+    token = current_run.set(quota)
+    try:
+        return await _execute(scenario, spec, events, quota)
+    finally:
+        current_run.reset(token)
+
+
+async def _execute(
+    scenario: ScenarioDef,
+    spec: RunSpec,
+    events: asyncio.Queue[StepEvent],
+    quota: RunQuotaContext,
 ) -> RunResult:
     settings = get_settings()
     cp = get_control_plane(settings)
@@ -64,6 +82,7 @@ async def execute(
             scenario_id=scenario.id,
             status="failed",
             error=f"{type(e).__name__}: {e}\n{tb}",
+            summary=quota.summary(),
         )
         await events.put(
             StepEvent(
@@ -76,6 +95,7 @@ async def execute(
             )
         )
     else:
+        result.summary.update(quota.summary())
         await events.put(
             StepEvent(
                 type="run.complete",
@@ -85,6 +105,7 @@ async def execute(
                 contexts_produced=len(result.contexts),
                 lineage_graph=(result.lineage_graph.model_dump() if result.lineage_graph else None),
                 status=result.status,
+                **quota.summary(),
             )
         )
 
