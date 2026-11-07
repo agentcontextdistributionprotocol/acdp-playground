@@ -4,6 +4,18 @@ Notable changes to the ACDP stack as observed from the playground.
 Tracks cross-repo work — playground, control plane, registry, SDK —
 so operators reading any one repo can see the system-wide picture.
 
+## 2026-11-07 — Doppler becomes the source of truth for the Railway stack
+
+The prod variables for `acdp-playground`, `registry-a` and `registry-b` (Railway
+`acdp-runner`) now live in the Doppler projects `acdp-playground`,
+`acdp-registry-a` and `acdp-registry-b` (configs `dev`, `dev_personal`, `stg`,
+`prd`). `deploy/doppler-sync.sh <service> [--apply]` pushes the allowlisted keys
+in `deploy/doppler-keys/<service>.txt` into Railway, with a hash check and no
+redeploy when nothing changed. Railway keeps its `RAILWAY_*` system variables
+and `${{...}}` references. Prod values were imported unchanged, so behaviour is
+the same. Local development can use `doppler run --` against
+`acdp-playground/dev` instead of `.env`.
+
 ## 2026-11-06 — Railway health check and restart policy go live
 
 `.railway/railway.ts` now sets a `/healthz` health check (120 s timeout) and an

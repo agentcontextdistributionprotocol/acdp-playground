@@ -4,6 +4,35 @@ The playground reads settings from environment variables (and a `.env` file) via
 `pydantic-settings` (`playground/config.py`). `get_settings()` is cached. Copy
 [`.env.example`](../.env.example) to `.env` to start.
 
+## Doppler: where the real values live
+
+[Doppler](https://www.doppler.com) is the source of truth for secrets and
+config. Each service has its own project with the configs `dev`,
+`dev_personal`, `stg` and `prd`:
+
+| Doppler project | Runs as (Railway `acdp-runner`, production) | Allowlist |
+|-----------------|---------------------------------------------|-----------|
+| `acdp-playground` | `acdp-playground` | [`deploy/doppler-keys/playground.txt`](../deploy/doppler-keys/playground.txt) |
+| `acdp-registry-a` | `registry-a` | [`deploy/doppler-keys/registry-a.txt`](../deploy/doppler-keys/registry-a.txt) |
+| `acdp-registry-b` | `registry-b` | [`deploy/doppler-keys/registry-b.txt`](../deploy/doppler-keys/registry-b.txt) |
+
+`acdp-playground/dev` holds the local development values. Run against them
+without a `.env` file:
+
+```bash
+doppler setup --project acdp-playground --config dev   # once per checkout
+doppler run -- make run
+doppler run -- make test-live                          # or any other target
+```
+
+Real environment variables take precedence over `.env` in `pydantic-settings`,
+so `doppler run` works with every target, and a local `.env` still works as a
+fallback without Doppler. Use `dev_personal` for values only you need.
+
+Production values move from Doppler `prd` into Railway with
+[`deploy/doppler-sync.sh`](../deploy/doppler-sync.sh); see
+[Deployment](deployment.md#railway).
+
 ## Core settings
 
 ### Registries

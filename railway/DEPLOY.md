@@ -106,6 +106,24 @@ Deploy* (`/healthz` for registry/CP/playground, `/` for ui-console).
 
 ## 3. Environment variables
 
+> **Source of truth: Doppler.** In the `acdp-runner` project, the values for
+> `acdp-playground`, `registry-a` and `registry-b` live in the Doppler projects
+> `acdp-playground`, `acdp-registry-a` and `acdp-registry-b` (config `prd`).
+> Change a value in Doppler, then push it to Railway:
+>
+> ```bash
+> deploy/doppler-sync.sh registry-a            # dry run: key names + changed/unchanged, never values
+> deploy/doppler-sync.sh registry-a --apply    # set the changed keys, then redeploy that service
+> ```
+>
+> The script manages only the keys in `deploy/doppler-keys/<service>.txt`. It
+> never deletes a variable, and it never touches `RAILWAY_*` system variables or
+> Railway references such as
+> `ACDP_REGISTRY_STORAGE__POSTGRES_URL=${{registry-a-db.DATABASE_URL}}`. It
+> compares sha256 hashes of the managed set and redeploys only when a value
+> actually changed. Don't edit these keys in the Railway dashboard: the next
+> sync would overwrite the edit.
+
 Generate the shared secrets **once** and reuse them consistently:
 
 ```bash

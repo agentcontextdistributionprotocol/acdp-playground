@@ -1,0 +1,26 @@
+# Railway variables that Doppler (acdp-registry-b/prd) owns for the registry-b
+# service in Railway project acdp-runner (production) — the playground stack's
+# registry B, running the shared acdp-registry image (config only, never code).
+# deploy/doppler-sync.sh registry-b sets and updates exactly these; it never deletes anything.
+# Never list RAILWAY_* system variables or Railway references (${{...}}): Railway owns those.
+# Left Railway-managed on purpose:
+#   ACDP_REGISTRY_STORAGE__POSTGRES_URL   = ${{ registry-b-db.DATABASE_URL }} (reference)
+# This list only grows: dropping a key stops the sync managing it, never deletes it.
+
+# Secrets
+ACDP_REGISTRY_AUTH__JWT_SECRET
+ACDP_REGISTRY_WEBHOOK__SECRET
+
+# Config
+ACDP_REGISTRY_AUTH__ANONYMOUS_PUBLIC_READS
+ACDP_REGISTRY_AUTH__DID_METHODS
+ACDP_REGISTRY_AUTH__ENABLED
+ACDP_REGISTRY_AUTH__REQUIRE_TENANT
+ACDP_REGISTRY_PLAYGROUND__ENABLED
+ACDP_REGISTRY_REGISTRY__ALLOW_PUBLIC_BIND
+ACDP_REGISTRY_REGISTRY__AUTHORITY
+ACDP_REGISTRY_REGISTRY__BIND
+ACDP_REGISTRY_REGISTRY__PORT
+ACDP_REGISTRY_STORAGE__BACKEND
+ACDP_REGISTRY_WEBHOOK__ENABLED
+ACDP_REGISTRY_WEBHOOK__URL

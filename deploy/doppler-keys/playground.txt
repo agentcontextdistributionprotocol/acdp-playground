@@ -1,0 +1,22 @@
+# Railway variables that Doppler (acdp-playground/prd) owns for the acdp-playground
+# service in Railway project acdp-runner (production).
+# deploy/doppler-sync.sh playground sets and updates exactly these; it never deletes anything.
+# Never list RAILWAY_* system variables or Railway references (${{...}}): Railway owns those.
+# This list only grows: dropping a key stops the sync managing it, never deletes it.
+
+# Secrets
+CONTROL_PLANE_ADMIN_TOKEN
+CONTROL_PLANE_HMAC_SECRET
+OPENAI_API_KEY
+WEBHOOK_SECRET
+
+# Config
+CONTROL_PLANE_URL
+HOST
+LLM_MODEL
+LLM_PROVIDER
+PORT
+REGISTRY_A_AUTHORITY
+REGISTRY_A_URL
+REGISTRY_B_AUTHORITY
+REGISTRY_B_URL

@@ -68,6 +68,8 @@ make smoke
 # 3) Run the playground + both registries
 cp .env.example .env
 # edit .env: set OPENAI_API_KEY=... (or LLM_PROVIDER=mock for offline runs)
+# or skip .env and use Doppler: doppler setup --project acdp-playground --config dev,
+# then prefix commands with `doppler run --` (see docs/configuration.md)
 make up
 
 # 4) List scenarios

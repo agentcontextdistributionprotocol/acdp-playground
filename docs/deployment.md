@@ -128,6 +128,12 @@ stack images are published by their own repos to
 `ghcr.io/<owner>/acdp-{registry,control-plane,ui-console}`. The playground image
 binds Railway's dynamic `$PORT`/`$HOST`.
 
+Production secrets and config come from Doppler (`acdp-playground`,
+`acdp-registry-a`, `acdp-registry-b`, config `prd`) through
+[`deploy/doppler-sync.sh`](../deploy/doppler-sync.sh) `<service> [--apply]`.
+Railway keeps only its own system variables and `${{...}}` references. See
+[Configuration → Doppler](configuration.md#doppler-where-the-real-values-live).
+
 **Full deploy guide:** [`railway/DEPLOY.md`](../railway/DEPLOY.md) — service
 topology, IPv6 private networking, per-service env vars, and the shared-secret
 wiring. Key points:
