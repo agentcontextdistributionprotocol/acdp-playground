@@ -11,10 +11,10 @@ name = "acdp-a2a-sidecar"
 path = "src/main.rs"
 
 [dependencies]
-# acdp-rs at the commit that landed acdp-a2a (#548) plus the 4bd7aef spec
-# pin (#551). Switch to the crates.io release once acdp-a2a 0.21.2 is out.
-acdp       = { git = "https://github.com/agentcontextdistributionprotocol/acdp-rs", rev = "4e99bfe", default-features = false, features = ["client"] }
-acdp-a2a   = { git = "https://github.com/agentcontextdistributionprotocol/acdp-rs", rev = "4e99bfe" }
+# acdp-rs at 0e6ac59 (#555, long-form identifiers, spec ce39078).
+# Switch to the crates.io release once acdp-a2a ships.
+acdp       = { git = "https://github.com/agentcontextdistributionprotocol/acdp-rs", rev = "0e6ac59", default-features = false, features = ["client"] }
+acdp-a2a   = { git = "https://github.com/agentcontextdistributionprotocol/acdp-rs", rev = "0e6ac59" }
 tokio      = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "io-std"] }
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 hex        = "0.4"

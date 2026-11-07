@@ -4,8 +4,8 @@ version = 4
 
 [[package]]
 name = "acdp"
-version = "0.21.1"
-source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=4e99bfe#4e99bfea38cef2bd69e63f014b8d4dde2709d9cc"
+version = "0.21.2"
+source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=0e6ac59#0e6ac595a3e5c191e3b762fc0cf509e04bdc2868"
 dependencies = [
  "acdp-chain",
  "acdp-client",
@@ -23,8 +23,8 @@ dependencies = [
 
 [[package]]
 name = "acdp-a2a"
-version = "0.21.1"
-source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=4e99bfe#4e99bfea38cef2bd69e63f014b8d4dde2709d9cc"
+version = "0.21.2"
+source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=0e6ac59#0e6ac595a3e5c191e3b762fc0cf509e04bdc2868"
 dependencies = [
  "acdp",
  "base64 0.23.1",
@@ -50,8 +50,8 @@ dependencies = [
 
 [[package]]
 name = "acdp-chain"
-version = "0.21.1"
-source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=4e99bfe#4e99bfea38cef2bd69e63f014b8d4dde2709d9cc"
+version = "0.21.2"
+source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=0e6ac59#0e6ac595a3e5c191e3b762fc0cf509e04bdc2868"
 dependencies = [
  "acdp-crypto",
  "acdp-did",
@@ -70,8 +70,8 @@ dependencies = [
 
 [[package]]
 name = "acdp-client"
-version = "0.21.1"
-source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=4e99bfe#4e99bfea38cef2bd69e63f014b8d4dde2709d9cc"
+version = "0.21.2"
+source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=0e6ac59#0e6ac595a3e5c191e3b762fc0cf509e04bdc2868"
 dependencies = [
  "acdp-crypto",
  "acdp-did",
@@ -95,8 +95,8 @@ dependencies = [
 
 [[package]]
 name = "acdp-crypto"
-version = "0.21.1"
-source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=4e99bfe#4e99bfea38cef2bd69e63f014b8d4dde2709d9cc"
+version = "0.21.2"
+source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=0e6ac59#0e6ac595a3e5c191e3b762fc0cf509e04bdc2868"
 dependencies = [
  "acdp-did",
  "acdp-jcs",
@@ -117,8 +117,8 @@ dependencies = [
 
 [[package]]
 name = "acdp-did"
-version = "0.21.1"
-source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=4e99bfe#4e99bfea38cef2bd69e63f014b8d4dde2709d9cc"
+version = "0.21.2"
+source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=0e6ac59#0e6ac595a3e5c191e3b762fc0cf509e04bdc2868"
 dependencies = [
  "acdp-primitives",
  "acdp-safe-http",
@@ -135,8 +135,8 @@ dependencies = [
 
 [[package]]
 name = "acdp-jcs"
-version = "0.21.1"
-source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=4e99bfe#4e99bfea38cef2bd69e63f014b8d4dde2709d9cc"
+version = "0.21.2"
+source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=0e6ac59#0e6ac595a3e5c191e3b762fc0cf509e04bdc2868"
 dependencies = [
  "acdp-primitives",
  "serde",
@@ -145,8 +145,8 @@ dependencies = [
 
 [[package]]
 name = "acdp-primitives"
-version = "0.21.1"
-source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=4e99bfe#4e99bfea38cef2bd69e63f014b8d4dde2709d9cc"
+version = "0.21.2"
+source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=0e6ac59#0e6ac595a3e5c191e3b762fc0cf509e04bdc2868"
 dependencies = [
  "chrono",
  "reqwest",
@@ -158,8 +158,8 @@ dependencies = [
 
 [[package]]
 name = "acdp-producer"
-version = "0.21.1"
-source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=4e99bfe#4e99bfea38cef2bd69e63f014b8d4dde2709d9cc"
+version = "0.21.2"
+source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=0e6ac59#0e6ac595a3e5c191e3b762fc0cf509e04bdc2868"
 dependencies = [
  "acdp-crypto",
  "acdp-did",
@@ -174,8 +174,8 @@ dependencies = [
 
 [[package]]
 name = "acdp-safe-http"
-version = "0.21.1"
-source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=4e99bfe#4e99bfea38cef2bd69e63f014b8d4dde2709d9cc"
+version = "0.21.2"
+source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=0e6ac59#0e6ac595a3e5c191e3b762fc0cf509e04bdc2868"
 dependencies = [
  "acdp-primitives",
  "reqwest",
@@ -185,8 +185,8 @@ dependencies = [
 
 [[package]]
 name = "acdp-server"
-version = "0.21.1"
-source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=4e99bfe#4e99bfea38cef2bd69e63f014b8d4dde2709d9cc"
+version = "0.21.2"
+source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=0e6ac59#0e6ac595a3e5c191e3b762fc0cf509e04bdc2868"
 dependencies = [
  "acdp-crypto",
  "acdp-did",
@@ -205,8 +205,8 @@ dependencies = [
 
 [[package]]
 name = "acdp-types"
-version = "0.21.1"
-source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=4e99bfe#4e99bfea38cef2bd69e63f014b8d4dde2709d9cc"
+version = "0.21.2"
+source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=0e6ac59#0e6ac595a3e5c191e3b762fc0cf509e04bdc2868"
 dependencies = [
  "acdp-crypto",
  "acdp-did",
@@ -224,8 +224,8 @@ dependencies = [
 
 [[package]]
 name = "acdp-validation"
-version = "0.21.1"
-source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=4e99bfe#4e99bfea38cef2bd69e63f014b8d4dde2709d9cc"
+version = "0.21.2"
+source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=0e6ac59#0e6ac595a3e5c191e3b762fc0cf509e04bdc2868"
 dependencies = [
  "acdp-crypto",
  "acdp-did",
@@ -241,8 +241,8 @@ dependencies = [
 
 [[package]]
 name = "acdp-verify"
-version = "0.21.1"
-source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=4e99bfe#4e99bfea38cef2bd69e63f014b8d4dde2709d9cc"
+version = "0.21.2"
+source = "git+https://github.com/agentcontextdistributionprotocol/acdp-rs?rev=0e6ac59#0e6ac595a3e5c191e3b762fc0cf509e04bdc2868"
 dependencies = [
  "acdp-crypto",
  "acdp-did",
