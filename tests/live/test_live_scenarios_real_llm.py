@@ -75,20 +75,40 @@ from acdp_client import AcdpClient
 from acdp_client.identifiers import is_conformant_ctx_id
 from playground.config import Settings
 
+
 # tests/live/conftest.py already skips this whole package unless
 # ACDP_LIVE_STACK is set. This file additionally spends real, billed LLM API
 # calls in the 10 LLM-backed scenarios (S1-S8, S10, S11; S11 only if its token
 # mint succeeds), with S3 (4 calls) and S4 (3) as multi-agent LLM chains —
 # `make test-live` alone must never silently bill an API key, so it needs its
 # own explicit opt-in.
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("ACDP_LIVE_REAL_LLM"),
-    reason=(
-        "drives real, billed LLM API calls — set ACDP_LIVE_REAL_LLM=1 "
-        "(in addition to ACDP_LIVE_STACK=1, after `make up-full` with a real "
-        "OPENAI_API_KEY/ANTHROPIC_API_KEY in .env) to run this file"
-    ),
-)
+def real_llm_skip_reason(flag: str | None, settings: Settings) -> str | None:
+    """Return why this file must be skipped, or ``None`` when it may run.
+
+    Two gates, both required: the explicit ``ACDP_LIVE_REAL_LLM`` opt-in, and
+    (for a real provider) the matching API key being present. Without the key
+    gate, ``ACDP_LIVE_REAL_LLM=1`` with an empty key would start 34 runs that
+    each fail on the provider's 401, which reads as a scenario failure rather
+    than a missing credential. ``LLM_PROVIDER=mock`` needs no key and bills
+    nothing: the file then deep-verifies every scenario against the live stack
+    with the deterministic mock, which is not evidence about a real model.
+    """
+    if not flag:
+        return (
+            "drives real, billed LLM API calls — set ACDP_LIVE_REAL_LLM=1 "
+            "(in addition to ACDP_LIVE_STACK=1, after `make up-full` with a real "
+            "OPENAI_API_KEY/ANTHROPIC_API_KEY in .env) to run this file"
+        )
+    key_var = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}.get(
+        settings.llm_provider
+    )
+    if key_var and not getattr(settings, key_var.lower()).strip():
+        return f"LLM_PROVIDER={settings.llm_provider} but {key_var} is empty — add it to .env"
+    return None
+
+
+_SKIP_REASON = real_llm_skip_reason(os.environ.get("ACDP_LIVE_REAL_LLM"), Settings())
+pytestmark = pytest.mark.skipif(_SKIP_REASON is not None, reason=_SKIP_REASON or "")
 
 PLAYGROUND_URL = os.environ.get("PLAYGROUND_URL", "http://localhost:8000")
 # The real multi-agent LLM chains (S3 has 4 LLM agents, S4 has 3) can
