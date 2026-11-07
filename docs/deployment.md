@@ -167,5 +167,7 @@ railway config apply
 
 The old `railway.json` (Config as Code, deprecated, stops applying on
 2026-12-01) was removed. It never applied to this image-sourced service, so its
-Dockerfile build, `/healthz` healthcheck and restart settings were not in
-effect, and the IaC file does not add them.
+Dockerfile build, `/healthz` healthcheck and restart settings were never in
+effect. The IaC file now sets the health check (`/healthz`, 120 s timeout) and
+the restart policy (`ON_FAILURE`, 10 retries); the Dockerfile build does not
+apply, since the service deploys a prebuilt image.

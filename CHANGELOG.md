@@ -4,6 +4,13 @@ Notable changes to the ACDP stack as observed from the playground.
 Tracks cross-repo work — playground, control plane, registry, SDK —
 so operators reading any one repo can see the system-wide picture.
 
+## 2026-11-06 — Railway health check and restart policy go live
+
+`.railway/railway.ts` now sets a `/healthz` health check (120 s timeout) and an
+`ON_FAILURE` restart policy (10 retries) on the prod `acdp-playground` service.
+The old `railway.json` declared these, but the image-sourced service never read
+it, so this is the first time they are in effect.
+
 ## 2026-11-06 — Railway config moves to Infrastructure as Code
 
 Fixes #119. `railway.json` is replaced by `.railway/railway.ts`, an

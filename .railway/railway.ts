@@ -19,6 +19,14 @@ export default defineRailway(() => {
       autoUpdates: { schedule: everyDay, type: "patch" },
     }),
     build: { buildEnvironment: "V3", builder: "RAILPACK" },
+    // Health check + restart policy (the old railway.json declared these, but the
+    // image-sourced service never read it, so they first go live here).
+    deploy: {
+      healthcheckPath: "/healthz",
+      healthcheckTimeout: 120,
+      restartPolicyType: "ON_FAILURE",
+      restartPolicyMaxRetries: 10,
+    },
     replicas: { "us-west2": 1 },
   });
 
