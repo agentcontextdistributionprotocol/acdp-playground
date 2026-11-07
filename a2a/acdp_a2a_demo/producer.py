@@ -2,7 +2,7 @@
 bodies it signs itself (RFC-ACDP-0022, profile ``acdp-producer-a2a``).
 
 The agent does one small real task. It reads the sensor-reading datasets that
-the client cites in ``Message.metadata["io.acdp/inputs"]``, then returns a
+the client cites in ``Message.metadata["io.agentcontextdistributionprotocol/inputs"]``, then returns a
 summary artifact: a text part plus a data part with the statistics.
 
 Every RFC-0022 step on the agent side runs in acdp-rs's ``acdp-a2a``, through
@@ -12,9 +12,9 @@ Every RFC-0022 step on the agent side runs in acdp-rs's ``acdp-a2a``, through
 - the salted ``acdp-a2a-artifact/1`` record;
 - the did:key signature;
 - publishing before the completing chunk is emitted;
-- the ``Idempotency-Key`` and the ``io.acdp/provenance`` link;
+- the ``Idempotency-Key`` and the ``io.agentcontextdistributionprotocol/provenance`` link;
 - failing open;
-- the ``https://acdp.io/ext/a2a/v1`` Card entry.
+- the ``https://agentcontextdistributionprotocol.io/ext/a2a/v1`` Card entry.
 
 This module adds three things:
 
@@ -195,7 +195,7 @@ class SensorAnalystExecutor(AgentExecutor):
         sc = self._sidecar
         await sc.call("begin", task_id=task.id, context_id=task.context_id)
         try:
-            # §7: io.acdp/inputs → cited, in message order.
+            # §7: io.agentcontextdistributionprotocol/inputs → cited, in message order.
             noted = await sc.call("message", task_id=task.id, message=to_json(context.message))
             await updater.update_status(
                 state=TaskState.TASK_STATE_WORKING,
@@ -272,7 +272,7 @@ def agent_card(settings: ProducerSettings, card_extension: dict[str, Any]) -> Ag
             AgentSkill(
                 id="summarize-readings",
                 name="Summarize readings",
-                description="Summarize the sensor datasets cited in io.acdp/inputs.",
+                description="Summarize the sensor datasets cited in io.agentcontextdistributionprotocol/inputs.",
                 tags=["acdp", "a2a", "provenance"],
                 examples=["Summarize the cited readings"],
             )
