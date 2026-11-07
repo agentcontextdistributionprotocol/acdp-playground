@@ -149,10 +149,23 @@ wiring. Key points:
 | `bump-acdp.yml` | `repository_dispatch` `acdp-released` / dispatch | Calls the shared `acdp-ci` `bump-consume.yml` to open a `uv.lock` bump PR for a new `acdp` release — see [SDK bumps](testing-and-conformance.md#sdk-bumps) |
 | `notify-website.yml` | push to `main` touching `docs/**` or `README.md`, or dispatch | Dispatch a `docs-updated` event to `acdp-website` |
 
-### `railway.json`
+### `.railway/railway.ts`
 
-Railway builds the service from the repo's `Dockerfile` (`builder: DOCKERFILE`),
-health-checks it on `/healthz` with a 120 s timeout, and restarts it
-`ON_FAILURE` up to 10 times. `/healthz` always answers 200 once the app is up
-(see the [HTTP API](http-api.md)), so it is a liveness check — it does not wait
-for the registries.
+The prod `acdp-playground` service is defined as Railway Infrastructure as Code
+in `.railway/railway.ts`, the `acdp-playground` partial of the `acdp-runner`
+project. It deploys the `ghcr.io/agentcontextdistributionprotocol/acdp-playground:latest`
+image on one `us-west2` replica. The file mirrors the live service and never
+reads or writes its variables. `deploy-images.yml` still triggers deploys.
+
+To change the service, edit the file and preview the change before applying it
+(Railway CLI 5.x, after `npm ci` at the repo root for the `railway` SDK):
+
+```bash
+railway config plan     # an unchanged file reports "already up to date"
+railway config apply
+```
+
+The old `railway.json` (Config as Code, deprecated, stops applying on
+2026-12-01) was removed. It never applied to this image-sourced service, so its
+Dockerfile build, `/healthz` healthcheck and restart settings were not in
+effect, and the IaC file does not add them.

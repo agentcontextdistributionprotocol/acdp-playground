@@ -1,0 +1,12 @@
+{
+  "name": "acdp-playground",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Railway IaC tooling only (.railway/railway.ts). The playground itself is Python; see pyproject.toml.",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "devDependencies": {
+    "railway": "3.16.0"
+  }
+}

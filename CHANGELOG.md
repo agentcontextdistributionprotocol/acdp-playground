@@ -4,6 +4,13 @@ Notable changes to the ACDP stack as observed from the playground.
 Tracks cross-repo work — playground, control plane, registry, SDK —
 so operators reading any one repo can see the system-wide picture.
 
+## 2026-11-06 — Railway config moves to Infrastructure as Code
+
+Fixes #119. `railway.json` is replaced by `.railway/railway.ts`, an
+`acdp-playground` partial generated from the live service with
+`railway config pull`. `railway config plan` reports no changes, so the
+deployed service is unchanged.
+
 ## 2026-10-21 — Full-stack UI console signs in out of the box
 
 Fixes #98. `make up-full` builds the console in production mode, and its
