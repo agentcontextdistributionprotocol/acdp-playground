@@ -131,6 +131,6 @@ Lifecycle runs only through RFC-ACDP-0013 retraction. The holder learns of it by
 | `acdp_a2a_demo/client.py` | The A2A client, the tampering transport, and the holder (allowlist, retrieval, evidence packaging) |
 | `acdp_a2a_demo/demo.py` | The three runs |
 | `acdp_a2a_demo/sidecar.py` | The async client for the sidecar |
-| `sidecar/` | The Rust bridge to `acdp-a2a`, pinned to acdp-rs `4e99bfe` until `acdp-a2a` is on crates.io |
+| `sidecar/` | The Rust bridge to `acdp-a2a`, on the crates.io `acdp` and `acdp-a2a` 0.21.4 releases |
 | `docker-compose.yml` | Local registry-a, plus Postgres for the published image |
 | `tests/` | Offline checks: the sidecar's identity and Card, pass-through, fail-open, and the holder's guards |
