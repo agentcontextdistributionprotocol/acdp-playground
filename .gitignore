@@ -30,3 +30,6 @@ CLAUDE.md
 .claude/
 # RFC-0022 A2A demo: the sidecar's cargo build
 a2a/sidecar/target/
+
+# Railway IaC SDK (package.json)
+node_modules/
