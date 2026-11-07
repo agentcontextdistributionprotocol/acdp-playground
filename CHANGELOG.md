@@ -4,6 +4,15 @@ Notable changes to the ACDP stack as observed from the playground.
 Tracks cross-repo work — playground, control plane, registry, SDK —
 so operators reading any one repo can see the system-wide picture.
 
+## 2026-11-07 — Anthropic-backed agents no longer crash
+
+With `LLM_PROVIDER=anthropic`, every agent turn failed with `'list' object is
+not an instance of 'str'`: LangChain's Anthropic client returns
+`AIMessage.content` as a list of content blocks, and the LangChain and
+LangGraph agents passed it on as-is. `playground.agents.base.response_text`
+now joins the text blocks (matching `AIMessage.text`) for both agents, and
+LangGraph builds its model through the shared `build_llm`.
+
 ## 2026-11-07 — Doppler becomes the source of truth for the Railway stack
 
 The prod variables for `acdp-playground`, `registry-a` and `registry-b` (Railway

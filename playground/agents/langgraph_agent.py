@@ -9,15 +9,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from playground.agents.base import BasePlaygroundAgent
-from playground.config import get_settings
+from playground.agents.base import BasePlaygroundAgent, llm_for_settings, response_text
 
 
 class LangGraphAgent(BasePlaygroundAgent):
     framework = "langgraph"
 
-    def __init__(self, *args: Any, **kwargs: Any):
+    def __init__(self, *args: Any, llm: Any = None, **kwargs: Any):
         super().__init__(*args, **kwargs)
+        self._llm = llm
         self._app: Any | None = None
 
     def _build_app(self) -> Any:
@@ -27,19 +27,7 @@ class LangGraphAgent(BasePlaygroundAgent):
         from langgraph.graph import END, StateGraph  # type: ignore
         from typing_extensions import TypedDict  # type: ignore
 
-        s = get_settings()
-        if s.llm_provider == "openai":
-            from langchain_openai import ChatOpenAI
-
-            llm = ChatOpenAI(model=s.llm_model, api_key=s.openai_api_key or None)
-        elif s.llm_provider == "anthropic":
-            from langchain_anthropic import ChatAnthropic
-
-            llm = ChatAnthropic(model=s.llm_model, api_key=s.anthropic_api_key or None)
-        else:
-            from playground.agents.base import _MockLLM
-
-            llm = _MockLLM()
+        llm = self._llm if self._llm is not None else llm_for_settings()
 
         class State(TypedDict):
             prompt: str
@@ -53,7 +41,7 @@ class LangGraphAgent(BasePlaygroundAgent):
 
         async def respond(state: State) -> dict[str, str]:
             resp = await llm.ainvoke(state["draft"])
-            return {"answer": resp.content if hasattr(resp, "content") else str(resp)}
+            return {"answer": response_text(resp)}
 
         graph = StateGraph(State)
         graph.add_node("think", think)
