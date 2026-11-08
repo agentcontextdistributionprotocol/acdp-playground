@@ -4,6 +4,14 @@ Notable changes to the ACDP stack as observed from the playground.
 Tracks cross-repo work — playground, control plane, registry, SDK —
 so operators reading any one repo can see the system-wide picture.
 
+## 2026-11-08 — Raw context retrieval through the registry passthrough
+
+- `GET /registries/{a|b}/contexts/{ctx_id}` relays the registry's response
+  bytes unchanged (same `Content-Type`/`ETag`), so a body stays re-hashable and
+  verifiable end to end once the registries are private-network only. The
+  passthrough now routes on the raw path, so an encoded ctx_id is one segment;
+  ids are validated with `is_conformant_ctx_id`.
+
 ## 2026-11-07 — Backend key gate, registry passthrough, LLM quotas and run limits
 
 - **`x-api-key` gate** on every route except `/healthz` and the HMAC-checked

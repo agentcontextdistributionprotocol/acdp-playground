@@ -78,6 +78,9 @@ def _enforced(monkeypatch: pytest.MonkeyPatch, **env: Any) -> Settings:
     return _settings(monkeypatch, playground_api_key=KEY, playground_require_api_key="true", **env)
 
 
+CTX = synthetic_ctx_id("registry-b.playground.local", "passthrough-bytes")
+
+
 # ── the gate ────────────────────────────────────────────────────────────────
 
 GATED = [
@@ -533,7 +536,10 @@ def test_passthrough_forwards_the_query_string(upstream):
 @pytest.mark.parametrize(
     "path",
     [
-        "contexts/abc",  # retrieval is not in the console's registry allowlist
+        "contexts/abc",  # not a ctx id
+        "contexts/acdp:%2F%2Fregistry-b.playground.local%2F..",  # dot-segment id
+        "contexts/acdp:%2F%2Fregistry-b.playground.local%2Fa%2Fb",  # not a ctx id
+        "contexts/" + CTX,  # unencoded, so more than one segment
         "contexts",
         "lineages/a/b",
         "lineages/x/current/extra",
@@ -671,3 +677,52 @@ async def test_run_past_its_deadline_errors_and_frees_the_run(monkeypatch):
     result = await execute(scenario, RunSpec(run_id="r-hang", scenario_id="hang"), events)
     assert result.status == "failed"
     assert "RUN_TIMEOUT_SECONDS" in (result.error or "")
+
+
+# Deliberately not what json.dumps would produce: odd spacing, key order, a
+# float and unicode, so any parse-and-reserialise step would change the bytes.
+RAW_BODY = (
+    b'{"body":{"z":1,  "a":"caf\xc3\xa9","n":1.50,"content_hash":"sha256:00"},'
+    b'\n "registry_receipt":{"signature":{"value":"x"}}}'
+)
+
+
+@pytest.fixture
+def raw_upstream(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[httpx.Request]]:
+    seen: list[httpx.Request] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return httpx.Response(
+            200,
+            content=RAW_BODY,
+            headers={"content-type": "application/json; charset=utf-8", "etag": '"ctx-v1"'},
+        )
+
+    monkeypatch.setenv("REGISTRY_B_URL", "http://registry-b.railway.internal:8200")
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        registry_proxy, "_client", httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    )
+    yield seen
+    monkeypatch.setattr(registry_proxy, "_client", None)
+
+
+def test_passthrough_context_retrieval_returns_the_registry_bytes_unchanged(raw_upstream):
+    from urllib.parse import quote
+
+    with TestClient(app) as c:
+        r = c.get(f"/registries/b/contexts/{quote(CTX, safe='')}")
+    assert r.status_code == 200
+    assert r.content == RAW_BODY  # byte for byte: re-hashable end to end
+    assert r.headers["content-type"] == "application/json; charset=utf-8"
+    assert r.headers["etag"] == '"ctx-v1"'
+    (req,) = raw_upstream
+    # The id reaches the registry as one fully encoded segment, as AcdpClient sends it.
+    assert req.url.raw_path == b"/contexts/" + quote(CTX, safe="").encode()
+
+
+def test_passthrough_context_retrieval_accepts_a_colon_unencoded_id(raw_upstream):
+    with TestClient(app) as c:
+        r = c.get("/registries/b/contexts/" + CTX.replace("/", "%2F"))
+    assert r.status_code == 200 and r.content == RAW_BODY
