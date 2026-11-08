@@ -17,7 +17,12 @@
 # (values containing "${{"), which stay Railway-managed.
 #
 # Values move by pipe only: Doppler -> jq -> Railway GraphQL request body on
-# stdin. Nothing is printed, written to disk or passed in argv. The check is a
+# stdin. Nothing is printed, written to disk or passed in argv; the Railway
+# token reaches curl as a header file on a file descriptor, not in argv.
+# Every read fails closed: a network error, a non-2xx status, an unparsable
+# body, a GraphQL "errors" array or a null "data" (Railway answers a bad token
+# with HTTP 200, data: null and errors) stops the run before anything is
+# compared or written. The check is a
 # sha256 of the sorted KEY=VALUE set of the managed keys, Doppler vs Railway.
 # A redeploy happens only when at least one value actually changed.
 #
@@ -89,18 +94,42 @@ keys_json="$(printf '%s\n' "${keys[@]}" | jq -R . | jq -sc 'unique')"
 railway_token="${RAILWAY_API_TOKEN:-$(jq -r '.user.accessToken // .user.token // empty' ~/.railway/config.json 2>/dev/null || true)}"
 [ -n "$railway_token" ] || die "no Railway token: log in with the railway CLI or set RAILWAY_API_TOKEN"
 
-# POST a GraphQL request whose JSON body arrives on stdin, so values never reach argv.
+# POST a GraphQL request whose JSON body arrives on stdin, so values never reach
+# argv; the token goes in as a header file on a descriptor (printf is a builtin,
+# so it never shows in ps). Prints .data on success. Returns non-zero, saying
+# why, on a network error, a non-2xx status, an unparsable body, a non-empty
+# "errors" or a null/missing "data". Callers must check the status: set -e does
+# not apply inside a function called from a || list.
 railway_gql() {
-  curl -fsS https://backboard.railway.com/graphql/v2 \
-    -H "Authorization: Bearer $railway_token" -H 'content-type: application/json' --data-binary @- |
-    jq -e 'if .errors then error("railway: \(.errors | map(.message) | join("; "))") else .data end'
+  local resp code body
+  resp="$(curl -sS --max-time 60 -w '\n%{http_code}' https://backboard.railway.com/graphql/v2 \
+    -H @<(printf 'Authorization: Bearer %s\n' "$railway_token") \
+    -H 'content-type: application/json' --data-binary @-)" || {
+    say "railway: request failed (network)"
+    return 1
+  }
+  code="${resp##*$'\n'}"
+  body="${resp%$'\n'*}"
+  [[ "$code" =~ ^2[0-9][0-9]$ ]] || {
+    say "railway: HTTP $code"
+    return 1
+  }
+  jq -e 'if type != "object" then error("railway: response is not a JSON object")
+    elif ((.errors // []) | length) > 0 then error("railway: \(.errors | map(.message // "?") | join("; "))")
+    elif .data == null then error("railway: response has no data")
+    else .data end' <<<"$body" || {
+    say "railway: unusable response (HTTP $code)"
+    return 1
+  }
 }
 gql() { jq -nc --arg q "$1" --argjson v "${2:-{\}}" '{query: $q, variables: $v}' | railway_gql; }
 
 ids="$(gql 'query($p: String!){project(id: $p){environments{edges{node{id name}}} services{edges{node{id name}}}}}' \
-  "$(jq -nc --arg p "$RAILWAY_PROJECT_ID" '{p: $p}')")"
-env_id="$(jq -r --arg n "$RAILWAY_ENVIRONMENT" '.project.environments.edges[].node | select(.name == $n) | .id' <<<"$ids")"
-svc_id="$(jq -r --arg n "$RAILWAY_SERVICE" '.project.services.edges[].node | select(.name == $n) | .id' <<<"$ids")"
+  "$(jq -nc --arg p "$RAILWAY_PROJECT_ID" '{p: $p}')")" || die "reading the Railway project failed; nothing changed"
+env_id="$(jq -r --arg n "$RAILWAY_ENVIRONMENT" '.project.environments.edges[].node | select(.name == $n) | .id' <<<"$ids")" ||
+  die "unexpected Railway project shape; nothing changed"
+svc_id="$(jq -r --arg n "$RAILWAY_SERVICE" '.project.services.edges[].node | select(.name == $n) | .id' <<<"$ids")" ||
+  die "unexpected Railway project shape; nothing changed"
 [ -n "$env_id" ] || die "Railway environment $RAILWAY_ENVIRONMENT not found in project $RAILWAY_PROJECT_ID"
 [ -n "$svc_id" ] || die "Railway service $RAILWAY_SERVICE not found in project $RAILWAY_PROJECT_ID"
 scope="$(jq -nc --arg p "$RAILWAY_PROJECT_ID" --arg e "$env_id" --arg s "$svc_id" '{p: $p, e: $e, s: $s}')"
@@ -108,10 +137,12 @@ scope="$(jq -nc --arg p "$RAILWAY_PROJECT_ID" --arg e "$env_id" --arg s "$svc_id
 # Raw (unrendered) service variables, so a reference shows up as ${{...}}, not its resolved value.
 railway_vars() {
   gql 'query($p: String!, $e: String!, $s: String!){variables(projectId: $p, environmentId: $e, serviceId: $s, unrendered: true)}' \
-    "$scope" | jq -c '.variables'
+    "$scope" | jq -ec '.variables | if type == "object" then . else error("railway: variables is not an object") end'
 }
+# The values stay in the pipe; jq only checks the shape (it never echoes the input).
 doppler_vars() {
-  doppler secrets download --project "$DOPPLER_PROJECT" --config "$DOPPLER_CONFIG" --no-file --format json
+  doppler secrets download --project "$DOPPLER_PROJECT" --config "$DOPPLER_CONFIG" --no-file --format json |
+    jq -ec 'if type == "object" then . else error("doppler: download is not a JSON object") end'
 }
 
 # sha256 of the sorted KEY=VALUE lines of the managed keys (a missing key hashes as absent).
@@ -119,8 +150,8 @@ managed_hash() {
   jq -r --argjson k "$keys_json" '. as $v | $k[] as $key | select($v | has($key)) | "\($key)=\($v[$key])"' | LC_ALL=C sort | shasum -a 256 | cut -c1-16
 }
 
-rv="$(railway_vars)"
-dv="$(doppler_vars)"
+rv="$(railway_vars)" || die "reading Railway variables for $RAILWAY_SERVICE failed; nothing changed"
+dv="$(doppler_vars)" || die "reading Doppler $DOPPLER_PROJECT/$DOPPLER_CONFIG failed; nothing changed"
 
 # Per key: status only. The comparison happens inside jq; values never leave it.
 plan="$(printf '%s\n%s\n' "$dv" "$rv" | jq -sc --argjson k "$keys_json" '
@@ -131,7 +162,7 @@ plan="$(printf '%s\n%s\n' "$dv" "$rv" | jq -sc --argjson k "$keys_json" '
     elif ($r | has($key)) and ($r[$key] | contains("${{")) then "railway-reference"
     elif ($r | has($key) | not) then "new"
     elif $r[$key] == $d[$key] then "unchanged"
-    else "changed" end)}]')"
+    else "changed" end)}]')" || die "comparing Doppler with Railway failed; nothing changed"
 
 say "Doppler $DOPPLER_PROJECT/$DOPPLER_CONFIG -> Railway $RAILWAY_SERVICE ($RAILWAY_ENVIRONMENT), ${#keys[@]} managed key(s):"
 jq -r '.[] | "  \(.key)\t\(.status)"' <<<"$plan" >&2
@@ -142,8 +173,8 @@ bad="$(jq -r '[.[] | select(.status | IN("missing-in-doppler", "doppler-value-is
 [ -z "$bad" ] || die "refusing: $bad (see status above; a Railway reference must stay Railway-managed, so drop it from $keys_name)"
 todo="$(jq -r '.[] | select(.status | IN("new", "changed")) | .key' <<<"$plan")"
 
-before="$(managed_hash <<<"$rv")"
-want="$(managed_hash <<<"$dv")"
+before="$(managed_hash <<<"$rv")" || die "hashing failed; nothing changed"
+want="$(managed_hash <<<"$dv")" || die "hashing failed; nothing changed"
 say "hash: railway $before, doppler $want ($([ "$before" = "$want" ] && echo match || echo differ))"
 
 if [ "$mode" = dry-run ]; then
@@ -156,21 +187,26 @@ if [ -z "$todo" ]; then
   exit 0
 fi
 
+done_keys=()
 for key in $todo; do
   # The value goes Doppler -> jq -> curl stdin; it is never in argv or on disk.
   doppler_vars | jq -c --arg key "$key" --argjson s "$scope" '{
       query: "mutation($i: VariableUpsertInput!){variableUpsert(input: $i)}",
       variables: {i: {projectId: $s.p, environmentId: $s.e, serviceId: $s.s, name: $key, value: .[$key], skipDeploys: true}}}' |
-    railway_gql >/dev/null
+    railway_gql >/dev/null ||
+    die "setting $key failed; set before it: ${done_keys[*]:-none}; no redeploy"
+  done_keys+=("$key")
   say "  set $key"
 done
 
-after="$(railway_vars | managed_hash)"
+after_vars="$(railway_vars)" || die "re-reading Railway variables failed after apply; no redeploy"
+after="$(managed_hash <<<"$after_vars")" || die "hashing failed after apply; no redeploy"
 [ "$after" = "$want" ] || die "hash after apply is $after, expected $want; check the service in Railway"
 say "hash after apply: $after (match)"
 
 if [ "$redeploy" = 1 ]; then
-  gql 'mutation($e: String!, $s: String!){serviceInstanceRedeploy(environmentId: $e, serviceId: $s)}' "$scope" >/dev/null
+  gql 'mutation($e: String!, $s: String!){serviceInstanceRedeploy(environmentId: $e, serviceId: $s)}' "$scope" >/dev/null ||
+    die "values are set (hash matches) but the redeploy request failed; redeploy $RAILWAY_SERVICE by hand"
   say "redeploy triggered for $RAILWAY_SERVICE so the new values take effect"
 else
   say "no redeploy (--no-redeploy): the values apply on the next deploy"

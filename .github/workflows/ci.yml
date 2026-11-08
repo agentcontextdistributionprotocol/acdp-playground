@@ -94,6 +94,29 @@ jobs:
         env:
           LLM_PROVIDER: mock
 
+  doppler-sync:
+    name: doppler-sync (shellcheck + offline fail-closed tests)
+    # deploy/doppler-sync.sh writes production variables, so its fail-closed
+    # behaviour and argv hygiene are tested on every PR, offline, with fake
+    # curl and doppler (deploy/test_doppler_sync.py).
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout playground
+        uses: actions/checkout@v7
+        with:
+          path: acdp-playground
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: shellcheck
+        run: shellcheck deploy/doppler-sync.sh
+
+      - name: Offline tests
+        run: uv run --no-project --with pytest pytest deploy/test_doppler_sync.py -q -p no:cacheprovider -o asyncio_mode=strict
+
   docker:
     name: docker image builds
     # The image only ships on version tags (deploy-images.yml), so a broken
