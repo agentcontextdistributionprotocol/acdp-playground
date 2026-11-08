@@ -283,7 +283,8 @@ registry's.
 
 Read-only passthrough to registry-a (`a`) or registry-b (`b`), using the
 configured `REGISTRY_A_URL` / `REGISTRY_B_URL` (the private network in
-production), so callers never need the registries' public domains. Only these
+production). In production the registries have no public domain, so this is
+the only way to reach them from outside. Only these
 paths are forwarded; anything else is **404** before any upstream request:
 
 | Path | Registry route |

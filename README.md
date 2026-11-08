@@ -254,7 +254,9 @@ Every route except `/healthz` and `/webhooks/acdp` takes the shared key in the
 `x-api-key` header (`PLAYGROUND_API_KEY`). It is enforced once
 `PLAYGROUND_REQUIRE_API_KEY=true` (default `false`, so callers can start sending
 it first). A keyed caller can forward its user's IP in `X-ACDP-Client-IP`.
-`GET /registries/{a|b}/...` proxies the console's allow-listed registry reads.
+`GET /registries/{a|b}/...` is the only external path to the registries, which
+are private-network only in production: health, search, lineages, `/.well-known/*`
+and raw `contexts/{ctx_id}` bytes for end-to-end verification.
 
 | Limit | Default | Env var | When exceeded |
 |-------|---------|---------|---------------|

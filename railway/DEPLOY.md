@@ -20,12 +20,30 @@ tag (this repo builds `acdp-playground`); Railway runs them.
    registry-a:8100   registry-b:8200   control-plane:3001
 ```
 
-Only **ui-console** (and optionally **playground**) need a public domain;
-everything else talks over Railway's private network.
+Only **ui-console** and **playground** have public domains. The registries
+and the control plane are **private-network only**: the registries have no
+public domain, and the only way to reach them from outside is the playground's
+key-gated, GET-only passthrough `GET /registries/{a|b}/...` (health, search,
+lineages, raw `contexts/{ctx_id}` bytes and `/.well-known/*`; see
+[HTTP API → Registry passthrough](../docs/http-api.md#registry-passthrough)).
+The console reaches them that way too.
+
+Registry webhooks are the one call that leaves the private network: they go to
+the playground's **public** HTTPS URL
+(`ACDP_REGISTRY_WEBHOOK__URL=https://<playground-domain>/webhooks/acdp`). The
+registry's SSRF policy accepts only `https` URLs with a public authority, and
+refuses to start otherwise, so an `http://…railway.internal` webhook URL is not
+an option.
 
 ---
 
 ## 0. Key facts that make this work
+
+- **Registries are private.** Their only external path is the playground's
+  `/registries/{a|b}/...` passthrough (the console no longer reads
+  `REGISTRY_*_BASE_URL`). To expose one again for debugging, generate a domain
+  with target port 8100 (registry-a) or 8200 (registry-b); production's were
+  `registry-a-production.up.railway.app` and `registry-b-production.up.railway.app`.
 
 - **Dynamic `$PORT`.** Railway injects `PORT`. The playground binds it
   (`Dockerfile` CMD); the control plane reads `process.env.PORT`; ui-console
@@ -99,7 +117,8 @@ become the internal DNS:
 | `ui-console`    | `ghcr.io/<owner>/acdp-ui-console`      | yes     | 3000       |
 
 For the two public services, *Settings → Networking → Generate Domain*, and set
-the target port (8000 / 3000). Set the healthcheck path under *Settings →
+the target port (8000 / 3000). Don't generate domains for the registries or
+the control plane. Set the healthcheck path under *Settings →
 Deploy* (`/healthz` for registry/CP/playground, `/` for ui-console).
 
 ---
@@ -162,6 +181,7 @@ ACDP_REGISTRY_AUTH__ANONYMOUS_PUBLIC_READS=true
 ACDP_REGISTRY_AUTH__REQUIRE_TENANT=false
 ACDP_REGISTRY_AUTH__JWT_SECRET=<base64 ≥32 bytes>
 ACDP_REGISTRY_WEBHOOK__SECRET=<registry-webhook-secret>
+ACDP_REGISTRY_WEBHOOK__URL=https://<playground-domain>/webhooks/acdp   # https + public host only
 ```
 
 > SQLite under `/app/data` is **ephemeral** on Railway (resets on redeploy) —
@@ -218,8 +238,7 @@ PORT=3000
 HOSTNAME=::
 PLAYGROUND_BASE_URL=http://playground.railway.internal:8000
 CONTROL_PLANE_BASE_URL=http://control-plane.railway.internal:3001
-REGISTRY_A_BASE_URL=http://registry-a.railway.internal:8100
-REGISTRY_B_BASE_URL=http://registry-b.railway.internal:8200
+PLAYGROUND_API_KEY=<playground-api-key>          # == playground PLAYGROUND_API_KEY
 CONTROL_PLANE_API_KEY=<cp-admin-key>
 ACDP_UI_CONSOLE_PASSWORD=<console-passphrase>
 ```
