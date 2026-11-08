@@ -27,10 +27,14 @@ HERE = Path(__file__).resolve().parent
 TOKEN = "SENTINEL-RAILWAY-TOKEN-7f3a"
 SECRET = "SENTINEL-SECRET-VALUE-c41d"
 KEYS = ["ALPHA", "BETA_SECRET"]
+# target -> the Railway service name the script resolves it to
+TARGETS = {"playground": "acdp-playground", "registry-a": "registry-a", "registry-b": "registry-b"}
 PROJECT_IDS = {
     "project": {
         "environments": {"edges": [{"node": {"id": "env-1", "name": "production"}}]},
-        "services": {"edges": [{"node": {"id": "svc-1", "name": "acdp-playground"}}]},
+        "services": {
+            "edges": [{"node": {"id": f"svc-{t}", "name": name}} for t, name in TARGETS.items()]
+        },
     }
 }
 
@@ -45,6 +49,7 @@ with open(os.path.join(d, "argv.log"), "a") as f:
     f.write(json.dumps(sys.argv) + "\n")
 args = sys.argv[1:]
 headers, wfmt, i = [], None, 0
+expected_auth = "Authorization: Bearer " + os.environ["FAKE_EXPECT_TOKEN"]
 while i < len(args):
     a = args[i]
     if a == "-H":
@@ -69,7 +74,10 @@ mode = os.environ.get("FAKE_MODE", "ok")
 fail_on = os.environ.get("FAKE_FAIL_ON", "")
 failing = mode != "ok" and fail_on in q
 code, out = 200, None
-if failing and mode == "network":
+if expected_auth not in headers:
+    # What Railway really does with a bad or expired token.
+    out = {"data": None, "errors": [{"message": "Not Authorized"}]}
+elif failing and mode == "network":
     sys.stderr.write("curl: (6) Could not resolve host: backboard.railway.com\n")
     sys.exit(6)
 elif failing and mode == "errors":
@@ -80,10 +88,12 @@ elif failing and mode == "nodata":
     out = {}
 elif failing and mode == "http500":
     code, out = 500, {"error": "internal"}
+elif failing and mode == "http401":
+    code, out = 401, {"errors": [{"message": "Unauthorized"}]}
 elif failing and mode == "garbage":
     out = "<html>bad gateway</html>"
-elif failing and mode == "vars-not-object":
-    out = {"data": {"variables": None}}
+elif failing and mode.startswith("vars="):
+    out = {"data": {"variables": json.loads(mode[len("vars="):])}}
 elif "project(id" in q:
     out = {"data": json.load(open(os.path.join(d, "ids.json")))}
 elif "variables(projectId" in q:
@@ -115,6 +125,8 @@ if os.environ.get("FAKE_DOPPLER") == "fail":
 if os.environ.get("FAKE_DOPPLER") == "garbage":
     sys.stdout.write("Doppler Error: not json\n")
     sys.exit(0)
+if os.environ.get("FAKE_DOPPLER") == "empty":
+    sys.exit(0)
 sys.stdout.write(open(os.path.join(d, "doppler.json")).read())
 """
 
@@ -141,9 +153,10 @@ def env(tmp_path: Path):
     repo = tmp_path / "repo"
     (repo / "deploy" / "doppler-keys").mkdir(parents=True)
     shutil.copy(HERE / "doppler-sync.sh", repo / "deploy" / "doppler-sync.sh")
-    (repo / "deploy" / "doppler-keys" / "playground.txt").write_text(
-        "# test allowlist\n" + "\n".join(KEYS) + "\n"
-    )
+    for target in TARGETS:
+        (repo / "deploy" / "doppler-keys" / f"{target}.txt").write_text(
+            "# test allowlist\n" + "\n".join(KEYS) + "\n"
+        )
     git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid"]
     subprocess.run([*git, "init", "-q"], check=True)
     subprocess.run([*git, "add", "."], check=True)
@@ -166,16 +179,19 @@ def env(tmp_path: Path):
     home = tmp_path / "home"
     home.mkdir()
 
-    def run(*args: str, **extra: str) -> subprocess.CompletedProcess[str]:
+    def run(
+        *args: str, target: str = "playground", **extra: str
+    ) -> subprocess.CompletedProcess[str]:
         e = {
             "PATH": f"{bin_}{os.pathsep}{os.environ['PATH']}",
             "HOME": str(home),
             "FAKE_DIR": str(fake),
+            "FAKE_EXPECT_TOKEN": TOKEN,
             "RAILWAY_API_TOKEN": TOKEN,
             **extra,
         }
         return subprocess.run(
-            ["bash", str(repo / "deploy" / "doppler-sync.sh"), "playground", *args],
+            ["bash", str(repo / "deploy" / "doppler-sync.sh"), target, *args],
             env=e,
             check=False,
             capture_output=True,
@@ -264,7 +280,7 @@ def test_apply_with_nothing_to_change_does_not_redeploy(env):
 
 # ── fail closed ──────────────────────────────────────────────────────────────
 
-FAILURES = ["errors", "nulldata", "nodata", "http500", "network", "garbage"]
+FAILURES = ["errors", "nulldata", "nodata", "http500", "http401", "network", "garbage"]
 
 
 @pytest.mark.parametrize("mode", FAILURES)
@@ -284,12 +300,54 @@ def test_railway_200_with_null_data_and_errors_names_the_error(env):
     assert "Not Authorized" in r.stderr
 
 
-def test_variables_not_an_object_fails_closed(env):
-    r = env(FAKE_MODE="vars-not-object", FAKE_FAIL_ON="variables(projectId")
+@pytest.mark.parametrize("variables", ["null", '"x"', "[]", '["ALPHA"]', "1", "true"])
+@pytest.mark.parametrize("target", list(TARGETS))
+@pytest.mark.parametrize("args", [(), ("--apply",)], ids=["dry-run", "apply"])
+def test_variables_null_or_not_an_object_fails_closed(env, variables, target, args):
+    """acdp-docs #38: {"data":{"variables":null}} must not read as "every key is new"."""
+    (env.fake / "doppler.json").write_text(json.dumps({"ALPHA": "a2", "BETA_SECRET": SECRET}))
+    r = env(*args, target=target, FAKE_MODE=f"vars={variables}", FAKE_FAIL_ON="variables(projectId")
     _assert_failed_closed(env.fake, r)
+    assert "reading Railway variables" in r.stderr
 
 
-@pytest.mark.parametrize("doppler", ["fail", "garbage"])
+@pytest.mark.parametrize("target", list(TARGETS))
+def test_every_target_resolves_its_own_service(env, target):
+    r = env(target=target)
+    assert r.returncode == 0, r.stderr
+    assert f"-> Railway {TARGETS[target]} (production)" in r.stderr
+    assert f"doppler-keys/{target}.txt" in r.stderr
+
+
+@pytest.mark.parametrize("args", [(), ("--apply",)], ids=["dry-run", "apply"])
+def test_wrong_railway_token_fails_closed(env, args):
+    (env.fake / "doppler.json").write_text(json.dumps({"ALPHA": "a2", "BETA_SECRET": SECRET}))
+    r = env(*args, RAILWAY_API_TOKEN=TOKEN + "-but-wrong")
+    _assert_failed_closed(env.fake, r)
+    assert "Not Authorized" in r.stderr
+
+
+def test_dry_run_reports_a_change_without_writing(env):
+    (env.fake / "doppler.json").write_text(json.dumps({"ALPHA": "a2", "BETA_SECRET": SECRET}))
+    r = env()
+    assert r.returncode == 0, r.stderr
+    assert "ALPHA\tchanged" in r.stderr and "1 key(s) would change" in r.stderr
+    assert _writes(env.fake) == []
+    _assert_no_leak(env.fake, r)
+
+
+@pytest.mark.parametrize("args", [(), ("--apply",)], ids=["dry-run", "apply"])
+def test_railway_reference_is_refused(env, args):
+    (env.fake / "railway.json").write_text(
+        json.dumps({"ALPHA": "${{shared.ALPHA}}", "BETA_SECRET": SECRET})
+    )
+    r = env(*args)
+    assert r.returncode != 0
+    assert "ALPHA\trailway-reference" in r.stderr and "refusing: ALPHA" in r.stderr
+    assert _writes(env.fake) == []
+
+
+@pytest.mark.parametrize("doppler", ["fail", "garbage", "empty"])
 @pytest.mark.parametrize("args", [(), ("--apply",)], ids=["dry-run", "apply"])
 def test_doppler_read_failure_fails_closed(env, doppler, args):
     r = env(*args, FAKE_DOPPLER=doppler)
