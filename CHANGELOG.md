@@ -4,6 +4,15 @@ Notable changes to the ACDP stack as observed from the playground.
 Tracks cross-repo work — playground, control plane, registry, SDK —
 so operators reading any one repo can see the system-wide picture.
 
+## 2026-11-08 — Registries are private-network only
+
+- Production registry-a and registry-b no longer have public domains; they are
+  reached through the playground's `/registries/{a|b}/...` passthrough. Their
+  webhooks still target the playground's public HTTPS URL, because the
+  registry's SSRF policy refuses `http` and private-host webhook URLs.
+- registry-b has its own receipt signing key (`did.json` with `#receipt-key-1`)
+  and runs with playground mode off, which a receipt key requires.
+
 ## 2026-11-08 — Raw context retrieval through the registry passthrough
 
 - `GET /registries/{a|b}/contexts/{ctx_id}` relays the registry's response
