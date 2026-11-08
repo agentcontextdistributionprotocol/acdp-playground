@@ -4,6 +4,17 @@ Notable changes to the ACDP stack as observed from the playground.
 Tracks cross-repo work — playground, control plane, registry, SDK —
 so operators reading any one repo can see the system-wide picture.
 
+## 2026-11-08 — doppler-sync.sh hardening
+
+- The Railway token reaches curl as a header on a file descriptor, no longer in
+  argv (visible in `ps`).
+- Every read fails closed, so nothing is compared, written or redeployed: a
+  network error, a non-2xx status, an unparsable body, GraphQL `errors`, a null
+  `data` (Railway answers a bad token with HTTP 200), a non-object variable set,
+  or a failed or unparsable Doppler read.
+- Offline tests (`deploy/test_doppler_sync.py`, fake curl and doppler) and a CI
+  job running them with shellcheck.
+
 ## 2026-11-08 — Registries are private-network only
 
 - Production registry-a and registry-b no longer have public domains; they are
