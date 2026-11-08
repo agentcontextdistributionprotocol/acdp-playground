@@ -290,6 +290,7 @@ paths are forwarded; anything else is **404** before any upstream request:
 |------|----------------|
 | `/registries/{a\|b}/healthz` | `GET /healthz` |
 | `/registries/{a\|b}/contexts/search?...` | `GET /contexts/search` (query string forwarded as-is) |
+| `/registries/{a\|b}/contexts/{ctx_id}` | `GET /contexts/{ctx_id}`: the registry's response **bytes unchanged** |
 | `/registries/{a\|b}/lineages/{lineage_id}` | `GET /lineages/{lineage_id}` |
 | `/registries/{a\|b}/lineages/{lineage_id}/current` | `GET /lineages/{lineage_id}/current` |
 | `/registries/{a\|b}/.well-known/acdp.json` | capabilities |
@@ -300,8 +301,16 @@ The registry's status and body pass through, with `content-type`,
 `cache-control`, `etag`, `last-modified`, `retry-after` and `vary`. Only `Accept`
 and `If-None-Match` are forwarded upstream; the caller's `x-api-key` never is.
 Redirects are not followed. Other registry names are **422**, other methods
-**405**, and an unreachable registry is **502** `registry_unreachable`. The list
-mirrors the UI console's registry allowlist.
+**405**, and an unreachable registry is **502** `registry_unreachable`.
+
+`/contexts/{ctx_id}` exists so a body can be re-hashed and its signature and
+receipt verified end to end without reaching a registry directly. The response
+body is relayed byte for byte, never parsed and re-serialised. Send the ctx_id
+percent-encoded as one path segment (`acdp%3A%2F%2F<authority>%2F<uuid>`, as
+`encodeURIComponent` or `quote(ctx_id, safe="")` produce); anything that isn't
+a conformant ctx_id is a 404. Use this route, not the playground's own
+`GET /contexts/{ctx_id}` above, when you need the exact bytes: that one returns
+a parsed model, so its JSON is not the registry's.
 
 ## Webhooks
 

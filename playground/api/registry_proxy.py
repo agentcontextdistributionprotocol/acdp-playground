@@ -2,10 +2,17 @@
 
 Lets the console reach registry-a/registry-b through the (key-gated)
 playground over the private network, so the registries can drop their
-public domains. It is not a generic reverse proxy: only the exact read
-paths the console issues are forwarded, mirroring the console's own
-``REGISTRY_ROUTES`` allowlist. Everything else is a 404 before any upstream
+public domains. It is not a generic reverse proxy: only the read paths
+the console issues (its ``REGISTRY_ROUTES`` allowlist) plus the raw context
+retrieval are forwarded. Everything else is a 404 before any upstream
 request is made.
+
+``/contexts/{ctx_id}`` returns the registry's response bytes unchanged
+(same ``Content-Type`` and ``ETag``), so anyone can still re-hash a body and
+verify its signature and receipt end to end without reaching the registry
+directly. A ctx_id contains ``/`` (scheme, authority, UUID), so callers send it
+percent-encoded as ONE path segment; routing therefore works on the raw
+(still-encoded) path, never the decoded one.
 
 The upstream base URL comes only from settings (``REGISTRY_A_URL`` /
 ``REGISTRY_B_URL``); no route takes a host, so this cannot be pointed at an
@@ -17,28 +24,35 @@ reaches a registry.
 
 from __future__ import annotations
 
-import re
+from collections.abc import Callable
 from typing import Literal
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 
+from acdp_client.identifiers import is_conformant_ctx_id
 from playground.config import get_settings
 
 router = APIRouter(prefix="/registries", tags=["registries"])
 
-ALLOWED_PATHS: tuple[re.Pattern[str], ...] = tuple(
-    re.compile(p)
-    for p in (
-        r"^healthz$",
-        r"^contexts/search$",
-        r"^lineages/[^/]+$",
-        r"^lineages/[^/]+/current$",
-        r"^\.well-known/acdp\.json$",
-        r"^\.well-known/jwks\.json$",
-        r"^\.well-known/did\.json$",
-    )
+
+# Each route is a tuple of segments, matched against the DECODED segments of
+# the raw path (so ``%2F`` inside an id stays inside its one segment). A
+# literal must match exactly; a predicate validates a free id segment.
+def _lineage_id(seg: str) -> bool:
+    return "/" not in seg  # (and not ""/"."/"..", rejected for every segment)
+
+
+ALLOWED_ROUTES: tuple[tuple[str | Callable[[str], bool], ...], ...] = (
+    ("healthz",),
+    ("contexts", "search"),
+    ("contexts", is_conformant_ctx_id),
+    ("lineages", _lineage_id),
+    ("lineages", _lineage_id, "current"),
+    (".well-known", "acdp.json"),
+    (".well-known", "jwks.json"),
+    (".well-known", "did.json"),
 )
 _FORWARD_REQUEST_HEADERS = ("accept", "if-none-match")
 _FORWARD_RESPONSE_HEADERS = (
@@ -69,21 +83,46 @@ async def aclose() -> None:
         _client = None
 
 
-def is_allowed(path: str) -> bool:
-    if any(seg in ("", ".", "..") for seg in path.split("/")):
-        return False
-    return any(p.match(path) for p in ALLOWED_PATHS)
+def allowed_segments(raw_rest: str) -> list[str] | None:
+    """Decoded segments of an allow-listed raw path remainder, else None."""
+    segments = [unquote(seg) for seg in raw_rest.split("/")]
+    if any(seg in ("", ".", "..") for seg in segments):
+        return None
+    for route in ALLOWED_ROUTES:
+        if len(route) == len(segments) and all(
+            want == got if isinstance(want, str) else want(got)
+            for want, got in zip(route, segments, strict=True)
+        ):
+            return segments
+    return None
+
+
+def is_allowed(raw_rest: str) -> bool:
+    return allowed_segments(raw_rest) is not None
+
+
+def _raw_rest(request: Request, registry: str, path: str) -> str:
+    raw = request.scope.get("raw_path")
+    if not raw:
+        return quote(path, safe="/:@")
+    prefix = f"/registries/{registry}/".encode()
+    return raw.split(b"?", 1)[0].removeprefix(prefix).decode("latin-1")
 
 
 @router.get("/{registry}/{path:path}")
 async def proxy(registry: Literal["a", "b"], path: str, request: Request) -> Response:
-    if not is_allowed(path):
+    segments = allowed_segments(_raw_rest(request, registry, path))
+    if segments is None:
         raise HTTPException(404, f"not an allow-listed registry path: /{path}")
     s = get_settings()
     base = s.registry_a_url if registry == "a" else s.registry_b_url
-    # Path params arrive percent-decoded; re-encode each segment so an id
-    # can't smuggle a '?' or '#' into the upstream URL.
-    url = base.rstrip("/") + "/" + "/".join(quote(seg, safe=":@") for seg in path.split("/"))
+    # Re-encode every decoded segment fully (as AcdpClient does for ctx ids),
+    # so an id can't smuggle '/', '?' or '#' into the upstream URL.
+    url = (
+        base.rstrip("/")
+        + "/"
+        + "/".join(quote(seg, safe="" if "/" in seg else ":@") for seg in segments)
+    )
     if request.url.query:
         url += "?" + request.url.query
     headers = {h: v for h in _FORWARD_REQUEST_HEADERS if (v := request.headers.get(h))}
